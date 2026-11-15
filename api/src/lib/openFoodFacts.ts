@@ -4,7 +4,7 @@ export const OFF_BASE_URL = 'https://world.openfoodfacts.org';
 export const OFF_USER_AGENT = 'LeanApp/0.1 (personal nutrition app)';
 export const OFF_TIMEOUT_MS = 4000;
 export const OFF_FIELDS =
-  'code,product_name,product_name_es,brands,nutriments,serving_quantity,serving_size';
+  'code,product_name,product_name_es,brands,nutriments,serving_quantity,serving_quantity_unit,serving_size';
 export interface OffProduct {
   barcode: string;
   name: string;
@@ -58,7 +58,18 @@ export function normalizeProduct(raw: unknown): OffProduct | null {
   )
     return null;
   const quantity = numeric(p.serving_quantity);
-  const servingG = quantity !== null && quantity > 0 ? round(quantity, 1) : null;
+  const unit = trimmed(p.serving_quantity_unit).toLowerCase();
+  const servingSize = trimmed(p.serving_size);
+  const isGrams =
+    unit === 'g' ||
+    (!unit &&
+      /\b\d+(?:[.,]\d+)?\s*g\s*\)?$/i.test(servingSize) &&
+      !/(?:^|[^a-z])(?:ml|cl|l|oz)\b/i.test(servingSize));
+  const roundedQuantity = quantity === null ? NaN : round(quantity, 1);
+  const servingG =
+    isGrams && Number.isFinite(roundedQuantity) && roundedQuantity > 0 && roundedQuantity <= 5000
+      ? roundedQuantity
+      : null;
   return {
     barcode: barcode.data,
     name,
@@ -68,7 +79,7 @@ export function normalizeProduct(raw: unknown): OffProduct | null {
     carbs: round(carbs, 2),
     fat: round(fat, 2),
     servingG,
-    servingLabel: servingG === null ? null : trimmed(p.serving_size).slice(0, 40) || '1 porción',
+    servingLabel: servingG === null ? null : servingSize.slice(0, 40) || '1 porción',
   };
 }
 async function request(url: URL): Promise<Record<string, unknown> | null> {

@@ -102,7 +102,7 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
     ]);
   });
   it('finds typos and accents and avoids OFF for plentiful seed results', async () => {
-    expect((await search('polo')).items.some((f) => /pollo/i.test(f.name))).toBe(true);
+    expect((await search('polo')).items[0]?.name).toMatch(/pollo/i);
     expect((await search('limon')).items.some((f) => f.name === 'Limón sin cáscara crudo')).toBe(
       true,
     );
@@ -134,6 +134,27 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
     expect((await request('/import', tokens[0], 'POST', { barcode })).status).toBe(200);
     expect(offFetch).not.toHaveBeenCalled();
     expect(await db.select().from(foods).where(eq(foods.barcode, barcode))).toHaveLength(1);
+  });
+  it('imports a shared OFF product even when the owner has the same custom barcode', async () => {
+    const barcode = code();
+    const own = await create(tokens[0], { barcode });
+    offFetch.mockImplementation(async () =>
+      Response.json({ status: 1, product: rawProduct(barcode) }),
+    );
+    const response = await request('/import', tokens[0], 'POST', { barcode });
+    expect(response.status).toBe(200);
+    const imported = (await response.json()) as Food;
+    expect(imported).toMatchObject({ id: expect.any(String), source: 'off', barcode });
+    expect(imported.id).not.toBe(own.id);
+    expect(await db.select().from(foods).where(eq(foods.id, own.id!))).toMatchObject([
+      { id: own.id, source: 'custom', barcode, ownerId: accounts[0]!.user.id },
+    ]);
+    offFetch.mockClear();
+    expect(await (await request('/import', tokens[0], 'POST', { barcode })).json()).toEqual(
+      imported,
+    );
+    expect(await (await request(`/barcode/${barcode}`)).json()).toEqual(own);
+    expect(offFetch).not.toHaveBeenCalled();
   });
   it('appends unsaved OFF results, deduplicates stored codes and respects the total limit', async () => {
     const storedCode = code(),
@@ -274,6 +295,8 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
         entry(accounts[0]!.user.id, b.id!, 1, 2),
         entry(accounts[0]!.user.id, b.id!, 2, 3),
         entry(accounts[0]!.user.id, old.id!, 61, 4),
+        { ...entry(accounts[0]!.user.id, old.id!, -1, 5), status: 'planned' },
+        { ...entry(accounts[0]!.user.id, a.id!, -1, 6), status: 'planned' },
         entry(accounts[1]!.user.id, foreign.id!, 0, 0),
       ]);
     const recent = (await (await request('/recent')).json()) as Food[];
@@ -288,8 +311,38 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
     const response = await request(`/${a.id}`, tokens[0], 'DELETE');
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: 'food_in_use' } });
-    // Previously used results rank before otherwise stronger local matches.
-    expect((await search('Segundo')).items[0]?.id).toBe(b.id);
+  });
+  it('ranks used foods before stronger matches only for the user who used them', async () => {
+    const [stronger, used] = await db
+      .insert(foods)
+      .values(
+        ['zzqxranking', 'zzqxrankin'].map((name) => ({
+          source: 'off' as const,
+          barcode: code(),
+          name,
+          kcalPer100g: 100,
+          proteinPer100g: '10',
+          carbsPer100g: '10',
+          fatPer100g: '2',
+        })),
+      )
+      .returning();
+    await db.insert(mealEntries).values({
+      userId: accounts[0]!.user.id,
+      foodId: used!.id,
+      date: sql`current_date`,
+      meal: 'lunch',
+      grams: '100',
+      kcal: 100,
+      protein: '10',
+      carbs: '10',
+      fat: '2',
+    });
+    expect((await search('zzqxranking')).items.map((f) => f.id)).toEqual([used!.id, stronger!.id]);
+    expect((await search('zzqxranking', tokens[1])).items.map((f) => f.id)).toEqual([
+      stronger!.id,
+      used!.id,
+    ]);
   });
   it('validates query, barcode, id and payload before accessing foods', async () => {
     for (const path of ['/search?q=', '/search?q=x&limit=51', '/recent?limit=0', '/barcode/abc'])

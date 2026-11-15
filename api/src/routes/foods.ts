@@ -54,12 +54,17 @@ const pgCode = (error: unknown, code: string): boolean => {
     ('code' in error && error.code === code) || ('cause' in error && pgCode(error.cause, code))
   );
 };
-async function resolveBarcode(db: Db, userId: string, barcode: string): Promise<Food> {
+async function resolveBarcode(db: Db, barcode: string, userId?: string): Promise<Food> {
   const lookup = async () =>
     db
       .select()
       .from(table)
-      .where(and(eq(table.barcode, barcode), visible(userId)))
+      .where(
+        and(
+          eq(table.barcode, barcode),
+          userId === undefined ? inArray(table.source, ['off', 'seed']) : visible(userId),
+        ),
+      )
       .orderBy(sql`CASE WHEN ${table.source} = 'custom' THEN 0 ELSE 1 END`)
       .limit(1);
   const [existing] = await lookup();
@@ -102,12 +107,14 @@ foods.get('/search', validate('query', foodSearchQuerySchema), async (c) => {
     name = normalized(sql`${table.name}`),
     brand = normalized(sql`coalesce(${table.brand}, '')`);
   const score = sql`greatest(word_similarity(${query}, ${name}), word_similarity(${query}, ${brand}))`;
+  // Los límites de palabra evitan que el prefijo «pol» empate «Polenta» con «Pollo» para «polo».
+  const wordScore = sql`greatest(strict_word_similarity(${query}, ${name}), strict_word_similarity(${query}, ${brand}))`;
   const used = sql`exists(select 1 from ${mealEntries} where ${mealEntries.foodId} = ${table.id} and ${mealEntries.userId} = ${userId})`;
   const local = await db
     .select()
     .from(table)
     .where(and(visible(userId), sql`(${score} >= 0.3 OR strpos(${name}, ${query}) > 0)`))
-    .orderBy(desc(used), desc(score), asc(sql`length(${table.name})`), asc(table.name))
+    .orderBy(desc(used), desc(wordScore), desc(sql`similarity(${query}, ${name})`), asc(table.name))
     .limit(Math.max(5, limit));
   const items = local.slice(0, limit).map(serialize);
   let offAvailable = true;
@@ -136,10 +143,10 @@ foods.get('/search', validate('query', foodSearchQuerySchema), async (c) => {
   return c.json({ items, offAvailable });
 });
 foods.get('/barcode/:code', validate('param', z.object({ code: barcodeSchema })), async (c) =>
-  c.json(await resolveBarcode(getDb(c.env), c.get('userId'), c.req.valid('param').code)),
+  c.json(await resolveBarcode(getDb(c.env), c.req.valid('param').code, c.get('userId'))),
 );
 foods.post('/import', validate('json', importFoodSchema), async (c) =>
-  c.json(await resolveBarcode(getDb(c.env), c.get('userId'), c.req.valid('json').barcode)),
+  c.json(await resolveBarcode(getDb(c.env), c.req.valid('json').barcode)),
 );
 for (const kind of ['recent', 'frequent'] as const) {
   foods.get(`/${kind}`, validate('query', foodListQuerySchema), async (c) => {
@@ -152,7 +159,9 @@ for (const kind of ['recent', 'frequent'] as const) {
         and(
           visible(c.get('userId')),
           eq(mealEntries.userId, c.get('userId')),
-          kind === 'frequent' ? sql`${mealEntries.date} >= current_date - 60` : undefined,
+          kind === 'frequent'
+            ? sql`${mealEntries.date} >= current_date - 60 AND ${mealEntries.date} <= current_date`
+            : undefined,
         ),
       )
       .groupBy(table.id)

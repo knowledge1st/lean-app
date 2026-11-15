@@ -21,6 +21,7 @@ const raw = {
     fat_100g: '3.456',
   },
   serving_quantity: '30.12',
+  serving_quantity_unit: 'g',
   serving_size: ' Una porción ',
 };
 afterEach(() => {
@@ -28,6 +29,40 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe('normalizeProduct', () => {
+  it.each([
+    ['g', 'Una porción', 30],
+    ['G', 'Una porción', 30],
+    ['ml', '30 g', null],
+    [undefined, '30 g', 30],
+    [undefined, '2 galletitas (25g)', 25],
+    [undefined, '250 ml', null],
+    [undefined, 'Una porción', null],
+    [undefined, '250 ml (30 g)', null],
+    [undefined, '2 cl (30 g)', null],
+    [undefined, '1 l (30 g)', null],
+    [undefined, '1 oz (30 g)', null],
+  ])('validates serving unit %s and label %s', (unit, size, expected) => {
+    expect(
+      normalizeProduct({
+        ...raw,
+        serving_quantity: expected ?? 30,
+        serving_quantity_unit: unit,
+        serving_size: size,
+      }),
+    ).toMatchObject({ servingG: expected, servingLabel: expected === null ? null : size });
+  });
+  it.each([0.01, 1000000, Infinity, -1, 0])('rejects out-of-range serving %s', (quantity) => {
+    expect(normalizeProduct({ ...raw, serving_quantity: quantity })).toMatchObject({
+      servingG: null,
+      servingLabel: null,
+    });
+  });
+  it('accepts the maximum serving after rounding', () => {
+    expect(normalizeProduct({ ...raw, serving_quantity: 5000.01 })).toMatchObject({
+      servingG: 5000,
+      servingLabel: 'Una porción',
+    });
+  });
   it('normalizes Spanish names, numeric strings, brand and serving', () => {
     expect(normalizeProduct(raw)).toEqual({
       barcode: raw.code,
@@ -100,6 +135,7 @@ describe('Open Food Facts requests', () => {
     expect(await searchProducts('limón & sal', 7)).toHaveLength(1);
     for (const [url, init] of stub.mock.calls as [URL, RequestInit][]) {
       expect(url.searchParams.get('fields')).toBe(OFF_FIELDS);
+      expect(url.searchParams.get('fields')?.split(',')).toContain('serving_quantity_unit');
       expect(init.headers).toEqual({ 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' });
       expect(init.signal).toBeInstanceOf(AbortSignal);
     }
