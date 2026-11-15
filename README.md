@@ -1,6 +1,6 @@
 # Lean
 
-Web app para registrar comidas, agua, ejercicio y progreso corporal, con objetivos calculados. El diseño completo está en [`PLAN.md`](PLAN.md) y el avance en [`docs/plan/estado-plan.md`](docs/plan/estado-plan.md).
+Web app para registrar comidas, agua, ejercicio y progreso corporal, con objetivos calculados. El diseño completo está en [`PLAN.md`](PLAN.md).
 
 ## Estructura
 
