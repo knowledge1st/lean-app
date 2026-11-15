@@ -1,0 +1,145 @@
+name: Deploy web
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.changes.outputs.deploy }}
+      sha: ${{ steps.changes.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Detectar cambios
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/deployed-web:refs/tags/deployed-web" || true
+          deploy=true
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            reason="Despliegue manual solicitado."
+          elif ! git rev-parse --verify "refs/tags/deployed-web" >/dev/null 2>&1; then
+            reason="No existe el tag deployed-web de un despliegue publicado."
+          elif ! git merge-base --is-ancestor "refs/tags/deployed-web" "$HEAD_SHA"; then
+            if git merge-base --is-ancestor "$HEAD_SHA" "refs/tags/deployed-web"; then
+              deploy=false
+              reason="El commit solicitado es anterior al último despliegue publicado."
+            else
+              reason="El commit solicitado y el último despliegue publicado tienen historias divergentes."
+            fi
+          else
+            changed_files=$(git diff --name-only "refs/tags/deployed-web" "$HEAD_SHA" -- \
+              web/ shared/ package.json pnpm-lock.yaml pnpm-workspace.yaml \
+              tsconfig.base.json .github/workflows/deploy-web.yml)
+            if [[ -n "$changed_files" ]]; then
+              reason="Hay cambios en las rutas correspondientes desde el último despliegue publicado."
+            else
+              deploy=false
+              reason="No hay cambios en las rutas correspondientes desde el último despliegue publicado."
+            fi
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          printf '### Deploy web\n\nDesplegar: `%s`\n\n%s\n' "$deploy" "$reason" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: changes
+    permissions:
+      contents: read
+      pages: read
+    if: needs.changes.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.changes.outputs.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validar API_URL
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          if [[ -z "$API_URL" ]]; then
+            echo "::error::Definí la variable de repositorio API_URL con el origen del Worker antes de compilar la web."
+            exit 1
+          fi
+      - run: pnpm --filter @lean/web build
+        env:
+          VITE_API_URL: ${{ vars.API_URL }}
+          VITE_BASE: /${{ github.event.repository.name }}/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: web/dist
+
+  deploy:
+    needs: [changes, build]
+    if: needs.changes.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.changes.outputs.sha }}
+      - uses: actions/deploy-pages@v4
+        id: deployment
+
+  mark:
+    needs: [changes, deploy]
+    if: needs.changes.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Marcar despliegue publicado
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ needs.changes.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if response=$(gh api -X PATCH "repos/$REPO/git/refs/tags/deployed-web" \
+            -f sha="$SHA" -F force=true 2>&1); then
+            echo "Tag deployed-web actualizado a $SHA."
+          else
+            if [[ "$response" != *"HTTP 404"* && "$response" != *"HTTP 422"* ]]; then
+              printf '%s\n' "$response" >&2
+              exit 1
+            fi
+            gh api -X POST "repos/$REPO/git/refs" \
+              -f ref="refs/tags/deployed-web" -f sha="$SHA"
+          fi
