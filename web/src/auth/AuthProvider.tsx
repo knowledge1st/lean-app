@@ -66,13 +66,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function endSession(path: string) {
-    try {
-      await api.post(path);
-    } catch {
-      // Local logout also works offline.
-    } finally {
-      closeSession();
-    }
+    const token = getToken();
+    closeSession();
+    if (token) void api.post(path, undefined, { token }).catch(() => {});
   }
 
   return (

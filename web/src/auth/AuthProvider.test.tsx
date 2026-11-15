@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { useAuth } from './AuthProvider';
 import { jsonResponse, renderAuth, testUser } from './testUtils';
 import { getToken, setToken } from '../lib/session';
@@ -19,13 +19,17 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-function Account() {
-  const { status, logout, logoutAll } = useAuth();
+const nextUser = { id: 'user-2', username: 'ana', displayName: 'Ana' };
+
+function Account({ onLogout }: { onLogout?: () => void }) {
+  const { status, user, login, logout, logoutAll } = useAuth();
   return (
     <>
       <p>{status}</p>
-      <button onClick={() => void logout()}>Salir</button>
-      <button onClick={() => void logoutAll()}>Salir de todos</button>
+      <p>{user?.username}</p>
+      <button onClick={() => void logout().then(onLogout)}>Salir</button>
+      <button onClick={() => void logoutAll().then(onLogout)}>Salir de todos</button>
+      <button onClick={() => void login(nextUser.username, 'password')}>Ingresar</button>
     </>
   );
 }
@@ -49,6 +53,70 @@ it.each([false, true])(
     );
   },
 );
+
+it.each([false, true])(
+  'cerrar sesión resuelve y limpia el estado con revocación pendiente (todos: %s)',
+  async (all) => {
+    setToken('original-token');
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(testUser))
+      .mockReturnValueOnce(new Promise<Response>(() => {}));
+    const onLogout = vi.fn();
+    const { client } = renderAuth(<Account onLogout={onLogout} />);
+    await screen.findByText('authenticated');
+    client.setQueryData(['private-data'], 'secret');
+    fireEvent.click(screen.getByText(all ? 'Salir de todos' : 'Salir'));
+    await waitFor(() => expect(onLogout).toHaveBeenCalledOnce());
+    expect(screen.getByText('anonymous')).toBeTruthy();
+    expect(screen.queryByText(testUser.username)).toBeNull();
+    expect(getToken()).toBeNull();
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+    const [url, init] = fetchMock.mock.calls[1]!;
+    expect(url).toBe(`http://localhost/api/auth/${all ? 'logout-all' : 'logout'}`);
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer original-token');
+  },
+);
+
+it.each([false, true])('cerrar sesión sin token omite la revocación (todos: %s)', async (all) => {
+  const onLogout = vi.fn();
+  renderAuth(<Account onLogout={onLogout} />);
+  fireEvent.click(screen.getByText(all ? 'Salir de todos' : 'Salir'));
+  await waitFor(() => expect(onLogout).toHaveBeenCalledOnce());
+  expect(screen.getByText('anonymous')).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it.each([
+  [false, 200],
+  [false, 401],
+  [true, 200],
+  [true, 401],
+])('un logout tardío conserva la nueva sesión (todos: %s, HTTP: %s)', async (all, status) => {
+  setToken('original-token');
+  let resolveResponse!: (response: Response) => void;
+  const response = new Promise<Response>((resolve) => {
+    resolveResponse = resolve;
+  });
+  fetchMock
+    .mockResolvedValueOnce(jsonResponse(testUser))
+    .mockReturnValueOnce(response)
+    .mockResolvedValueOnce(jsonResponse({ token: 'new-token', user: nextUser }));
+  const { client } = renderAuth(<Account />);
+  await screen.findByText('authenticated');
+  fireEvent.click(screen.getByText(all ? 'Salir de todos' : 'Salir'));
+  await screen.findByText('anonymous');
+  fireEvent.click(screen.getByText('Ingresar'));
+  await screen.findByText(nextUser.username);
+  client.setQueryData(['private-data'], 'new-secret');
+  await act(async () => {
+    resolveResponse(jsonResponse({}, status));
+    await response;
+  });
+  expect(screen.getByText('authenticated')).toBeTruthy();
+  expect(screen.getByText(nextUser.username)).toBeTruthy();
+  expect(getToken()).toBe('new-token');
+  expect(client.getQueryData(['private-data'])).toBe('new-secret');
+});
 
 it('una sesión vencida notifica al provider y limpia caché', async () => {
   const { api } = await import('../lib/api');

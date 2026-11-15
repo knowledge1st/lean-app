@@ -73,10 +73,73 @@ describe('api', () => {
     } finally {
       unsubscribe();
     }
+    setToken('expired-token');
     await expect(client.get('/me')).rejects.toMatchObject({ status: 401 });
     expect(listener).toHaveBeenCalledTimes(1);
     expect(window.location.hash).toBe('#/login');
   });
+
+  it.each([false, true])(
+    'un 401 tardío conserva la sesión nueva (token explícito: %s)',
+    async (explicitToken) => {
+      setToken('token-a');
+      const listener = vi.fn();
+      const unsubscribe = onUnauthorized(listener);
+      let resolveResponse!: (response: Response) => void;
+      const response = new Promise<Response>((resolve) => {
+        resolveResponse = resolve;
+      });
+      fetchMock.mockReturnValueOnce(response);
+      try {
+        const request = client.get('/me', explicitToken ? { token: 'token-a' } : undefined);
+        setToken('token-b');
+        resolveResponse(new Response('{}', { status: 401 }));
+        await expect(request).rejects.toBeInstanceOf(ApiError);
+        expect(getToken()).toBe('token-b');
+        expect(listener).not.toHaveBeenCalled();
+        expect(window.location.hash).toBe('#/hoy');
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
+
+  it('un 401 sin token enviado conserva la sesión y no notifica', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    let resolveResponse!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      resolveResponse = resolve;
+    });
+    fetchMock.mockReturnValueOnce(response);
+    try {
+      const request = client.get('/me');
+      setToken('new-token');
+      resolveResponse(new Response('{}', { status: 401 }));
+      await expect(request).rejects.toMatchObject({ status: 401 });
+      expect(getToken()).toBe('new-token');
+      expect(listener).not.toHaveBeenCalled();
+      expect(window.location.hash).toBe('#/hoy');
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([undefined, 'explicit-token', ''])(
+    'ignora Authorization en headers y usa el token indicado (%s)',
+    async (token) => {
+      setToken('session-token');
+      fetchMock.mockResolvedValueOnce(new Response('{}'));
+      await client.get('/me', {
+        ...(token === undefined ? {} : { token }),
+        headers: { Authorization: 'Bearer header-token' },
+      });
+      const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+      expect(headers.get('Authorization')).toBe(
+        token === '' ? null : `Bearer ${token ?? 'session-token'}`,
+      );
+    },
+  );
 
   it('invalid_credentials conserva token, hash y no notifica', async () => {
     setToken('valid-token');

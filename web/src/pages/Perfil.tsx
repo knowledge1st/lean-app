@@ -18,8 +18,12 @@ export function Perfil() {
   async function endSession(all: boolean) {
     if (pending) return;
     setPending(true);
-    await (all ? logoutAll() : logout());
-    navigate('/login', { replace: true });
+    try {
+      await (all ? logoutAll() : logout());
+      navigate('/login', { replace: true });
+    } finally {
+      setPending(false);
+    }
   }
 
   return (

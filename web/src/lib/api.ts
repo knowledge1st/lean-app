@@ -16,6 +16,7 @@ export interface ApiOptions {
   body?: unknown;
   signal?: AbortSignal;
   headers?: HeadersInit;
+  token?: string;
 }
 
 type RequestOptions = Omit<ApiOptions, 'method' | 'body'>;
@@ -49,9 +50,9 @@ export function createApiClient({ baseUrl }: { baseUrl?: string }) {
     }
 
     const headers = new Headers(options.headers);
-    // Authentication belongs exclusively to the session module.
+    // Only the explicit token or session token can supply authentication.
     headers.delete('Authorization');
-    const token = getToken();
+    const token = options.token ?? getToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const body = options.body === undefined ? undefined : JSON.stringify(options.body);
     if (body !== undefined) headers.set('Content-Type', 'application/json');
@@ -80,7 +81,12 @@ export function createApiClient({ baseUrl }: { baseUrl?: string }) {
       const detail = isApiErrorBody(payload)
         ? payload.error
         : { code: 'http_error', message: 'No se pudo completar la solicitud.' };
-      if (response.status === 401 && detail.code !== 'invalid_credentials') {
+      if (
+        response.status === 401 &&
+        detail.code !== 'invalid_credentials' &&
+        token &&
+        getToken() === token
+      ) {
         clearToken();
         if (unauthorizedListeners.size) {
           unauthorizedListeners.forEach((listener) => listener());
