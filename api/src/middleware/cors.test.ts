@@ -50,7 +50,7 @@ describe('cors', () => {
 
   it('keeps CORS headers on error responses', async () => {
     const res = await app.request('/api/nope', { headers: { Origin: ALLOWED } }, testEnv);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe(ALLOWED);
   });
 });

@@ -44,7 +44,8 @@ export const handleError = (err: Error, c: Context): Response => {
     const status = err.status as ContentfulStatusCode;
     return errorResponse(c, status, codeForStatus[status] ?? 'error', err.message);
   }
-  console.error(err);
+  // Database errors can embed passwords and token hashes in query parameters.
+  console.error('Unhandled API error');
   return errorResponse(c, 500, 'internal_error', 'Internal server error');
 };
 
