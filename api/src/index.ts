@@ -4,6 +4,8 @@ import { handleError, handleNotFound } from './lib/errors';
 import { cors } from './middleware/cors';
 import { requireAuth } from './middleware/requireAuth';
 import { auth, me } from './routes/auth';
+import { entries } from './routes/entries';
+import { summary } from './routes/summary';
 import { foods } from './routes/foods';
 import { health } from './routes/health';
 
@@ -25,6 +27,8 @@ app.route('/api/health', health);
 app.route('/api/auth', auth);
 app.route('/api/me', me);
 app.route('/api/foods', foods);
+app.route('/api/entries', entries);
+app.route('/api/summary', summary);
 
 app.notFound(handleNotFound);
 app.onError(handleError);
