@@ -4,6 +4,7 @@ import { handleError, handleNotFound } from './lib/errors';
 import { cors } from './middleware/cors';
 import { requireAuth } from './middleware/requireAuth';
 import { auth, me } from './routes/auth';
+import { foods } from './routes/foods';
 import { health } from './routes/health';
 
 export const app = new Hono<AppEnv>();
@@ -23,6 +24,7 @@ app.use('/api/*', (c, next) => {
 app.route('/api/health', health);
 app.route('/api/auth', auth);
 app.route('/api/me', me);
+app.route('/api/foods', foods);
 
 app.notFound(handleNotFound);
 app.onError(handleError);
