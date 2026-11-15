@@ -91,6 +91,7 @@ export const foods = pgTable(
     carbsPer100g: numeric('carbs_per_100g', { precision: 6, scale: 2 }).notNull(),
     fatPer100g: numeric('fat_per_100g', { precision: 6, scale: 2 }).notNull(),
     servingGrams: numeric('serving_grams', { precision: 7, scale: 1 }),
+    servingLabel: text('serving_label'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
