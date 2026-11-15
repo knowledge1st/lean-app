@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { main, parseFoodsCsv, validateFoods } from './seed-foods';
+import { CALORIE_CHECK_EXCEPTIONS, main, parseFoodsCsv, validateFoods } from './seed-foods';
 import type { SeedFood } from './seed-foods';
 
 const header = 'name,kcal_100g,protein_100g,carbs_100g,fat_100g,serving_g,serving_label';
@@ -123,6 +123,25 @@ describe('validateFoods', () => {
 
 // Importing main above must never connect to the database or run the script.
 it('exporta main sin ejecutarlo al importar', () => expect(typeof main).toBe('function'));
+
+it('exige las excepciones no alcohólicas en el CSV real y permite que falten las alcohólicas', () => {
+  const foods = parseFoodsCsv(readFileSync(new URL('../seed/foods.csv', import.meta.url), 'utf8'));
+  const names = new Set(foods.map((food) => food.name));
+  const alcoholicNames = [
+    'Cerveza',
+    'Vino tinto',
+    'Vino blanco',
+    'Fernet',
+    'Whisky',
+    'Vodka',
+    'Gin',
+    'Ron',
+  ];
+  for (const name of Object.keys(CALORIE_CHECK_EXCEPTIONS)) {
+    if (!alcoholicNames.includes(name)) expect(names.has(name), name).toBe(true);
+  }
+  expect(validateFoods(foods.filter((food) => !alcoholicNames.includes(food.name)))).toEqual([]);
+});
 
 it('valida el CSV real y la cobertura de alimentos básicos', () => {
   const foods = parseFoodsCsv(readFileSync(new URL('../seed/foods.csv', import.meta.url), 'utf8'));

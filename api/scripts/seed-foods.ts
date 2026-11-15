@@ -12,11 +12,25 @@ export type SeedFood = {
   servingLabel: string | null;
 };
 
-export const CALORIE_CHECK_EXCEPTIONS: Record<string, string> = Object.fromEntries(
-  ['Cerveza', 'Vino tinto', 'Vino blanco', 'Fernet', 'Whisky', 'Vodka', 'Gin', 'Ron'].map(
+export const CALORIE_CHECK_EXCEPTIONS: Record<string, string> = Object.fromEntries([
+  ...['Cerveza', 'Vino tinto', 'Vino blanco', 'Fernet', 'Whisky', 'Vodka', 'Gin', 'Ron'].map(
     (name) => [name, 'Bebida alcohólica: el alcohol aporta 7 kcal/g'],
   ),
-);
+  ...[
+    'Espinaca cruda',
+    'Espinaca hervida',
+    'Acelga hervida',
+    'Champiñones crudos',
+    'Champiñones hervidos',
+  ].map((name) => [
+    name,
+    'Verdura con mucha fibra y agua: USDA calcula la energía con factores de Atwater específicos, menores que 4/4/9',
+  ]),
+  [
+    'Limón sin cáscara crudo',
+    'Fruta ácida: ácidos orgánicos y fibra; USDA usa factores de Atwater específicos',
+  ],
+]);
 
 const HEADER = 'name,kcal_100g,protein_100g,carbs_100g,fat_100g,serving_g,serving_label';
 
@@ -138,6 +152,7 @@ export function validateFoods(foods: SeedFood[]): string[] {
       error('porción incompleta: gramos y etiqueta deben estar ambos presentes');
     if (food.protein + food.carbs + food.fat > 100) error('la suma de macros supera 100 g');
     const calculated = 4 * food.protein + 4 * food.carbs + 9 * food.fat;
+    // Por decisión del orquestador, se mantienen ±5 kcal para alimentos de menos de 20 kcal.
     const tolerance = food.kcal < 20 ? 5 : food.kcal * 0.2;
     if (
       !Object.hasOwn(CALORIE_CHECK_EXCEPTIONS, food.name) &&
