@@ -15,10 +15,21 @@ export interface ApiOptions {
   method?: string;
   body?: unknown;
   signal?: AbortSignal;
+  timeoutMs?: number;
   headers?: HeadersInit;
+  token?: string;
 }
 
 type RequestOptions = Omit<ApiOptions, 'method' | 'body'>;
+
+const unauthorizedListeners = new Set<() => void>();
+
+export function onUnauthorized(listener: () => void): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
 
 function isApiErrorBody(value: unknown): value is { error: { code: string; message: string } } {
   if (typeof value !== 'object' || value === null || !('error' in value)) return false;
@@ -33,55 +44,89 @@ function isApiErrorBody(value: unknown): value is { error: { code: string; messa
   );
 }
 
-export function createApiClient({ baseUrl }: { baseUrl?: string }) {
+export function createApiClient({
+  baseUrl,
+  timeoutMs = 15000,
+}: {
+  baseUrl?: string;
+  timeoutMs?: number;
+}) {
   async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     if (!baseUrl?.trim()) {
       throw new Error('Falta configurar VITE_API_URL para realizar solicitudes a la API.');
     }
 
     const headers = new Headers(options.headers);
-    // Authentication belongs exclusively to the session module.
+    // Only the explicit token or session token can supply authentication.
     headers.delete('Authorization');
-    const token = getToken();
+    const token = options.token ?? getToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const body = options.body === undefined ? undefined : JSON.stringify(options.body);
     if (body !== undefined) headers.set('Content-Type', 'application/json');
 
-    let response: Response;
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener('abort', abortFromCaller);
+    if (options.signal?.aborted) abortFromCaller();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, options.timeoutMs ?? timeoutMs);
+
     try {
-      response = await fetch(`${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`, {
-        method: options.method ?? 'GET',
-        headers,
-        ...(body !== undefined ? { body } : {}),
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-    } catch (error) {
-      // Preserve cancellation so Query can distinguish it from a network failure.
-      if (options.signal?.aborted) throw error;
-      throw new ApiError(0, 'network_error', 'No se pudo conectar con el servidor.');
-    }
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        clearToken();
-        if (typeof window !== 'undefined' && window.location.hash !== '#/login') {
-          window.location.hash = '#/login';
-        }
-      }
-      let payload: unknown;
+      let response: Response;
       try {
-        payload = await response.json();
-      } catch {
-        payload = undefined;
+        response = await fetch(`${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`, {
+          method: options.method ?? 'GET',
+          headers,
+          ...(body !== undefined ? { body } : {}),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        // Preserve cancellation so Query can distinguish it from a network failure.
+        if (options.signal?.aborted) throw error;
+        throw new ApiError(0, 'network_error', 'No se pudo conectar con el servidor.');
       }
-      const detail = isApiErrorBody(payload)
-        ? payload.error
-        : { code: 'http_error', message: 'No se pudo completar la solicitud.' };
-      throw new ApiError(response.status, detail.code, detail.message);
-    }
+      if (!response.ok) {
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch (error) {
+          if (options.signal?.aborted || timedOut) throw error;
+          payload = undefined;
+        }
+        const detail = isApiErrorBody(payload)
+          ? payload.error
+          : { code: 'http_error', message: 'No se pudo completar la solicitud.' };
+        if (
+          response.status === 401 &&
+          detail.code !== 'invalid_credentials' &&
+          token &&
+          getToken() === token
+        ) {
+          clearToken();
+          if (unauthorizedListeners.size) {
+            unauthorizedListeners.forEach((listener) => listener());
+          } else if (typeof window !== 'undefined' && window.location.hash !== '#/login') {
+            window.location.hash = '#/login';
+          }
+        }
+        throw new ApiError(response.status, detail.code, detail.message);
+      }
 
-    if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+      if (response.status === 204) return undefined as T;
+      return (await response.json()) as T;
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      if (timedOut) {
+        throw new ApiError(0, 'network_error', 'No se pudo conectar con el servidor.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abortFromCaller);
+    }
   }
 
   return {

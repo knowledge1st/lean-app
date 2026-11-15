@@ -82,3 +82,10 @@
 .skip-link:focus {
   top: 1rem;
 }
+
+/* Keep form controls readable and prevent focus zoom on iOS, including inside small text. */
+input,
+select,
+textarea {
+  font-size: max(16px, 1em);
+}
