@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useLocation } from 'react-router';
-import { MEALS, ZERO_MACROS, type DaySummary } from '@lean/shared';
+import { MEALS, ZERO_MACROS, type DaySummary, type Entry, type Food } from '@lean/shared';
 import { jsonResponse } from '../auth/testUtils';
 import { ToastProvider } from '../components/ui/Toast';
 import { todayLocal } from '../lib/date';
 import { Hoy } from './Hoy';
+import { setToken, clearToken } from '../lib/session';
+import { recalculateSummary } from '../features/diary/optimistic';
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: actual.createApiClient({ baseUrl: 'http://localhost' }) };
@@ -15,16 +17,17 @@ vi.mock('../lib/api', async (importOriginal) => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  clearToken();
 });
 const summary: DaySummary = {
   date: '2026-11-14',
   target: null,
   eaten: ZERO_MACROS,
-  planned: { ...ZERO_MACROS, kcal: 100 },
+  planned: { kcal: 100, protein: 5, carbs: 10, fat: 2.5 },
   meals: MEALS.map((meal) => ({
     meal,
     eaten: ZERO_MACROS,
-    planned: meal === 'breakfast' ? { ...ZERO_MACROS, kcal: 100 } : ZERO_MACROS,
+    planned: meal === 'breakfast' ? { kcal: 100, protein: 5, carbs: 10, fat: 2.5 } : ZERO_MACROS,
     entries:
       meal === 'breakfast'
         ? [
@@ -190,3 +193,138 @@ it('conserva los datos restaurados si también falla la recarga del resumen', as
   ).toContain('No se pudo conectar');
   client.clear();
 });
+
+it('permite dos altas concurrentes y revierte solo la primera cuando falla', async () => {
+  const empty = recalculateSummary(summary, []);
+  const food: Food = {
+    id: 'rice',
+    source: 'seed',
+    name: 'Arroz',
+    brand: null,
+    barcode: null,
+    kcal: 200,
+    protein: 10,
+    carbs: 20,
+    fat: 5,
+    servingG: null,
+    servingLabel: null,
+  };
+  const saved: Entry = {
+    ...summary.meals[0]!.entries[0]!,
+    id: 'saved-second',
+    foodId: food.id!,
+    food: { ...food, id: food.id! },
+    meal: 'lunch',
+    status: 'eaten',
+    grams: 100,
+    kcal: 201,
+    protein: 11,
+    carbs: 21,
+    fat: 6,
+  };
+  let rejectFirst!: (error: Error) => void;
+  let resolveSecond!: (response: Response) => void;
+  let resolveRefresh!: (response: Response) => void;
+  const first = new Promise<Response>((_resolve, reject) => {
+    rejectFirst = reject;
+  });
+  const second = new Promise<Response>((resolve) => {
+    resolveSecond = resolve;
+  });
+  const refresh = new Promise<Response>((resolve) => {
+    resolveRefresh = resolve;
+  });
+  let posts = 0;
+  let summaryReads = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (init?.method === 'POST') return ++posts === 1 ? first : second;
+      if (String(input).includes('/foods/')) return Promise.resolve(jsonResponse([food]));
+      summaryReads++;
+      return summaryReads === 1 ? Promise.resolve(jsonResponse(empty)) : refresh;
+    }),
+  );
+  const client = setup();
+  await screen.findByRole('button', { name: 'Agregar a Almuerzo' });
+  for (let index = 0; index < 2; index++) {
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar a Almuerzo' }));
+    fireEvent.click(await within(screen.getByRole('dialog')).findByText('Arroz'));
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+    await waitFor(() => expect(posts).toBe(index + 1));
+  }
+  const key = ['summary', 'day', summary.date];
+  expect(client.getQueryData<DaySummary>(key)!.eaten.kcal).toBe(400);
+  await act(async () => {
+    resolveSecond(jsonResponse(saved));
+  });
+  await waitFor(() => expect(client.getQueryData<DaySummary>(key)!.eaten.kcal).toBe(401));
+  expect(summaryReads).toBe(1);
+  expect(client.getQueryData<DaySummary>(key)!.meals[1]!.entries).toHaveLength(2);
+  await act(async () => {
+    rejectFirst(new Error('offline'));
+  });
+  expect(await screen.findByText('No se pudo conectar con el servidor.')).toBeTruthy();
+  expect(client.getQueryData(key)).toEqual(recalculateSummary(empty, [saved]));
+  await act(async () => {
+    resolveRefresh(jsonResponse(recalculateSummary(empty, [saved])));
+  });
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+  expect(client.getQueryData(key)).toEqual(recalculateSummary(empty, [saved]));
+  expect(screen.getAllByText('Arroz')).toHaveLength(1);
+  client.clear();
+});
+
+it.each(['error', 'success'] as const)(
+  'ignora %s y las invalidaciones de una mutación de la sesión anterior',
+  async (outcome) => {
+    setToken('first-session');
+    let reject!: (error: Error) => void;
+    let resolve!: (response: Response) => void;
+    const pending = new Promise<Response>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    const food: Food = {
+      ...summary.meals[0]!.entries[0]!.food,
+      barcode: null,
+      kcal: 200,
+      protein: 10,
+      carbs: 20,
+      fat: 5,
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockImplementation((input, init) => {
+        if (init?.method === 'POST') return pending;
+        return Promise.resolve(jsonResponse(String(input).includes('/foods/') ? [food] : summary));
+      }),
+    );
+    const client = setup();
+    await screen.findByText('Pan');
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar a Almuerzo' }));
+    fireEvent.click(await within(screen.getByRole('dialog')).findByText('Pan'));
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+    const key = ['summary', 'day', summary.date];
+    await waitFor(() => expect(client.getQueryData<DaySummary>(key)!.eaten.kcal).toBe(200));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    const setData = vi.spyOn(client, 'setQueryData');
+    await act(async () => {
+      clearToken();
+      client.clear();
+      setToken('second-session');
+      client.setQueryData(key, recalculateSummary(summary, []));
+    });
+    const otherSession = client.getQueryData(key);
+    setData.mockClear();
+    await act(async () => {
+      if (outcome === 'error') reject(new Error('offline'));
+      else resolve(jsonResponse({ ...summary.meals[0]!.entries[0]!, status: 'eaten' }));
+    });
+    expect(setData).not.toHaveBeenCalled();
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(client.getQueryData(key)).toBe(otherSession);
+    expect(screen.queryByText('No se pudo conectar con el servidor.')).toBeNull();
+    client.clear();
+  },
+);

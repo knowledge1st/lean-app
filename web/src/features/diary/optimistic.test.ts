@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 import { MEALS, ZERO_MACROS, type DaySummary, type Entry, type Food } from '@lean/shared';
-import { applyDiaryAction, recalculateSummary } from './optimistic';
+import {
+  applyDiaryAction,
+  recalculateSummary,
+  revertDiaryAction,
+  type DiaryAction,
+} from './optimistic';
 const food: Food = {
   id: 'food',
   source: 'seed',
@@ -74,3 +79,40 @@ it('suma antes de redondear y conserva la meta', () => {
   expect(result.eaten.protein).toBe(0.3);
   expect(result.target).toBe(target);
 });
+
+it.each(['add', 'edit', 'delete'] as const)(
+  'revierte %s conservando otra alta optimista y recalculando las comidas',
+  (kind) => {
+    const action: DiaryAction =
+      kind === 'add'
+        ? { kind, date: summary.date, meal: 'breakfast', food, grams: 150, temporaryId: entry.id }
+        : kind === 'edit'
+          ? { kind, entry, changes: { grams: 50, meal: 'dinner', status: 'planned' } }
+          : { kind, entry };
+    const initial = kind === 'add' ? summary : added;
+    const concurrent = applyDiaryAction(applyDiaryAction(initial, action), {
+      kind: 'add',
+      date: summary.date,
+      meal: 'lunch',
+      food,
+      grams: 100,
+      temporaryId: 'temp-other',
+    });
+    const before = structuredClone(concurrent);
+    const result = revertDiaryAction(concurrent, action);
+    expect(result.meals.flatMap((meal) => meal.entries).map((item) => item.id)).toEqual(
+      kind === 'add' ? ['temp-other'] : [entry.id, 'temp-other'],
+    );
+    expect(result.meals[0]!.entries).toEqual(kind === 'add' ? [] : [entry]);
+    expect(result.meals[1]!.eaten.kcal).toBe(200);
+    expect(result.meals[3]!.entries).toEqual([]);
+    expect(result.eaten).toEqual({
+      kcal: kind === 'add' ? 200 : 500,
+      protein: kind === 'add' ? 10 : 25,
+      carbs: kind === 'add' ? 20 : 50,
+      fat: kind === 'add' ? 5 : 12.5,
+    });
+    expect(result.planned).toEqual(ZERO_MACROS);
+    expect(concurrent).toEqual(before);
+  },
+);

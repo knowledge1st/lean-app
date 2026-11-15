@@ -52,7 +52,6 @@ export function FoodSearch({
           Escanear
         </Button>
       </div>
-      <p className="text-xs text-muted">Escáner: próximamente</p>
       {!normalized && (
         <div className="flex gap-2" role="group" aria-label="Alimentos habituales">
           <Button

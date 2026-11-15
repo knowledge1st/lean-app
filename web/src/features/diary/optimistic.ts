@@ -65,3 +65,21 @@ export function applyDiaryAction(summary: DaySummary, action: DiaryAction): DayS
     );
   return recalculateSummary(summary, entries);
 }
+
+export function revertDiaryAction(summary: DaySummary, action: DiaryAction): DaySummary {
+  const entries = summary.meals.flatMap((meal) => meal.entries);
+  if (action.kind === 'add')
+    return recalculateSummary(
+      summary,
+      entries.filter((entry) => entry.id !== action.temporaryId),
+    );
+  if (action.kind === 'edit')
+    return recalculateSummary(
+      summary,
+      entries.map((entry) => (entry.id === action.entry.id ? action.entry : entry)),
+    );
+  return recalculateSummary(summary, [
+    ...entries.filter((entry) => entry.id !== action.entry.id),
+    action.entry,
+  ]);
+}

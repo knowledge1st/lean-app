@@ -71,3 +71,12 @@ it('vuelve a búsqueda', () => {
   fireEvent.click(screen.getByText('Volver'));
   expect(onBack).toHaveBeenCalledOnce();
 });
+
+it('limita una etiqueta de porción sin espacios y conserva los gramos visibles', () => {
+  const label = 'W'.repeat(40);
+  setup({ name: 'N'.repeat(100), brand: 'B'.repeat(100), servingG: 50, servingLabel: label });
+  const button = screen.getByRole('button', { name: new RegExp(`1 porción · ${label}`) });
+  expect(button.className).toContain('max-w-full min-w-0');
+  expect(button.querySelector('.truncate')?.textContent).toContain(label);
+  expect(button.querySelector('.shrink-0')?.textContent).toBe('(50 g)');
+});

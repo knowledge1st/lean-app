@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { MEALS, type Entry, type Meal } from '@lean/shared';
 import { todayLocal, addDays, formatDayLabel, parseLocalDateParam } from '../lib/date';
@@ -20,7 +20,6 @@ export function Hoy() {
   const [editing, setEditing] = useState<Entry | null>(null);
   const query = useDaySummary(date);
   const mutation = useDiaryMutation();
-  const locked = useRef(false);
   useEffect(() => {
     if (raw !== null && !parseLocalDateParam(raw)) {
       const next = new URLSearchParams(params);
@@ -36,13 +35,7 @@ export function Hoy() {
     setEditing(null);
   }
   function mutate(action: DiaryAction) {
-    if (locked.current || mutation.isPending) return;
-    locked.current = true;
-    mutation.mutate(action, {
-      onSettled: () => {
-        locked.current = false;
-      },
-    });
+    mutation.mutate(action);
     setAdding(null);
     setEditing(null);
   }
@@ -110,7 +103,6 @@ export function Hoy() {
                 <MealSection
                   key={meal}
                   meal={section}
-                  disabled={mutation.isPending}
                   onAdd={() => setAdding({ date, meal })}
                   onEdit={setEditing}
                   onEat={(entry) => mutate({ kind: 'edit', entry, changes: { status: 'eaten' } })}

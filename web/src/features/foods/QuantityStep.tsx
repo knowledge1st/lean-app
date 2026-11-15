@@ -34,11 +34,19 @@ export function QuantityStep({
           {[0.5, 1, 2].map((multiplier) => {
             const grams = Math.round(food.servingG! * multiplier * 10) / 10;
             return (
-              <Button key={multiplier} variant="secondary" onClick={() => setValue(String(grams))}>
-                {multiplier === 0.5
-                  ? '½ porción'
-                  : `${multiplier} ${multiplier === 1 ? 'porción' : 'porciones'}`}{' '}
-                · {food.servingLabel} ({formatNumber(grams)} g)
+              <Button
+                key={multiplier}
+                variant="secondary"
+                className="max-w-full min-w-0"
+                onClick={() => setValue(String(grams))}
+              >
+                <span className="truncate">
+                  {multiplier === 0.5
+                    ? '½ porción'
+                    : `${multiplier} ${multiplier === 1 ? 'porción' : 'porciones'}`}{' '}
+                  · {food.servingLabel}
+                </span>
+                <span className="shrink-0">({formatNumber(grams)} g)</span>
               </Button>
             );
           })}

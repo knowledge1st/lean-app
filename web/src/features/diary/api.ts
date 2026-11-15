@@ -1,8 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DaySummary, Entry } from '@lean/shared';
 import { api } from '../../lib/api';
+import { getToken } from '../../lib/session';
 import { useToast } from '../../components/ui/Toast';
-import { applyDiaryAction, type DiaryAction, type EntryChanges } from './optimistic';
+import {
+  applyDiaryAction,
+  recalculateSummary,
+  revertDiaryAction,
+  type DiaryAction,
+  type EntryChanges,
+} from './optimistic';
 export const summaryKey = (date: string) => ['summary', 'day', date] as const;
 export const getDaySummary = (date: string, signal?: AbortSignal) =>
   api.get<DaySummary>(`/api/summary/day?date=${date}`, signal ? { signal } : {});
@@ -25,6 +32,7 @@ export function useDiaryMutation() {
   const client = useQueryClient();
   const toast = useToast();
   return useMutation({
+    mutationKey: ['diary'],
     mutationFn: async (action: DiaryAction): Promise<Entry | void> =>
       action.kind === 'add'
         ? createEntry({
@@ -37,39 +45,43 @@ export function useDiaryMutation() {
           ? updateEntry(action.entry.id, action.changes)
           : deleteEntry(action.entry.id),
     onMutate: async (action) => {
+      const token = getToken();
       const date = action.kind === 'add' ? action.date : action.entry.date;
       const key = summaryKey(date);
       await client.cancelQueries({ queryKey: key });
-      const previous = client.getQueryData<DaySummary>(key);
-      if (previous) client.setQueryData(key, applyDiaryAction(previous, action));
-      return { key, previous };
+      if (getToken() === token)
+        client.setQueryData<DaySummary>(key, (current) =>
+          current ? applyDiaryAction(current, action) : undefined,
+        );
+      return { key, token };
     },
     onSuccess: (entry, action, context) => {
+      if (getToken() !== context.token) return;
       if (action.kind === 'add' && entry)
-        client.setQueryData<DaySummary>(
-          context.key,
-          (current) =>
-            current && {
-              ...current,
-              meals: current.meals.map((meal) => ({
-                ...meal,
-                entries: meal.entries.map((item) =>
-                  item.id === action.temporaryId ? entry : item,
+        client.setQueryData<DaySummary>(context.key, (current) =>
+          current
+            ? recalculateSummary(
+                current,
+                current.meals.flatMap((meal) =>
+                  meal.entries.map((item) => (item.id === action.temporaryId ? entry : item)),
                 ),
-              })),
-            },
+              )
+            : undefined,
         );
     },
-    onError: (error, _action, context) => {
-      if (context?.previous) client.setQueryData(context.key, context.previous);
+    onError: (error, action, context) => {
+      if (!context || getToken() !== context.token) return;
+      client.setQueryData<DaySummary>(context.key, (current) =>
+        current ? revertDiaryAction(current, action) : undefined,
+      );
       toast(error.message || 'No se pudo guardar. Revisá tu conexión.');
     },
-    onSettled: async (_data, _error, action, context) => {
+    onSettled: async (_data, _error, _action, context) => {
+      if (!context || getToken() !== context.token) return;
       await Promise.all([
-        client.invalidateQueries({
-          queryKey:
-            context?.key ?? summaryKey(action.kind === 'add' ? action.date : action.entry.date),
-        }),
+        ...(client.isMutating({ mutationKey: ['diary'] }) === 1
+          ? [client.invalidateQueries({ queryKey: context.key })]
+          : []),
         client.invalidateQueries({ queryKey: ['foods', 'recent'] }),
         client.invalidateQueries({ queryKey: ['foods', 'frequent'] }),
       ]);
