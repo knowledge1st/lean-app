@@ -124,16 +124,18 @@ foods.get('/search', validate('query', foodSearchQuerySchema), async (c) => {
       const codes = external.map((p) => p.barcode);
       const stored = codes.length
         ? await db
-            .select({ barcode: table.barcode })
+            .select()
             .from(table)
             .where(and(ne(table.source, 'custom'), inArray(table.barcode, codes)))
         : [];
-      const seen = new Set([...stored.map((r) => r.barcode), ...local.map((r) => r.barcode)]);
+      const storedByBarcode = new Map(stored.map((row) => [row.barcode, row]));
+      const seen = new Set(items.map((item) => item.barcode));
       for (const product of external) {
         if (items.length >= limit) break;
         if (seen.has(product.barcode)) continue;
         seen.add(product.barcode);
-        items.push({ ...product, id: null, source: 'off' });
+        const saved = storedByBarcode.get(product.barcode);
+        items.push(saved ? serialize(saved) : { ...product, id: null, source: 'off' });
       }
     } catch (error) {
       if (error instanceof OffUnavailableError) offAvailable = false;

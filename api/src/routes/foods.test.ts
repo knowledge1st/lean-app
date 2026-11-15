@@ -1,5 +1,5 @@
 import type { Food, FoodSearchResponse, LoginResponse } from '@lean/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createTestUser,
@@ -90,7 +90,7 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
       await db.delete(mealEntries).where(eq(mealEntries.userId, account.user.id));
     for (const account of accounts) await deleteTestUser(db, account.user.id);
     if (codes.length)
-      await db.delete(foods).where(and(eq(foods.source, 'off'), inArray(foods.barcode, codes)));
+      await db.delete(foods).where(and(ne(foods.source, 'custom'), inArray(foods.barcode, codes)));
   }, 30_000);
   it('creates a custom food with POST /api/foods without a trailing slash', async () => {
     const response = await request('', tokens[0], 'POST', custom);
@@ -156,43 +156,63 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
     expect(await (await request(`/barcode/${barcode}`)).json()).toEqual(own);
     expect(offFetch).not.toHaveBeenCalled();
   });
-  it('appends unsaved OFF results, deduplicates stored codes and respects the total limit', async () => {
-    const storedCode = code(),
-      externalCode = code(),
-      extraCode = code();
-    await db.insert(foods).values({
-      source: 'off',
-      barcode: storedCode,
-      name: 'Producto guardado',
-      kcalPer100g: 100,
-      proteinPer100g: '1',
-      carbsPer100g: '1',
-      fatPer100g: '1',
-    });
-    const local = await create(tokens[0], { name: 'zzqxfood local' });
-    offFetch.mockImplementation(async () =>
-      Response.json({
-        products: [
-          rawProduct(storedCode),
-          rawProduct(externalCode),
-          rawProduct(externalCode),
-          rawProduct(extraCode),
-        ],
-      }),
-    );
-    const result = await search('zzqxfood', tokens[0], 3);
-    expect(result.offAvailable).toBe(true);
-    expect(result.items.map((f) => f.id)).toEqual([local.id, null, null]);
-    expect(result.items.map((f) => f.barcode)).toEqual([null, externalCode, extraCode]);
-    expect(result.items.slice(1).every((f) => f.source === 'off')).toBe(true);
-    expect(
-      await db
-        .select()
-        .from(foods)
-        .where(inArray(foods.barcode, [externalCode, extraCode])),
-    ).toEqual([]);
-    expect((await search('zzqxfood', tokens[0], 2)).items).toHaveLength(2);
-  });
+  it.each(['off', 'seed'] as const)(
+    'deduplicates local %s foods and restores stored rows missing from local results',
+    async (source) => {
+      const includedCode = code(),
+        storedCode = code(),
+        externalCode = code(),
+        extraCode = code();
+      const [included, stored] = await db
+        .insert(foods)
+        .values(
+          [
+            { barcode: includedCode, name: 'zzqxfood local' },
+            { barcode: storedCode, name: 'Producto guardado' },
+          ].map((food) => ({
+            ...food,
+            source,
+            kcalPer100g: 100,
+            proteinPer100g: '1',
+            carbsPer100g: '1',
+            fatPer100g: '1',
+          })),
+        )
+        .returning();
+      offFetch.mockImplementation(async () =>
+        Response.json({
+          products: [
+            rawProduct(includedCode),
+            rawProduct(externalCode),
+            rawProduct(storedCode),
+            rawProduct(storedCode),
+            rawProduct(externalCode),
+            rawProduct(extraCode),
+          ],
+        }),
+      );
+      const result = await search('zzqxfood', tokens[0], 4);
+      expect(result.offAvailable).toBe(true);
+      expect(result.items.map((f) => f.id)).toEqual([included!.id, null, stored!.id, null]);
+      expect(result.items.map((f) => f.barcode)).toEqual([
+        includedCode,
+        externalCode,
+        storedCode,
+        extraCode,
+      ]);
+      expect(result.items[0]).toMatchObject({ source, name: included!.name, kcal: 100 });
+      expect(result.items[2]).toMatchObject({ source, name: stored!.name, kcal: 100 });
+      expect(result.items[1]).toMatchObject({ id: null, source: 'off' });
+      expect(result.items[3]).toMatchObject({ id: null, source: 'off' });
+      expect(
+        await db
+          .select()
+          .from(foods)
+          .where(inArray(foods.barcode, [externalCode, extraCode])),
+      ).toEqual([]);
+      expect((await search('zzqxfood', tokens[0], 3)).items).toEqual(result.items.slice(0, 3));
+    },
+  );
   it('degrades search on outages and returns 503 for barcode outages', async () => {
     offFetch.mockRejectedValue(new Error('offline'));
     expect(await search('zzqxrare')).toEqual({ items: [], offAvailable: false });
