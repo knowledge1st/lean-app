@@ -274,22 +274,47 @@ describe('api', () => {
       expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
     });
 
-    it('desactiva el timeout al recibir la respuesta aunque el cuerpo siga pendiente', async () => {
-      let resolveBody!: (body: unknown) => void;
-      const response = new Response();
-      vi.spyOn(response, 'json').mockReturnValue(
-        new Promise((resolve) => {
-          resolveBody = resolve;
-        }),
-      );
-      fetchMock.mockResolvedValueOnce(response);
-      const request = client.get('/me');
-      await vi.advanceTimersByTimeAsync(15000);
-      expect(vi.getTimerCount()).toBe(0);
-      expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
-      resolveBody({ ok: true });
-      await expect(request).resolves.toEqual({ ok: true });
-    });
+    it.each([200, 400, 401])(
+      'traduce el timeout al leer el cuerpo a network_error (status: %s)',
+      async (status) => {
+        setToken('session-token');
+        const listener = vi.fn();
+        const unsubscribe = onUnauthorized(listener);
+        const response = new Response(null, { status });
+        const json = vi.spyOn(response, 'json').mockImplementation(
+          () =>
+            new Promise((_resolve, reject) => {
+              fetchMock.mock.calls[0]?.[1]?.signal?.addEventListener('abort', () =>
+                reject(new Error('Body interrupted')),
+              );
+            }),
+        );
+        fetchMock.mockResolvedValueOnce(response);
+        try {
+          const request = client.get('/me');
+          const rejection = expect(request).rejects.toMatchObject({
+            name: 'ApiError',
+            status: 0,
+            code: 'network_error',
+            message: 'No se pudo conectar con el servidor.',
+          });
+          await vi.advanceTimersByTimeAsync(14999);
+          expect(json).toHaveBeenCalledOnce();
+          expect(vi.getTimerCount()).toBe(1);
+          expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+          await vi.advanceTimersByTimeAsync(1);
+          await rejection;
+          await expect(request).rejects.toBeInstanceOf(ApiError);
+          expect(vi.getTimerCount()).toBe(0);
+          expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+          expect(getToken()).toBe('session-token');
+          expect(listener).not.toHaveBeenCalled();
+          expect(window.location.hash).toBe('#/hoy');
+        } finally {
+          unsubscribe();
+        }
+      },
+    );
 
     it.each([200, 503])(
       'limpia recursos y propaga el abort al leer el cuerpo (status: %s)',

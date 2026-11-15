@@ -68,7 +68,11 @@ export function createApiClient({
     const abortFromCaller = () => controller.abort(options.signal?.reason);
     options.signal?.addEventListener('abort', abortFromCaller);
     if (options.signal?.aborted) abortFromCaller();
-    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, options.timeoutMs ?? timeoutMs);
 
     try {
       let response: Response;
@@ -84,15 +88,12 @@ export function createApiClient({
         if (options.signal?.aborted) throw error;
         throw new ApiError(0, 'network_error', 'No se pudo conectar con el servidor.');
       }
-      // The timeout only covers fetching the response, not reading its body.
-      clearTimeout(timer);
-
       if (!response.ok) {
         let payload: unknown;
         try {
           payload = await response.json();
         } catch (error) {
-          if (options.signal?.aborted) throw error;
+          if (options.signal?.aborted || timedOut) throw error;
           payload = undefined;
         }
         const detail = isApiErrorBody(payload)
@@ -116,6 +117,12 @@ export function createApiClient({
 
       if (response.status === 204) return undefined as T;
       return (await response.json()) as T;
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      if (timedOut) {
+        throw new ApiError(0, 'network_error', 'No se pudo conectar con el servidor.');
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', abortFromCaller);
