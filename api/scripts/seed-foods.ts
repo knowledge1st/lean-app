@@ -20,6 +20,7 @@ export const CALORIE_CHECK_EXCEPTIONS: Record<string, string> = Object.fromEntri
     'Espinaca cruda',
     'Espinaca hervida',
     'Acelga hervida',
+    'Brócoli crudo',
     'Champiñones crudos',
     'Champiñones hervidos',
   ].map((name) => [

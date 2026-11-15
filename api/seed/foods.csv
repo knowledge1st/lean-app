@@ -28,7 +28,7 @@ Tapa de cuadril a la parrilla,242,26,0.8,15,150,1 porción
 Vacío magro crudo,155,21.2,0,7.17,,
 Vacío magro a la parrilla,192,27.7,0,8.23,150,1 porción
 Asado de tira crudo,235,17.5,0,18.3,,
-Asado de tira cocido,305,25.5,0,22.6,150,1 porción
+Asado de tira braseado,305,25.5,0,22.6,150,1 porción
 Carne picada vacuna común cruda,254,17.17,0,20,,
 Carne picada vacuna magra cruda,176,20,0,10,,
 Carne picada vacuna muy magra cruda,137,21.41,0,5,,
@@ -78,12 +78,12 @@ Queso mozzarella entero,300,22.17,2.19,22.35,28,1 porción
 Queso cremoso,300,22.17,2.19,22.35,30,1 porción
 Queso port salut,352,23.78,0.57,28.2,30,1 porción
 Queso parmesano,392,35.75,3.22,25.83,30,1 porción
-Queso parmesano rallado,431,38.46,4.06,28.61,5,1 cucharada
-Queso untable entero,342,5.93,4.07,34.24,14.5,1 cucharada
-Ricota entera,174,11.26,3.04,12.98,62,1/4 taza
+Queso parmesano rallado,420,28.4,13.9,27.8,5,1 cucharada
+Queso untable entero,350,6.15,5.52,34.4,14.5,1 cucharada
+Ricota entera,150,7.54,7.27,10.2,62,1/4 taza
 Ricota parcialmente descremada,138,11.39,5.14,7.91,62,1/4 taza
 Queso cottage,98,11.12,3.38,4.3,113,1/2 taza
-Queso cheddar,403,24.9,1.28,33.14,28,1 porción
+Queso cheddar,403,22.9,3.37,33.3,28,1 porción
 Queso azul,353,21.4,2.34,28.74,28,1 porción
 Manteca con sal,717,0.85,0.06,81.11,14.2,1 cucharada
 Crema de leche espesa,340,2.84,2.74,36.08,15,1 cucharada
@@ -175,6 +175,7 @@ Berenjena cruda,25,0.98,5.88,0.18,,
 Berenjena hervida,35,0.83,8.73,0.23,99,1 taza en cubos
 Zucchini con cáscara crudo,17,1.21,3.11,0.32,196,1 unidad mediana
 Zucchini con cáscara hervido,15,1.14,2.69,0.36,180,1 taza en rodajas
+Brócoli crudo,34,2.82,6.64,0.37,91,1 taza picado
 Brócoli hervido,35,2.38,7.18,0.41,156,1 taza cortado
 Repollo blanco crudo,25,1.28,5.8,0.1,89,1 taza picado
 Repollo colorado crudo,31,1.43,7.37,0.16,89,1 taza picado

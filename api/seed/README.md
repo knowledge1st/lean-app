@@ -22,7 +22,15 @@ Los macronutrientes tienen hasta dos decimales. Las porciones son ayudas de carg
 
 Fuente nutricional: [USDA FoodData Central](https://fdc.nal.usda.gov/), principalmente entradas de **SR Legacy**, de dominio público, publicadas bajo **CC0**. La tabla al final identifica la descripción de la entrada utilizada para cada fila. No se agregan FDC IDs recordados con incertidumbre.
 
-La selección original se realizó **sin acceso a la red ni a una descarga local de USDA**, usando conocimiento recordado de esas entradas. Las 23 filas incorporadas en esta corrección fueron verificadas por el orquestador contra FDC (SR Legacy), con los IDs y las descripciones registrados en la tabla. Las entradas anteriores conservan su alcance original de transcripción pendiente de cotejo externo. Antes de considerar esta semilla una transcripción auditada, queda pendiente cotejarla con un export oficial, fijar los FDC IDs y registrar la versión del dataset. La comprobación matemática documentada abajo verifica consistencia interna, no identidad con la fuente.
+La selección original se realizó **sin acceso a la red ni a una descarga local de USDA**, usando conocimiento recordado de esas entradas. El alcance del cotejo externo se detalla en «Verificación». Antes de considerar esta semilla una transcripción auditada, queda pendiente cotejar las demás filas con un export oficial, completar los FDC IDs y registrar la versión del dataset. La comprobación matemática documentada abajo verifica consistencia interna, no identidad con la fuente.
+
+## Verificación
+
+El orquestador cotejó contra USDA FoodData Central (SR Legacy) las **23 filas agregadas en la corrección anterior** y las **6 filas de esta corrección**: Queso parmesano rallado, Queso untable entero, Queso cheddar, Ricota entera, Asado de tira braseado y Brócoli crudo. Sus FDC IDs y descripciones figuran en la tabla de correspondencias, con la indicación «verificado contra FDC».
+
+También cotejó un muestreo de **15 filas**: pechuga de pollo cocida, carne picada común, huevo crudo, leche entera, yogur entero, mozzarella, dulce de leche, avena, batata hervida, tomate, banana, manzana, palta, almendras y pan francés; además de los quesos port salut, parmesano, azul, cottage y ricota parcialmente descremada. Todos quedaron dentro de **±10 %** de los valores de FDC.
+
+Las demás filas provienen del conocimiento de USDA del subagente, **sin cotejo fila por fila**.
 
 Los valores representan la entrada USDA seleccionada, no una medición de productos argentinos. Las recetas, marcas, especies, humedad y porcentaje de grasa pueden cambiar sustancialmente el resultado. No se promediaron entradas ni se ajustaron nutrientes para cerrar las calorías.
 
@@ -40,13 +48,13 @@ Se calculó para cada fila `E = 4 × proteínas + 4 × carbohidratos + 9 × gras
 
 Las excepciones alcohólicas presentes son **Cerveza**, **Vino tinto**, **Vino blanco** y **Whisky**: el etanol aporta energía que no figura en los tres macronutrientes. Whisky representa un destilado de 40 % vol. La lista de excepciones admitida por el importador también contempla Fernet, Vodka, Gin y Ron, que no se incluyen en este archivo.
 
-Se agregan excepciones explícitas para **Espinaca cruda**, **Espinaca hervida**, **Acelga hervida**, **Champiñones crudos** y **Champiñones hervidos**. Son verduras con mucha fibra y agua, cuya energía USDA se calcula con factores de Atwater específicos, menores que 4/4/9. **Limón sin cáscara crudo** tiene una excepción por sus ácidos orgánicos y fibra, con factores de Atwater específicos de USDA. El test exige que cada excepción no alcohólica exista en el CSV real. Las excepciones alcohólicas pueden faltar.
+Se agregan excepciones explícitas para **Espinaca cruda**, **Espinaca hervida**, **Acelga hervida**, **Brócoli crudo**, **Champiñones crudos** y **Champiñones hervidos**. Son verduras con mucha fibra y agua, cuya energía USDA se calcula con factores de Atwater específicos, menores que 4/4/9. **Limón sin cáscara crudo** tiene una excepción por sus ácidos orgánicos y fibra, con factores de Atwater específicos de USDA. El test exige que cada excepción no alcohólica exista en el CSV real. Las excepciones alcohólicas pueden faltar.
 
 La tolerancia absoluta de **±5 kcal para alimentos de menos de 20 kcal** se mantiene por decisión del orquestador.
 
 Se mantienen excluidos por no cumplir la tolerancia repollo blanco hervido, palmitos en conserva, lima, cacao amargo y vinagre de vino tinto. No se redujeron sus carbohidratos ni se alteraron sus kilocalorías para hacerlos pasar. El vinagre contiene ácidos orgánicos que esta fórmula no contempla; la exclusión no implica que su energía USDA sea incorrecta.
 
-**Resultado del control:** 315 filas; 305 cumplen la regla general; 4 excepciones alcohólicas y 6 excepciones por factores específicos de Atwater permitidas; **0 fallas**. También pasan encabezado, unicidad normalizada, no negatividad, suma de macronutrientes ≤ 100, precisión decimal y pares de porción completos.
+**Resultado del control:** 316 filas; 305 cumplen la regla general; 4 excepciones alcohólicas y 7 excepciones por factores específicos de Atwater permitidas; **sin fallas**. Los valores verificados de FDC (34 kcal, 2.82 g de proteínas, 6.64 g de carbohidratos y 0.37 g de grasas por 100 g) producen 41.17 kcal con 4/4/9, una diferencia de 21.09 %, superior al límite de 20 %. Se conservan los valores exactos de FDC y se admite Brócoli crudo como excepción por factores específicos de Atwater en el validador. También pasan encabezado, unicidad normalizada, no negatividad, suma de macronutrientes ≤ 100, precisión decimal y pares de porción completos.
 
 ## Carga
 
@@ -66,16 +74,16 @@ El script `api/scripts/seed-foods.ts` está implementado en esta rama. Valida el
 | Huevos y lácteos        |      28 |
 | Cereales y derivados    |      32 |
 | Legumbres               |      20 |
-| Verduras                |      57 |
+| Verduras                |      58 |
 | Frutas                  |      42 |
 | Frutos secos y semillas |      17 |
 | Aceites y grasas        |       9 |
 | Panificados             |      16 |
 | Bebidas                 |      15 |
 | Dulces y despensa       |      18 |
-| **Total**               | **315** |
+| **Total**               | **316** |
 
-Las correspondencias aproximadas y las formulaciones variables se explican en la tabla siguiente. Quedan pendientes el cotejo externo y los identificadores de las entradas originales, la versión del dataset y la cobertura de los productos argentinos aún omitidos. No hay fallas matemáticas pendientes.
+Las correspondencias aproximadas y las formulaciones variables se explican en la tabla siguiente. Quedan pendientes el cotejo externo de las filas aún no verificadas y los identificadores faltantes, la versión del dataset y la cobertura de los productos argentinos aún omitidos. Queda pendiente la excepción de Brócoli crudo en el validador indicada arriba.
 
 ## Correspondencia completa con USDA
 
@@ -112,7 +120,7 @@ Las correspondencias aproximadas y las formulaciones variables se explican en la
 | Vacío magro crudo                   | 169563 | Beef, flank, steak, separable lean and fat, trimmed to 0" fat, all grades, raw                                         | verificado contra FDC. Aproximación con flank steak desgrasado. El vacío argentino suele tener más grasa                                       |
 | Vacío magro a la parrilla           | 168733 | Beef, flank, steak, separable lean and fat, trimmed to 0" fat, all grades, cooked, broiled                             | verificado contra FDC. Aproximación con flank steak desgrasado. El vacío argentino suele tener más grasa                                       |
 | Asado de tira crudo                 | 170826 | Beef, chuck, short ribs, boneless, separable lean and fat, trimmed to 0" fat, all grades, raw                          | verificado contra FDC. Aproximación con short ribs de chuck sin hueso                                                                          |
-| Asado de tira cocido                | 171222 | Beef, chuck, short ribs, boneless, separable lean and fat, trimmed to 0" fat, all grades, cooked, braised              | verificado contra FDC. Aproximación con short ribs de chuck sin hueso, cocidos por braseado. La cocción a la parrilla requiere otra referencia |
+| Asado de tira braseado              | 171222 | Beef, chuck, short ribs, boneless, separable lean and fat, trimmed to 0" fat, all grades, cooked, braised              | verificado contra FDC. Aproximación con short ribs de chuck sin hueso, cocidos por braseado. La cocción a la parrilla requiere otra referencia |
 | Carne picada vacuna común cruda     |        | Beef, ground, 80% lean meat / 20% fat, raw                                                                             | 20 % de grasa como definición operativa de común; varía entre carnicerías                                                                      |
 | Carne picada vacuna magra cruda     |        | Beef, ground, 90% lean meat / 10% fat, raw                                                                             | 10 % de grasa como definición operativa de magra                                                                                               |
 | Carne picada vacuna muy magra cruda |        | Beef, ground, 95% lean meat / 5% fat, raw                                                                              | 5 % de grasa como definición operativa de muy magra                                                                                            |
@@ -147,36 +155,36 @@ Las correspondencias aproximadas y las formulaciones variables se explican en la
 
 ### Huevos y lácteos
 
-| Nombre en el CSV                      | FDC ID | Descripción de la entrada USDA                                           | Alcance / aproximación                                                      |
-| ------------------------------------- | ------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| Huevo entero crudo                    |        | Egg, whole, raw, fresh                                                   | Directa                                                                     |
-| Huevo duro                            |        | Egg, whole, cooked, hard-boiled                                          | Directa                                                                     |
-| Huevo frito                           |        | Egg, whole, cooked, fried                                                | Directa                                                                     |
-| Clara de huevo cruda                  |        | Egg, white, raw, fresh                                                   | Directa                                                                     |
-| Yema de huevo cruda                   |        | Egg, yolk, raw, fresh                                                    | Directa                                                                     |
-| Leche entera                          |        | Milk, whole, 3.25% milkfat, with added vitamin D                         | Directa                                                                     |
-| Leche descremada                      |        | Milk, nonfat, fluid, with added vitamin A and vitamin D                  | Directa                                                                     |
-| Leche parcialmente descremada al 2 %  |        | Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D | Directa                                                                     |
-| Leche parcialmente descremada al 1 %  |        | Milk, lowfat, fluid, 1% milkfat, with added vitamin A and vitamin D      | Directa                                                                     |
-| Yogur natural entero                  |        | Yogurt, plain, whole milk                                                | Directa                                                                     |
-| Yogur natural descremado              |        | Yogurt, plain, skim milk                                                 | Directa                                                                     |
-| Yogur natural parcialmente descremado |        | Yogurt, plain, low fat                                                   | Directa                                                                     |
-| Yogur griego natural descremado       |        | Yogurt, Greek, plain, nonfat                                             | Directa                                                                     |
-| Yogur griego natural entero           |        | Yogurt, Greek, plain, whole milk                                         | Directa                                                                     |
-| Queso mozzarella entero               |        | Cheese, mozzarella, whole milk                                           | Directa                                                                     |
-| Queso cremoso                         |        | Cheese, mozzarella, whole milk                                           | Proxy de mozzarella entera; humedad y grasa del cremoso argentino variables |
-| Queso port salut                      |        | Cheese, port de salut                                                    | Port de salut USDA; no equivale a versiones argentinas light                |
-| Queso parmesano                       |        | Cheese, parmesan, hard                                                   | Directa                                                                     |
-| Queso parmesano rallado               |        | Cheese, parmesan, grated                                                 | Directa                                                                     |
-| Queso untable entero                  |        | Cheese, cream                                                            | Cream cheese entero; las marcas argentinas difieren en humedad              |
-| Ricota entera                         |        | Cheese, ricotta, whole milk                                              | Directa                                                                     |
-| Ricota parcialmente descremada        |        | Cheese, ricotta, part skim milk                                          | Directa                                                                     |
-| Queso cottage                         |        | Cheese, cottage, creamed, large or small curd                            | Directa                                                                     |
-| Queso cheddar                         |        | Cheese, cheddar                                                          | Directa                                                                     |
-| Queso azul                            |        | Cheese, blue                                                             | Directa                                                                     |
-| Manteca con sal                       |        | Butter, salted                                                           | Directa                                                                     |
-| Crema de leche espesa                 |        | Cream, fluid, heavy whipping                                             | Crema USDA de aproximadamente 36 % de grasa                                 |
-| Dulce de leche                        |        | Dulce de Leche                                                           | Directa                                                                     |
+| Nombre en el CSV                      | FDC ID | Descripción de la entrada USDA                                           | Alcance / aproximación                                                                |
+| ------------------------------------- | ------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Huevo entero crudo                    |        | Egg, whole, raw, fresh                                                   | Directa                                                                               |
+| Huevo duro                            |        | Egg, whole, cooked, hard-boiled                                          | Directa                                                                               |
+| Huevo frito                           |        | Egg, whole, cooked, fried                                                | Directa                                                                               |
+| Clara de huevo cruda                  |        | Egg, white, raw, fresh                                                   | Directa                                                                               |
+| Yema de huevo cruda                   |        | Egg, yolk, raw, fresh                                                    | Directa                                                                               |
+| Leche entera                          |        | Milk, whole, 3.25% milkfat, with added vitamin D                         | Directa                                                                               |
+| Leche descremada                      |        | Milk, nonfat, fluid, with added vitamin A and vitamin D                  | Directa                                                                               |
+| Leche parcialmente descremada al 2 %  |        | Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D | Directa                                                                               |
+| Leche parcialmente descremada al 1 %  |        | Milk, lowfat, fluid, 1% milkfat, with added vitamin A and vitamin D      | Directa                                                                               |
+| Yogur natural entero                  |        | Yogurt, plain, whole milk                                                | Directa                                                                               |
+| Yogur natural descremado              |        | Yogurt, plain, skim milk                                                 | Directa                                                                               |
+| Yogur natural parcialmente descremado |        | Yogurt, plain, low fat                                                   | Directa                                                                               |
+| Yogur griego natural descremado       |        | Yogurt, Greek, plain, nonfat                                             | Directa                                                                               |
+| Yogur griego natural entero           |        | Yogurt, Greek, plain, whole milk                                         | Directa                                                                               |
+| Queso mozzarella entero               |        | Cheese, mozzarella, whole milk                                           | Directa                                                                               |
+| Queso cremoso                         |        | Cheese, mozzarella, whole milk                                           | Proxy de mozzarella entera; humedad y grasa del cremoso argentino variables           |
+| Queso port salut                      |        | Cheese, port de salut                                                    | Port de salut USDA; no equivale a versiones argentinas light                          |
+| Queso parmesano                       |        | Cheese, parmesan, hard                                                   | Directa                                                                               |
+| Queso parmesano rallado               | 171247 | Cheese, parmesan, grated                                                 | verificado contra FDC                                                                 |
+| Queso untable entero                  | 173418 | Cheese, cream                                                            | verificado contra FDC. Cream cheese entero; las marcas argentinas difieren en humedad |
+| Ricota entera                         | 170851 | Cheese, ricotta, whole milk                                              | verificado contra FDC                                                                 |
+| Ricota parcialmente descremada        |        | Cheese, ricotta, part skim milk                                          | Directa                                                                               |
+| Queso cottage                         |        | Cheese, cottage, creamed, large or small curd                            | Directa                                                                               |
+| Queso cheddar                         | 173414 | Cheese, cheddar                                                          | verificado contra FDC                                                                 |
+| Queso azul                            |        | Cheese, blue                                                             | Directa                                                                               |
+| Manteca con sal                       |        | Butter, salted                                                           | Directa                                                                               |
+| Crema de leche espesa                 |        | Cream, fluid, heavy whipping                                             | Crema USDA de aproximadamente 36 % de grasa                                           |
+| Dulce de leche                        |        | Dulce de Leche                                                           | Directa                                                                               |
 
 ### Cereales y derivados
 
@@ -279,6 +287,7 @@ Las correspondencias aproximadas y las formulaciones variables se explican en la
 | Berenjena hervida            |        | Eggplant, cooked, boiled, drained, without salt                                | Directa                                                                  |
 | Zucchini con cáscara crudo   |        | Squash, summer, zucchini, includes skin, raw                                   | Directa                                                                  |
 | Zucchini con cáscara hervido |        | Squash, summer, zucchini, includes skin, cooked, boiled, drained, without salt | Directa                                                                  |
+| Brócoli crudo                | 170379 | Broccoli, raw                                                                  | verificado contra FDC                                                    |
 | Brócoli hervido              |        | Broccoli, cooked, boiled, drained, without salt                                | Directa                                                                  |
 | Repollo blanco crudo         |        | Cabbage, raw                                                                   | Directa                                                                  |
 | Repollo colorado crudo       |        | Cabbage, red, raw                                                              | Directa                                                                  |
