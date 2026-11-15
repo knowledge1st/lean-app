@@ -96,9 +96,12 @@ export const foods = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex('foods_barcode_idx')
+    uniqueIndex('foods_shared_barcode_idx')
       .on(t.barcode)
-      .where(sql`${t.barcode} IS NOT NULL`),
+      .where(sql`${t.barcode} IS NOT NULL AND ${t.source} <> 'custom'`),
+    uniqueIndex('foods_owner_barcode_idx')
+      .on(t.ownerId, t.barcode)
+      .where(sql`${t.barcode} IS NOT NULL AND ${t.source} = 'custom'`),
     index('foods_name_trgm_idx').using('gin', t.name.op('gin_trgm_ops')),
     index('foods_brand_trgm_idx').using('gin', t.brand.op('gin_trgm_ops')),
     index('foods_owner_id_idx').on(t.ownerId),
