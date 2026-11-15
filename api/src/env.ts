@@ -5,4 +5,5 @@ export interface Env {
 
 export interface AppEnv {
   Bindings: Env;
+  Variables: { userId: string; sessionId: string };
 }

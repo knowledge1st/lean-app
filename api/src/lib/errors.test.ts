@@ -26,7 +26,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('error handling', () => {
   it('returns 404 with the error format for unknown routes', async () => {
-    const res = await app.request('/api/does-not-exist', {}, testEnv);
+    const res = await app.request('/does-not-exist', {}, testEnv);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({
       error: { code: 'not_found', message: 'Route not found' },
@@ -54,5 +54,6 @@ describe('error handling', () => {
       error: { code: 'internal_error', message: 'Internal server error' },
     });
     expect(body).not.toContain('secret');
+    expect(console.error).toHaveBeenCalledWith('Unhandled API error');
   });
 });
