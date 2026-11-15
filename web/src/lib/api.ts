@@ -20,6 +20,15 @@ export interface ApiOptions {
 
 type RequestOptions = Omit<ApiOptions, 'method' | 'body'>;
 
+const unauthorizedListeners = new Set<() => void>();
+
+export function onUnauthorized(listener: () => void): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
+
 function isApiErrorBody(value: unknown): value is { error: { code: string; message: string } } {
   if (typeof value !== 'object' || value === null || !('error' in value)) return false;
   const error = value.error;
@@ -62,12 +71,6 @@ export function createApiClient({ baseUrl }: { baseUrl?: string }) {
     }
 
     if (!response.ok) {
-      if (response.status === 401) {
-        clearToken();
-        if (typeof window !== 'undefined' && window.location.hash !== '#/login') {
-          window.location.hash = '#/login';
-        }
-      }
       let payload: unknown;
       try {
         payload = await response.json();
@@ -77,6 +80,14 @@ export function createApiClient({ baseUrl }: { baseUrl?: string }) {
       const detail = isApiErrorBody(payload)
         ? payload.error
         : { code: 'http_error', message: 'No se pudo completar la solicitud.' };
+      if (response.status === 401 && detail.code !== 'invalid_credentials') {
+        clearToken();
+        if (unauthorizedListeners.size) {
+          unauthorizedListeners.forEach((listener) => listener());
+        } else if (typeof window !== 'undefined' && window.location.hash !== '#/login') {
+          window.location.hash = '#/login';
+        }
+      }
       throw new ApiError(response.status, detail.code, detail.message);
     }
 

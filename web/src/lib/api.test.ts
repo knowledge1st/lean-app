@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, createApiClient } from './api';
+import { ApiError, createApiClient, onUnauthorized } from './api';
 import { clearToken, getToken, setToken } from './session';
 
 const client = createApiClient({ baseUrl: 'http://localhost:8787/' });
@@ -58,6 +58,49 @@ describe('api', () => {
     await expect(client.get('/me')).rejects.toMatchObject({ status: 401, code: 'unauthorized' });
     expect(localStorage.getItem('lean.session')).toBeNull();
     expect(window.location.hash).toBe('#/login');
+  });
+
+  it('notifica a los listeners sin cambiar el hash y permite desuscribirse', async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    setToken('expired-token');
+    fetchMock.mockImplementation(async () => new Response('{}', { status: 401 }));
+    try {
+      await expect(client.get('/me')).rejects.toMatchObject({ status: 401 });
+      expect(getToken()).toBeNull();
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(window.location.hash).toBe('#/hoy');
+    } finally {
+      unsubscribe();
+    }
+    await expect(client.get('/me')).rejects.toMatchObject({ status: 401 });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe('#/login');
+  });
+
+  it('invalid_credentials conserva token, hash y no notifica', async () => {
+    setToken('valid-token');
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: 'invalid_credentials', message: 'Usuario o contraseña incorrectos' },
+        }),
+        { status: 401 },
+      ),
+    );
+    try {
+      await expect(client.post('/api/auth/password', {})).rejects.toMatchObject({
+        status: 401,
+        code: 'invalid_credentials',
+      });
+      expect(getToken()).toBe('valid-token');
+      expect(window.location.hash).toBe('#/hoy');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it.each(['not json', '{}', '{"error":{"code":12,"message":"No"}}'])(
