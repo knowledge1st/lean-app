@@ -22,7 +22,6 @@ export function QuantityStep({
         {food.brand && <p className="truncate text-muted">{food.brand}</p>}
       </div>
       <NumberInput
-        autoFocus
         label="Gramos"
         unit="g"
         value={value}

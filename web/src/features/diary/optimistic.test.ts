@@ -3,7 +3,8 @@ import { MEALS, ZERO_MACROS, type DaySummary, type Entry, type Food } from '@lea
 import {
   applyDiaryAction,
   recalculateSummary,
-  revertDiaryAction,
+  applyPendingDiaryActions,
+  incorporateDiaryResult,
   type DiaryAction,
 } from './optimistic';
 const food: Food = {
@@ -80,39 +81,53 @@ it('suma antes de redondear y conserva la meta', () => {
   expect(result.target).toBe(target);
 });
 
-it.each(['add', 'edit', 'delete'] as const)(
-  'revierte %s conservando otra alta optimista y recalculando las comidas',
-  (kind) => {
-    const action: DiaryAction =
-      kind === 'add'
-        ? { kind, date: summary.date, meal: 'breakfast', food, grams: 150, temporaryId: entry.id }
-        : kind === 'edit'
-          ? { kind, entry, changes: { grams: 50, meal: 'dinner', status: 'planned' } }
-          : { kind, entry };
-    const initial = kind === 'add' ? summary : added;
-    const concurrent = applyDiaryAction(applyDiaryAction(initial, action), {
-      kind: 'add',
-      date: summary.date,
-      meal: 'lunch',
-      food,
-      grams: 100,
-      temporaryId: 'temp-other',
-    });
-    const before = structuredClone(concurrent);
-    const result = revertDiaryAction(concurrent, action);
-    expect(result.meals.flatMap((meal) => meal.entries).map((item) => item.id)).toEqual(
-      kind === 'add' ? ['temp-other'] : [entry.id, 'temp-other'],
-    );
-    expect(result.meals[0]!.entries).toEqual(kind === 'add' ? [] : [entry]);
-    expect(result.meals[1]!.eaten.kcal).toBe(200);
-    expect(result.meals[3]!.entries).toEqual([]);
-    expect(result.eaten).toEqual({
-      kcal: kind === 'add' ? 200 : 500,
-      protein: kind === 'add' ? 10 : 25,
-      carbs: kind === 'add' ? 20 : 50,
-      fat: kind === 'add' ? 5 : 12.5,
-    });
-    expect(result.planned).toEqual(ZERO_MACROS);
-    expect(concurrent).toEqual(before);
-  },
-);
+it('aplica pendientes en orden sobre la base sin restaurar campos de una copia optimista', () => {
+  const edit: DiaryAction = { kind: 'edit', entry, changes: { grams: 200 } };
+  const edited = applyDiaryAction(added, edit).meals[0]!.entries[0]!;
+  const move: DiaryAction = { kind: 'edit', entry: edited, changes: { meal: 'dinner' } };
+  const result = applyPendingDiaryActions(added, [edit, move]);
+  expect(result.meals[3]!.entries[0]).toMatchObject({ grams: 200, meal: 'dinner' });
+  expect(applyPendingDiaryActions(added, [move]).meals[3]!.entries[0]).toMatchObject({
+    grams: 150,
+    meal: 'dinner',
+  });
+  expect(added.meals[0]!.entries[0]).toBe(entry);
+});
+
+it('sin pendientes devuelve exactamente la base con los totales originales del servidor', () => {
+  const base = recalculateSummary(summary, [
+    { ...entry, kcal: 10 },
+    { ...entry, id: 'other', kcal: 10 },
+  ]);
+  base.eaten = { ...base.eaten, kcal: 21 };
+  base.meals[0]!.eaten = base.eaten;
+  expect(applyPendingDiaryActions(base, [])).toBe(base);
+  expect(applyPendingDiaryActions(base, []).eaten.kcal).toBe(21);
+});
+
+it.each(['add', 'edit', 'delete'] as const)('incorpora el resultado confirmado de %s', (kind) => {
+  const action: DiaryAction =
+    kind === 'add'
+      ? { kind, date: summary.date, meal: 'breakfast', food, grams: 150, temporaryId: 'temp' }
+      : kind === 'edit'
+        ? { kind, entry, changes: { grams: 50 } }
+        : { kind, entry };
+  const saved = { ...entry, id: kind === 'add' ? 'saved' : entry.id, grams: 50, kcal: 101 };
+  const base = kind === 'add' ? summary : added;
+  const before = structuredClone(base);
+  const result = incorporateDiaryResult(base, action, kind === 'delete' ? undefined : saved);
+  expect(result.meals[0]!.entries).toEqual(kind === 'delete' ? [] : [saved]);
+  expect(result.eaten.kcal).toBe(kind === 'delete' ? 0 : 101);
+  expect(base).toEqual(before);
+  const pending: DiaryAction = {
+    kind: 'add',
+    date: summary.date,
+    meal: 'lunch',
+    food,
+    grams: 100,
+    temporaryId: 'pending',
+  };
+  expect(applyPendingDiaryActions(result, [pending]).eaten.kcal).toBe(
+    kind === 'delete' ? 200 : 301,
+  );
+});

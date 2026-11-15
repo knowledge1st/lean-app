@@ -66,20 +66,29 @@ export function applyDiaryAction(summary: DaySummary, action: DiaryAction): DayS
   return recalculateSummary(summary, entries);
 }
 
-export function revertDiaryAction(summary: DaySummary, action: DiaryAction): DaySummary {
-  const entries = summary.meals.flatMap((meal) => meal.entries);
-  if (action.kind === 'add')
+export function applyPendingDiaryActions(
+  base: DaySummary,
+  pending: readonly DiaryAction[],
+): DaySummary {
+  return pending.reduce(applyDiaryAction, base);
+}
+
+export function incorporateDiaryResult(
+  base: DaySummary,
+  action: DiaryAction,
+  result: Entry | void,
+): DaySummary {
+  const entries = base.meals.flatMap((meal) => meal.entries);
+  if (action.kind === 'delete')
     return recalculateSummary(
-      summary,
-      entries.filter((entry) => entry.id !== action.temporaryId),
+      base,
+      entries.filter((entry) => entry.id !== action.entry.id),
     );
-  if (action.kind === 'edit')
-    return recalculateSummary(
-      summary,
-      entries.map((entry) => (entry.id === action.entry.id ? action.entry : entry)),
-    );
-  return recalculateSummary(summary, [
-    ...entries.filter((entry) => entry.id !== action.entry.id),
-    action.entry,
-  ]);
+  if (!result) return base;
+  return recalculateSummary(
+    base,
+    action.kind === 'add'
+      ? [...entries, result]
+      : entries.map((entry) => (entry.id === action.entry.id ? result : entry)),
+  );
 }

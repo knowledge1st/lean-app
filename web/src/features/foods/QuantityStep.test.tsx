@@ -28,6 +28,7 @@ function grams(value: string) {
 it('inicia con 100 y actualiza las cuatro macros en vivo', () => {
   setup();
   expect((screen.getByLabelText('Gramos') as HTMLInputElement).value).toBe('100');
+  expect(document.activeElement).not.toBe(screen.getByLabelText('Gramos'));
   grams('150');
   expect(screen.getByText('300 kcal')).toBeTruthy();
   expect(screen.getByText('Proteína: 15 g')).toBeTruthy();

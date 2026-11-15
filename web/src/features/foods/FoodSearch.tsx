@@ -76,7 +76,7 @@ export function FoodSearch({
           {error}
         </p>
       )}
-      {waiting || active.isPending ? (
+      {waiting || active.isPending || (!normalized && !items?.length && list.isFetching) ? (
         <Skeleton className="h-24" />
       ) : active.isError ? (
         <ErrorState
