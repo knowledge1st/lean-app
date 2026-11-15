@@ -1,0 +1,76 @@
+import { expect, it } from 'vitest';
+import { MEALS, ZERO_MACROS, type DaySummary, type Entry, type Food } from '@lean/shared';
+import { applyDiaryAction, recalculateSummary } from './optimistic';
+const food: Food = {
+  id: 'food',
+  source: 'seed',
+  name: 'Pan',
+  brand: null,
+  barcode: null,
+  kcal: 200,
+  protein: 10,
+  carbs: 20,
+  fat: 5,
+  servingG: null,
+  servingLabel: null,
+};
+const summary: DaySummary = {
+  date: '2026-11-14',
+  target: null,
+  eaten: ZERO_MACROS,
+  planned: ZERO_MACROS,
+  meals: MEALS.map((meal) => ({ meal, entries: [], eaten: ZERO_MACROS, planned: ZERO_MACROS })),
+};
+const added = applyDiaryAction(summary, {
+  kind: 'add',
+  date: summary.date,
+  meal: 'breakfast',
+  food,
+  grams: 150,
+  temporaryId: 'temp-1',
+});
+const entry = added.meals[0]!.entries[0]!;
+it('agrega una entrada temporal y recalcula sin mutar la respuesta', () => {
+  expect(added.eaten).toEqual({ kcal: 300, protein: 15, carbs: 30, fat: 7.5 });
+  expect(entry.food.name).toBe('Pan');
+  expect(entry.id).toBe('temp-1');
+  expect(summary.meals[0]!.entries).toEqual([]);
+});
+it('edita gramos y mueve entre comidas', () => {
+  const result = applyDiaryAction(added, {
+    kind: 'edit',
+    entry,
+    changes: { grams: 50, meal: 'dinner' },
+  });
+  expect(result.meals[0]!.entries).toHaveLength(0);
+  expect(result.meals[3]!.eaten.kcal).toBe(100);
+  expect(result.eaten.protein).toBe(5);
+});
+it('separa planificado y consumido, y marca como comido', () => {
+  const planned: Entry = { ...entry, status: 'planned' };
+  const result = recalculateSummary(summary, [planned]);
+  expect(result.eaten.kcal).toBe(0);
+  expect(result.planned.kcal).toBe(300);
+  const eaten = applyDiaryAction(result, {
+    kind: 'edit',
+    entry: planned,
+    changes: { status: 'eaten' },
+  });
+  expect(eaten.eaten.kcal).toBe(300);
+  expect(eaten.planned.kcal).toBe(0);
+});
+it('borra y resta totales', () => {
+  const result = applyDiaryAction(added, { kind: 'delete', entry });
+  expect(result.eaten).toEqual(ZERO_MACROS);
+  expect(result.meals.flatMap((meal) => meal.entries)).toHaveLength(0);
+});
+it('suma antes de redondear y conserva la meta', () => {
+  const target = { kcal: 2000, protein: 100, carbs: 250, fat: 60, waterMl: 2000 };
+  const result = recalculateSummary({ ...summary, target }, [
+    { ...entry, kcal: 10.4, protein: 0.14 },
+    { ...entry, id: 'other', kcal: 10.4, protein: 0.14 },
+  ]);
+  expect(result.eaten.kcal).toBe(21);
+  expect(result.eaten.protein).toBe(0.3);
+  expect(result.target).toBe(target);
+});

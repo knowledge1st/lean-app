@@ -3,7 +3,7 @@ import type { ComponentProps, ReactNode } from 'react';
 
 export type InputProps = ComponentProps<'input'> & {
   label?: string;
-  error?: string;
+  error?: string | undefined;
   suffix?: ReactNode;
 };
 

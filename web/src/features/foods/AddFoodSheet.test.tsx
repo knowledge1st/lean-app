@@ -1,0 +1,191 @@
+// @vitest-environment jsdom
+import { afterEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
+import type { Food } from '@lean/shared';
+import { jsonResponse } from '../../auth/testUtils';
+import { AddFoodSheet } from './AddFoodSheet';
+vi.mock('../../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/api')>();
+  return { ...actual, api: actual.createApiClient({ baseUrl: 'http://localhost' }) };
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+const food: Food = {
+  id: 'food',
+  source: 'seed',
+  name: 'Pan',
+  brand: 'Marca',
+  barcode: '12345678',
+  kcal: 200,
+  protein: 10,
+  carbs: 20,
+  fat: 5,
+  servingG: 30,
+  servingLabel: '1 rebanada',
+};
+function setup() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const onAdd = vi.fn();
+  function Harness() {
+    const [open, setOpen] = useState(true);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Abrir hoja</button>
+        {open && (
+          <AddFoodSheet
+            date="2026-11-14"
+            meal="breakfast"
+            onClose={() => setOpen(false)}
+            onAdd={(selected, grams) => {
+              onAdd(selected, grams);
+              setOpen(false);
+            }}
+          />
+        )}
+      </>
+    );
+  }
+  render(
+    <QueryClientProvider client={client}>
+      <Harness />
+    </QueryClientProvider>,
+  );
+  return { client, onAdd };
+}
+it('completa la carga con la porción inicial y reinicia la hoja al reabrir', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([food])));
+  const { client, onAdd } = setup();
+  fireEvent.click(await screen.findByText('Pan'));
+  fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+  expect(onAdd).toHaveBeenCalledWith(food, 30);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByText('Abrir hoja'));
+  expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();
+  expect(screen.queryByLabelText('Gramos')).toBeNull();
+  client.clear();
+});
+it('espera 300 ms, recorta la búsqueda y muestra aviso OFF y creación sin resultados', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockImplementation((input) =>
+      Promise.resolve(
+        jsonResponse(String(input).includes('/search') ? { items: [], offAvailable: false } : []),
+      ),
+    );
+  vi.stubGlobal('fetch', fetchMock);
+  const { client } = setup();
+  await screen.findByText('Todavía no hay alimentos recientes.');
+  vi.useFakeTimers();
+  fireEvent.change(screen.getByLabelText('Buscar alimento'), { target: { value: '   ' } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(300);
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByLabelText('Buscar alimento'), { target: { value: '  arroz  ' } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(299);
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+  });
+  vi.useRealTimers();
+  expect(await screen.findByText('No encontramos “arroz”.')).toBeTruthy();
+  expect(fetchMock.mock.calls[1]?.[0]).toBe('http://localhost/api/foods/search?q=arroz&limit=20');
+  expect(screen.getByText('Open Food Facts no está disponible en este momento.')).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: 'Escanear: Próximamente' }).hasAttribute('disabled'),
+  ).toBe(true);
+  fireEvent.click(screen.getByText('Crear alimento'));
+  expect(screen.getByLabelText('Nombre')).toBeTruthy();
+  client.clear();
+});
+it('importa un resultado OFF antes de pedir cantidad', async () => {
+  const off = { ...food, id: null, source: 'off' as const };
+  let resolve!: (response: Response) => void;
+  const pending = new Promise<Response>((done) => {
+    resolve = done;
+  });
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockImplementation((_input, init) =>
+      init?.method === 'POST' ? pending : Promise.resolve(jsonResponse([off])),
+    );
+  vi.stubGlobal('fetch', fetchMock);
+  const { client } = setup();
+  fireEvent.click(await screen.findByText('Pan'));
+  expect(await screen.findByText('Importando alimento…')).toBeTruthy();
+  expect(screen.queryByLabelText('Gramos')).toBeNull();
+  await act(async () => {
+    resolve(jsonResponse({ ...food, source: 'off' }));
+  });
+  expect(await screen.findByLabelText('Gramos')).toBeTruthy();
+  expect(fetchMock.mock.calls[1]?.[0]).toBe('http://localhost/api/foods/import');
+  expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ barcode: '12345678' });
+  client.clear();
+});
+it('si importar falla mantiene la búsqueda y permite volver a intentar', async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockImplementation((_input, init) =>
+      Promise.resolve(
+        init?.method === 'POST'
+          ? jsonResponse({ error: { code: 'off_unavailable', message: 'OFF no responde.' } }, 503)
+          : jsonResponse([{ ...food, id: null, source: 'off' }]),
+      ),
+    );
+  vi.stubGlobal('fetch', fetchMock);
+  const { client } = setup();
+  fireEvent.click(await screen.findByText('Pan'));
+  expect(await screen.findByText('OFF no responde.')).toBeTruthy();
+  expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();
+  expect(screen.queryByLabelText('Gramos')).toBeNull();
+  await waitFor(() => expect(screen.getByText('Pan').closest('button')?.disabled).toBe(false));
+  client.clear();
+});
+it('valida la creación, conserva lo escrito ante error y pasa a cantidad al guardar', async () => {
+  let attempts = 0;
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation((_input, init) => {
+    if (init?.method !== 'POST') return Promise.resolve(jsonResponse([]));
+    attempts += 1;
+    return Promise.resolve(
+      attempts === 1
+        ? jsonResponse({ error: { code: 'validation_error', message: 'Revisá los datos.' } }, 400)
+        : jsonResponse({ ...food, source: 'custom' }),
+    );
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const { client } = setup();
+  fireEvent.click(screen.getByText('Crear alimento'));
+  fireEvent.click(screen.getByText('Guardar alimento'));
+  expect(screen.getByText('Nombre requerido')).toBeTruthy();
+  for (const [label, value] of [
+    ['Nombre', 'Mi pan'],
+    ['Calorías', '200'],
+    ['Proteína', '10,25'],
+    ['Carbohidratos', '20'],
+    ['Grasa', '5'],
+  ]) {
+    fireEvent.change(screen.getByLabelText(label!), { target: { value } });
+  }
+  fireEvent.click(screen.getByText('Guardar alimento'));
+  expect(await screen.findByText('Revisá los datos.')).toBeTruthy();
+  expect((screen.getByLabelText('Nombre') as HTMLInputElement).value).toBe('Mi pan');
+  fireEvent.click(screen.getByText('Guardar alimento'));
+  expect(await screen.findByLabelText('Gramos')).toBeTruthy();
+  const call = fetchMock.mock.calls.find(
+    ([input, init]) => String(input) === 'http://localhost/api/foods' && init?.method === 'POST',
+  );
+  expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ name: 'Mi pan', protein: 10.25 });
+  client.clear();
+});
