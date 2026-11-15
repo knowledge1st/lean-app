@@ -6,7 +6,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig(({ command, mode, isPreview }) => {
   const env = loadEnv(mode, import.meta.dirname, 'VITE_');
   const isDev = command === 'serve' && !isPreview;
-  // Refresh scripts and Vite-injected styles share a nonce only in the dev server.
+  // React Refresh needs a script nonce only in the dev server.
   const nonce = isDev ? crypto.randomUUID() : undefined;
   const apiOrigin = env.VITE_API_URL ? new URL(env.VITE_API_URL).origin : '';
 
@@ -33,7 +33,8 @@ export default defineConfig(({ command, mode, isPreview }) => {
             const policy = [
               "default-src 'self'",
               `script-src 'self'${nonceSource}`,
-              `style-src 'self'${nonceSource}`,
+              // Radix/react-remove-scroll injects <style> elements without a nonce.
+              "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               `connect-src ${connections}`,
               "font-src 'self'",
