@@ -5,7 +5,7 @@ import { users, type User } from '../../src/db/schema';
 
 export function testDatabaseUrl(): string | undefined {
   const envFile = new URL('../../.dev.vars', import.meta.url);
-  if (!process.env.DATABASE_URL && existsSync(envFile)) {
+  if (process.env.DATABASE_URL === undefined && existsSync(envFile)) {
     process.loadEnvFile(envFile);
   }
   return process.env.DATABASE_URL || undefined;
