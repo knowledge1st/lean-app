@@ -32,3 +32,43 @@ pnpm install
 | `pnpm test`         | Vitest en los tres paquetes         |
 | `pnpm format`       | Formatea todo con Prettier          |
 | `pnpm format:check` | Verifica el formato sin escribir    |
+
+## Despliegue
+
+`deploy-web.yml` publica la web en GitHub Pages y `deploy-api.yml` publica la API en
+Cloudflare Workers. Corren tras CI verde de un push a `main`, si hubo cambios en su
+carpeta (`web/` o `api/`), en `shared/` o en los archivos comunes de configuración y
+su propio workflow desde el último despliegue publicado (tags `deployed-web` / `deployed-api`).
+También se pueden ejecutar manualmente con **Run workflow**, que fuerza el despliegue.
+
+Configurar en GitHub Actions los secretos `CLOUDFLARE_API_TOKEN` (permiso
+**Edit Cloudflare Workers**) y `CLOUDFLARE_ACCOUNT_ID`, y la variable de repositorio
+`API_URL` con el origen del Worker, por ejemplo `https://lean-api.<subdominio>.workers.dev`:
+
+```bash
+gh secret set CLOUDFLARE_API_TOKEN
+gh secret set CLOUDFLARE_ACCOUNT_ID
+gh variable set API_URL
+```
+
+Configurar GitHub Pages con origen **GitHub Actions**. La CSP se genera en el build a
+partir de `VITE_API_URL`; `connect-src` incluye el origen del Worker.
+
+El secreto del Worker `DATABASE_URL` debe apuntar a la rama `production` de Neon:
+
+```bash
+pnpm --filter @lean/api exec wrangler secret put DATABASE_URL
+```
+
+`ALLOWED_ORIGIN` vive en `[vars]` de `api/wrangler.toml`. En desarrollo, los valores
+locales de `api/.dev.vars` pisan a `[vars]` durante `wrangler dev`.
+
+Las migraciones de producción se ejecutan a mano; no se automatizan:
+
+```bash
+DATABASE_URL='<url de production con el rol dueño>' pnpm --filter @lean/api db:migrate
+```
+
+URL web: https://knowledge1st.github.io/lean-app/
+
+URL API: https://lean-api.toferozo.workers.dev
