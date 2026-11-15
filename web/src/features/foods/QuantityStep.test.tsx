@@ -76,8 +76,18 @@ it('vuelve a búsqueda', () => {
 it('limita una etiqueta de porción sin espacios y conserva los gramos visibles', () => {
   const label = 'W'.repeat(40);
   setup({ name: 'N'.repeat(100), brand: 'B'.repeat(100), servingG: 50, servingLabel: label });
-  const button = screen.getByRole('button', { name: new RegExp(`1 porción · ${label}`) });
+  const button = screen.getByRole('button', { name: '1 porción (50 g)' });
   expect(button.className).toContain('max-w-full min-w-0');
-  expect(button.querySelector('.truncate')?.textContent).toContain(label);
+  expect(screen.getByText(`1 porción = ${label}`).className).toContain('truncate');
   expect(button.querySelector('.shrink-0')?.textContent).toBe('(50 g)');
+});
+
+it.each(['11.0g', null])('muestra porciones sin concatenar la etiqueta %s', (servingLabel) => {
+  setup({ servingG: 11, servingLabel });
+  for (const name of ['½ porción (5,5 g)', '1 porción (11 g)', '2 porciones (22 g)']) {
+    expect(screen.getByRole('button', { name })).toBeTruthy();
+  }
+  expect(screen.queryByText(/^1 porción =/)?.textContent ?? null).toBe(
+    servingLabel ? `1 porción = ${servingLabel}` : null,
+  );
 });

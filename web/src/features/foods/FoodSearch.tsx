@@ -70,6 +70,14 @@ export function FoodSearch({
           </Button>
         </div>
       )}
+      {!waiting && active.isError && !!items?.length && (
+        <div role="alert" className="flex items-center gap-2 text-sm text-muted">
+          <span>{active.error.message}</span>
+          <Button variant="ghost" onClick={() => void active.refetch()}>
+            Reintentar
+          </Button>
+        </div>
+      )}
       {busy && <p role="status">Importando alimento…</p>}
       {error && (
         <p role="alert" className="text-danger">
@@ -78,7 +86,7 @@ export function FoodSearch({
       )}
       {waiting || active.isPending || (!normalized && !items?.length && list.isFetching) ? (
         <Skeleton className="h-24" />
-      ) : active.isError ? (
+      ) : active.isError && !items?.length ? (
         <ErrorState
           message={active.error.message}
           onRetry={() => {

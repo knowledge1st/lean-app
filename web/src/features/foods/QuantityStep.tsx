@@ -29,26 +29,30 @@ export function QuantityStep({
         error={!result.success ? result.error.issues[0]?.message : undefined}
       />
       {food.servingG && (
-        <div className="flex flex-wrap gap-2">
-          {[0.5, 1, 2].map((multiplier) => {
-            const grams = Math.round(food.servingG! * multiplier * 10) / 10;
-            return (
-              <Button
-                key={multiplier}
-                variant="secondary"
-                className="max-w-full min-w-0"
-                onClick={() => setValue(String(grams))}
-              >
-                <span className="truncate">
-                  {multiplier === 0.5
-                    ? '½ porción'
-                    : `${multiplier} ${multiplier === 1 ? 'porción' : 'porciones'}`}{' '}
-                  · {food.servingLabel}
-                </span>
-                <span className="shrink-0">({formatNumber(grams)} g)</span>
-              </Button>
-            );
-          })}
+        <div className="min-w-0 space-y-2">
+          {food.servingLabel && (
+            <p className="truncate text-sm text-muted">1 porción = {food.servingLabel}</p>
+          )}
+          <div className="flex min-w-0 flex-wrap gap-2">
+            {[0.5, 1, 2].map((multiplier) => {
+              const grams = Math.round(food.servingG! * multiplier * 10) / 10;
+              return (
+                <Button
+                  key={multiplier}
+                  variant="secondary"
+                  className="max-w-full min-w-0"
+                  onClick={() => setValue(String(grams))}
+                >
+                  <span className="truncate">
+                    {multiplier === 0.5
+                      ? '½ porción'
+                      : `${multiplier} ${multiplier === 1 ? 'porción' : 'porciones'}`}
+                  </span>{' '}
+                  <span className="shrink-0">({formatNumber(grams)} g)</span>
+                </Button>
+              );
+            })}
+          </div>
         </div>
       )}
       <div aria-live="polite" className="space-y-2">

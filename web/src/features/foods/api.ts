@@ -12,8 +12,8 @@ export const getFrequentFoods = (signal?: AbortSignal) =>
   api.get<Food[]>('/api/foods/frequent?limit=10', signal ? { signal } : {});
 export const importFood = (barcode: string) => api.post<Food>('/api/foods/import', { barcode });
 export const createFood = (body: CreateFood) => api.post<Food>('/api/foods', body);
-export const useImportFood = () => useMutation({ mutationFn: importFood });
-export const useCreateFood = () => useMutation({ mutationFn: createFood });
+export const useImportFood = () => useMutation({ networkMode: 'always', mutationFn: importFood });
+export const useCreateFood = () => useMutation({ networkMode: 'always', mutationFn: createFood });
 export function useFoodSearch(q: string) {
   return useQuery({
     queryKey: ['foods', 'search', q],

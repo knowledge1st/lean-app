@@ -136,7 +136,13 @@ it.each(['eat', 'delete', 'edit', 'add'] as const)(
     await act(async () => {
       reject(new Error('offline'));
     });
-    expect(await screen.findByText('No se pudo conectar con el servidor.')).toBeTruthy();
+    const messages = {
+      add: 'No se pudo agregar.',
+      edit: 'No se pudieron guardar los cambios.',
+      eat: 'No se pudo marcar como comido.',
+      delete: 'No se pudo borrar.',
+    };
+    expect(await screen.findByText(`${messages[kind]} Revisá tu conexión.`)).toBeTruthy();
     await waitFor(() => expect(client.getQueryData(key)).toEqual(summary));
     expect(screen.getByText('Ya lo comí')).toBeTruthy();
     client.clear();
@@ -190,7 +196,7 @@ it('conserva los datos restaurados si también falla la recarga del resumen', as
   expect(
     screen.getAllByRole('status').find((element) => element.getAttribute('aria-live') === 'polite')
       ?.textContent,
-  ).toContain('No se pudo conectar');
+  ).toContain('No se pudo marcar como comido. Revisá tu conexión.');
   client.clear();
 });
 
@@ -264,7 +270,7 @@ it('permite dos altas concurrentes y revierte solo la primera cuando falla', asy
   await act(async () => {
     rejectFirst(new Error('offline'));
   });
-  expect(await screen.findByText('No se pudo conectar con el servidor.')).toBeTruthy();
+  expect(await screen.findByText('No se pudo agregar. Revisá tu conexión.')).toBeTruthy();
   expect(client.getQueryData(key)).toEqual(recalculateSummary(empty, [saved]));
   await act(async () => {
     resolveRefresh(jsonResponse(recalculateSummary(empty, [saved])));
@@ -310,6 +316,8 @@ it.each(['error', 'success'] as const)(
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     const setData = vi.spyOn(client, 'setQueryData');
     await act(async () => {
+      // Logout unmounts Hoy before clearing the old session cache.
+      cleanup();
       clearToken();
       client.clear();
       setToken('second-session');
@@ -324,7 +332,7 @@ it.each(['error', 'success'] as const)(
     expect(setData).not.toHaveBeenCalled();
     expect(invalidate).not.toHaveBeenCalled();
     expect(client.getQueryData(key)).toBe(otherSession);
-    expect(screen.queryByText('No se pudo conectar con el servidor.')).toBeNull();
+    expect(screen.queryByText('No se pudo agregar. Revisá tu conexión.')).toBeNull();
     client.clear();
   },
 );
