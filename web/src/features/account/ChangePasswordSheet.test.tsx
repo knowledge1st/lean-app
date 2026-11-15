@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { useAuth } from '../../auth/AuthProvider';
 import { jsonResponse, renderAuth, testUser } from '../../auth/testUtils';
@@ -109,3 +109,55 @@ it.each(['corta', 'ñ'.repeat(37)])(
     expect(fetchMock).toHaveBeenCalledTimes(1);
   },
 );
+
+it('mantiene abierta la hoja durante el envío al cerrar con botón, Escape u overlay', async () => {
+  await setup();
+  let resolveResponse!: (response: Response) => void;
+  const response = new Promise<Response>((resolve) => {
+    resolveResponse = resolve;
+  });
+  fetchMock.mockReturnValueOnce(response);
+  fill();
+  expect(screen.getByRole('button', { name: 'Guardando…' }).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  const overlay = document.querySelector('.bg-black\\/50');
+  expect(overlay).toBeTruthy();
+  fireEvent.pointerDown(overlay!, { button: 0, ctrlKey: false, pointerType: 'mouse' });
+  fireEvent.click(overlay!);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect((screen.getByLabelText('Contraseña nueva') as HTMLInputElement).value).toBe(
+    'nueva-segura',
+  );
+  expect(screen.queryByRole('status')).toBeNull();
+  await act(async () => {
+    resolveResponse(new Response(null, { status: 204 }));
+    await response;
+  });
+  expect(await screen.findByRole('status')).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+it.each([204, 500])('ignora la respuesta %s después de desmontar el formulario', async (status) => {
+  let resolveResponse!: (response: Response) => void;
+  const response = new Promise<Response>((resolve) => {
+    resolveResponse = resolve;
+  });
+  const onSuccess = vi.fn();
+  const onOpenChange = vi.fn();
+  const { rerender } = renderAuth(
+    <ChangePasswordSheet open onOpenChange={onOpenChange} onSuccess={onSuccess} />,
+  );
+  await screen.findByText('Cambiar contraseña');
+  fetchMock.mockReturnValueOnce(response);
+  fill();
+  rerender(<p>Formulario desmontado</p>);
+  await act(async () => {
+    resolveResponse(new Response(null, { status }));
+    await response;
+  });
+  expect(onSuccess).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+});

@@ -71,6 +71,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) void api.post(path, undefined, { token }).catch(() => {});
   }
 
+  async function logoutAll() {
+    const token = getToken();
+    const current = generation.current;
+    try {
+      if (token) await api.post('/api/auth/logout-all', undefined, { token });
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) throw error;
+    }
+    if (current === generation.current) closeSession();
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -78,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         login,
         logout: () => endSession('/api/auth/logout'),
-        logoutAll: () => endSession('/api/auth/logout-all'),
+        logoutAll,
         changePassword: (currentPassword, newPassword) =>
           api.post<void>('/api/auth/password', { currentPassword, newPassword }),
         retry: () => setAttempt((value) => value + 1),

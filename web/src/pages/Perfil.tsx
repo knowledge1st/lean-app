@@ -6,6 +6,7 @@ import { Card } from '../components/ui/Card';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Sheet } from '../components/ui/Sheet';
 import { ChangePasswordSheet } from '../features/account/ChangePasswordSheet';
+import { ApiError } from '../lib/api';
 
 export function Perfil() {
   const { user, logout, logoutAll } = useAuth();
@@ -14,13 +15,21 @@ export function Perfil() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [updated, setUpdated] = useState(false);
   const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState('');
 
   async function endSession(all: boolean) {
     if (pending) return;
     setPending(true);
+    setMessage('');
     try {
       await (all ? logoutAll() : logout());
       navigate('/login', { replace: true });
+    } catch (error) {
+      setMessage(
+        error instanceof ApiError && error.status === 0
+          ? 'Sin conexión. No se pudieron cerrar las otras sesiones; volvé a intentar.'
+          : 'No se pudieron cerrar las sesiones. Probá de nuevo.',
+      );
     } finally {
       setPending(false);
     }
@@ -62,7 +71,10 @@ export function Perfil() {
             variant="danger"
             className="w-full"
             disabled={pending}
-            onClick={() => setConfirmOpen(true)}
+            onClick={() => {
+              setMessage('');
+              setConfirmOpen(true);
+            }}
           >
             Cerrar sesión en todos los dispositivos
           </Button>
@@ -79,11 +91,14 @@ export function Perfil() {
       />
       <Sheet
         open={confirmOpen}
-        onOpenChange={setConfirmOpen}
+        onOpenChange={(open) => {
+          if (!pending) setConfirmOpen(open);
+        }}
         title="Cerrar todas las sesiones"
         description="Se cerrará la sesión en este y en todos tus otros dispositivos."
       >
         <div className="flex flex-col gap-3">
+          {message && <p role="alert">{message}</p>}
           <Button variant="secondary" disabled={pending} onClick={() => setConfirmOpen(false)}>
             Cancelar
           </Button>
