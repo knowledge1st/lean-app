@@ -66,6 +66,8 @@ pnpm --filter @lean/api seed:foods
 
 El script `api/scripts/seed-foods.ts` está implementado en esta rama. Valida el CSV antes de escribir y es idempotente por nombre entre las filas `source = 'seed'`. Los nombres funcionan como claves de la semilla. Un cambio de nombre incorpora una clave nueva y el importador informa las claves de la base ausentes del CSV. Si ya se cargó «Medialuna de manteca», queda pendiente migrar esa fila a «Croissant de manteca» en la base existente.
 
+El importador no borra ni renombra filas `seed`. Si se renombra un alimento en el CSV, la fila vieja queda en la base y el script la lista en el aviso «En la base pero no en el CSV». Hay que borrarla a mano si no la usa ningún registro.
+
 ## Cobertura y pendientes
 
 | Categoría               |   Filas |
@@ -83,7 +85,7 @@ El script `api/scripts/seed-foods.ts` está implementado en esta rama. Valida el
 | Dulces y despensa       |      18 |
 | **Total**               | **316** |
 
-Las correspondencias aproximadas y las formulaciones variables se explican en la tabla siguiente. Quedan pendientes el cotejo externo de las filas aún no verificadas y los identificadores faltantes, la versión del dataset y la cobertura de los productos argentinos aún omitidos. Queda pendiente la excepción de Brócoli crudo en el validador indicada arriba.
+Las correspondencias aproximadas y las formulaciones variables se explican en la tabla siguiente. Quedan pendientes el cotejo externo de las filas aún no verificadas y los identificadores faltantes, la versión del dataset y la cobertura de los productos argentinos aún omitidos. La excepción de Brócoli crudo indicada arriba ya está incorporada en el validador.
 
 ## Correspondencia completa con USDA
 
