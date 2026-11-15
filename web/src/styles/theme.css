@@ -2,6 +2,9 @@
 
 :root {
   color-scheme: light dark;
+  --protein: #7c4cbb;
+  --carbs: #95620c;
+  --fat: #2475ae;
   --bg: #f7f8fa;
   --surface: #ffffff;
   --text: #18242d;
@@ -16,6 +19,9 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --protein: #c4a0f5;
+    --carbs: #efc06e;
+    --fat: #87c7f3;
     --bg: #11161c;
     --surface: #1b242d;
     --text: #edf2f6;
