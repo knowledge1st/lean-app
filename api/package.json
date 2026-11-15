@@ -10,7 +10,8 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed:users": "node scripts/seed-users.ts"
+    "seed:users": "node scripts/seed-users.ts",
+    "seed:foods": "node scripts/seed-foods.ts"
   },
   "dependencies": {
     "@lean/shared": "workspace:*",
