@@ -27,6 +27,14 @@ describe('nutrition', () => {
     expect(sumMacros([])).not.toBe(ZERO_MACROS);
     expect(sumMacros([food, food])).toEqual({ kcal: 400, protein: 20.5, carbs: 41, fat: 6.3 });
   });
+  it('sums stored four-decimal values exactly before presentation rounding', () => {
+    const total = sumMacros([
+      { kcal: 0, protein: 0.005, carbs: 0, fat: 0 },
+      { kcal: 0, protein: 0.045, carbs: 0, fat: 0 },
+    ]);
+    expect(total.protein).toBe(0.05);
+    expect(roundMacros(total).protein).toBe(0.1);
+  });
   it('rounds kcal and macros and removes negative zero', () => {
     expect(roundMacros({ kcal: 66.6, protein: 3.41325, carbs: 0.15, fat: -0.01 })).toEqual({
       kcal: 67,

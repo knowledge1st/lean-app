@@ -8,10 +8,16 @@ import {
 } from './entry';
 
 describe('entry schemas', () => {
-  it.each(['2026-11-14', '2024-02-29', '2000-02-29', '2026-12-31'])('accepts %s', (date) => {
-    expect(localDateSchema.parse(date)).toBe(date);
-  });
+  it.each(['2026-11-14', '2024-02-29', '2000-02-29', '2026-12-31', '1900-01-01', '2100-12-31'])(
+    'accepts %s',
+    (date) => {
+      expect(localDateSchema.parse(date)).toBe(date);
+    },
+  );
   it.each([
+    '0000-01-01',
+    '1899-12-31',
+    '2101-01-01',
     '2026-02-30',
     '2026-02-29',
     '1900-02-29',
@@ -41,9 +47,12 @@ describe('entry schemas', () => {
       true,
     );
   });
-  it.each([0, -1, 5000.1, 5001, 1.23, NaN, Infinity])('rejects grams %s', (grams) => {
-    expect(gramsSchema.safeParse(grams).success).toBe(false);
-  });
+  it.each([0, -1, 1e-10, 0.05, 0.04, 5000.1, 5001, 1.23, NaN, Infinity])(
+    'rejects grams %s',
+    (grams) => {
+      expect(gramsSchema.safeParse(grams).success).toBe(false);
+    },
+  );
   it.each([0.1, 33.3, 5000])('accepts grams %s', (grams) => {
     expect(gramsSchema.parse(grams)).toBe(grams);
   });

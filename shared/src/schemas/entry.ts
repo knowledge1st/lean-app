@@ -7,6 +7,8 @@ export const entryStatusSchema = z.enum(['planned', 'eaten'], { error: 'Estado i
 export type EntryStatus = z.infer<typeof entryStatusSchema>;
 export const localDateSchema = z.string({ error: 'Fecha inválida' }).refine((value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  if (year < 1900 || year > 2100) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }, 'Fecha inválida');
@@ -14,7 +16,10 @@ export const gramsSchema = z
   .number({ error: 'Los gramos deben ser un número' })
   .gt(0, 'Los gramos deben ser mayores a 0')
   .max(5000, 'Los gramos no pueden superar 5000')
-  .refine((n) => Math.abs(n * 10 - Math.round(n * 10)) < 1e-8, 'Indicá hasta 1 decimal');
+  .refine(
+    (n) => Number.isFinite(n) && Number((Math.round(n * 10) / 10).toFixed(1)) === n,
+    'Indicá hasta 1 decimal',
+  );
 const fields = {
   date: localDateSchema,
   meal: mealSchema,

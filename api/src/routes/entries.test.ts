@@ -60,6 +60,17 @@ describe.skipIf(!hasTestDatabase)('entries integration', () => {
     expect((await f.request(`/entries/${entry.id}`, 'DELETE')).status).toBe(204);
     expect((await f.request(`/entries/${entry.id}`, 'DELETE')).status).toBe(404);
   });
+  it('rejects grams below storage precision with 400', async () => {
+    const food = await f.food();
+    const response = await f.request('/entries', 'POST', {
+      foodId: food.id,
+      date: '2026-11-14',
+      meal: 'lunch',
+      grams: 1e-10,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'validation_error' } });
+  });
   it('keeps four decimal places in storage and rounds only the response', async () => {
     const food = await f.food();
     const entry = await f.entry(food.id!, { grams: 33.3 });
@@ -173,6 +184,8 @@ describe('entries without database', () => {
     ['GET', '?from=2026-02-30&to=2026-03-01', undefined],
     ['POST', '', { date: '2026-11-14', meal: 'lunch', foodId: crypto.randomUUID(), grams: 0 }],
     ['POST', '', { date: '2026-11-14', meal: 'lunch', foodId: crypto.randomUUID(), grams: 5001 }],
+    ['POST', '', { date: '2026-11-14', meal: 'lunch', foodId: crypto.randomUUID(), grams: 1e-10 }],
+    ['POST', '', { date: '0000-01-01', meal: 'lunch', foodId: crypto.randomUUID(), grams: 100 }],
     ['PATCH', `/${crypto.randomUUID()}`, {}],
     ['PATCH', '/abc', { grams: 100 }],
   ])('validates %s %s', async (method, path, body) => {

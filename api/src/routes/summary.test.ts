@@ -59,6 +59,16 @@ describe.skipIf(!hasTestDatabase)('summary integration', () => {
     expect(roundedKcalSum).toBe(201);
     expect(result.eaten.kcal).toBe(200);
   });
+  it('rounds a stored protein sum at a decimal tie in the day and meal totals', async () => {
+    const food = await f.food(0, { protein: 0.5 });
+    await f.entry(food.id!, { grams: 1, meal: 'lunch' });
+    await f.entry(food.id!, { grams: 9, meal: 'lunch' });
+    const response = await f.request('/summary/day?date=2026-11-14');
+    expect(response.status).toBe(200);
+    const result = daySummarySchema.parse(await response.json());
+    expect(result.eaten.protein).toBe(0.1);
+    expect(result.meals.find((m) => m.meal === 'lunch')?.eaten.protein).toBe(0.1);
+  });
   it('returns empty days and excludes another user entries', async () => {
     const food = await f.food();
     await f.entry(food.id!);

@@ -23,15 +23,22 @@ export function scaleMacros(stored: Macros, fromGrams: number, toGrams: number):
   };
 }
 export function sumMacros(items: Macros[]): Macros {
-  return items.reduce(
+  // Stored macros have four decimal places (numeric(12,4)); sum integer ten-thousandths.
+  const sum = items.reduce(
     (sum, m) => ({
-      kcal: sum.kcal + m.kcal,
-      protein: sum.protein + m.protein,
-      carbs: sum.carbs + m.carbs,
-      fat: sum.fat + m.fat,
+      kcal: sum.kcal + Math.round(m.kcal * 10_000),
+      protein: sum.protein + Math.round(m.protein * 10_000),
+      carbs: sum.carbs + Math.round(m.carbs * 10_000),
+      fat: sum.fat + Math.round(m.fat * 10_000),
     }),
     { ...ZERO_MACROS },
   );
+  return {
+    kcal: sum.kcal / 10_000,
+    protein: sum.protein / 10_000,
+    carbs: sum.carbs / 10_000,
+    fat: sum.fat / 10_000,
+  };
 }
 export function roundMacros(m: Macros): Macros {
   const round = (value: number, factor: number) => Math.round(value * factor) / factor || 0;
