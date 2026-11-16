@@ -2,6 +2,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { buildPlan, limitAdjustedTargetDate } from '@lean/shared';
+import { StepPlan } from './StepPlan';
 import { StepDetail } from './StepDetail';
 import { emptyDraft } from './draft';
 import { formatGoalDate } from './format';
@@ -63,3 +64,56 @@ it('muestra la suma 4/4/9 y el aviso cuando difiere más del 10 %', () => {
     screen.getByText('Las calorías de tus macros no coinciden con las kcal que pusiste.'),
   ).toBeTruthy();
 });
+
+it.each(['floor', 'multiple'] as const)(
+  'muestra la fecha ajustada una sola vez en ambos pasos: %s',
+  (warnings) => {
+    const today = '2026-11-16';
+    const draft = {
+      ...emptyDraft,
+      sex: 'female',
+      birthDate: '1990-01-01',
+      heightCm: '165',
+      weightKg: '70',
+      activityLevel: 'sedentary',
+      mode: 'weight_date',
+      targetWeightKg: '65',
+      targetDate: warnings === 'floor' ? '2027-01-15' : '2026-11-17',
+    };
+    const expected = limitAdjustedTargetDate(
+      buildPlan(
+        { sex: 'female', birthDate: draft.birthDate, heightCm: 165, activity: 'sedentary' },
+        { weightKg: 70 },
+        { mode: 'weight_date', targetWeightKg: 65, targetDate: draft.targetDate },
+        today,
+      ),
+      today,
+    );
+    if (warnings === 'floor') {
+      expect(expected.warnings).toEqual([{ code: 'floor_applied' }]);
+      expect(expected.adjusted?.targetDate).toBe('2027-02-07');
+    }
+    const view = render(<StepDetail draft={draft} errors={{}} change={() => {}} today={today} />);
+    expect(
+      screen.getAllByText(/Con un ritmo saludable llegás el .* El plan ya usa esa fecha\./),
+    ).toHaveLength(1);
+    view.unmount();
+    render(
+      <StepPlan
+        plan={{
+          ...expected,
+          warnings:
+            warnings === 'floor'
+              ? expected.warnings
+              : [{ code: 'rate_capped' }, { code: 'date_in_past' }, { code: 'floor_applied' }],
+        }}
+        sex="female"
+        today={today}
+        onEdit={() => {}}
+      />,
+    );
+    expect(
+      screen.getAllByText(/Con un ritmo saludable llegás el .* El plan ya usa esa fecha\./),
+    ).toHaveLength(1);
+  },
+);

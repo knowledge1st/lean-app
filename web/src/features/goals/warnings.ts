@@ -16,3 +16,16 @@ export const WARNING_TEXT: Record<WarningCode, (context: Context) => string> = {
   manual_macros_mismatch: () => 'Las calorías de tus macros no coinciden con las kcal que pusiste.',
 };
 export const warningText = (code: WarningCode, context: Context) => WARNING_TEXT[code](context);
+
+export function planWarningMessages(
+  plan: { warnings: Plan['warnings']; adjusted?: Plan['adjusted'] },
+  context: Context,
+): string[] {
+  const messages = plan.warnings.flatMap(({ code }) => {
+    if (plan.adjusted && code === 'rate_capped') return [];
+    if (plan.adjusted && code === 'date_in_past') return ['La fecha ya pasó.'];
+    return [warningText(code, context)];
+  });
+  if (plan.adjusted) messages.push(arrival({ ...context, adjusted: plan.adjusted }));
+  return messages;
+}

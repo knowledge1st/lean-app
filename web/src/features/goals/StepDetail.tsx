@@ -3,7 +3,7 @@ import { addDays } from '../../lib/date';
 import { Choices, Field, StepContent, type StepProps } from './fields';
 import { goalBody, profileInput, validateStep, numeric } from './draft';
 import { formatNumber, weeklyChange } from './format';
-import { warningText } from './warnings';
+import { planWarningMessages } from './warnings';
 export function StepDetail(props: StepProps & { today: string }) {
   const { draft, today } = props;
   const valid =
@@ -81,10 +81,8 @@ export function StepDetail(props: StepProps & { today: string }) {
       )}
       {plan && profile && (
         <div aria-live="polite" className="space-y-3 text-warning">
-          {plan.warnings.map(({ code }) => (
-            <p key={code}>
-              {warningText(code, { sex: profile.sex, today, adjusted: plan.adjusted })}
-            </p>
+          {planWarningMessages(plan, { sex: profile.sex, today }).map((message) => (
+            <p key={message}>{message}</p>
           ))}
         </div>
       )}

@@ -27,8 +27,12 @@ export function useSaveProfile() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: saveProfile,
-    onSuccess: (profile) => {
+    onSuccess: async (profile) => {
       client.setQueryData(profileKey, profile);
+      await Promise.all([
+        client.invalidateQueries({ queryKey: activeGoalKey }),
+        client.invalidateQueries({ queryKey: ['goals', 'wizard', 'initial'] }),
+      ]);
     },
   });
 }
@@ -48,8 +52,8 @@ export function useCreateGoal() {
     mutationFn: createGoal,
     onSuccess: async () => {
       await Promise.all(
-        [activeGoalKey, ['summary'], ['targets']].map((queryKey) =>
-          client.invalidateQueries({ queryKey }),
+        [profileKey, activeGoalKey, ['goals', 'wizard', 'initial'], ['summary'], ['targets']].map(
+          (queryKey) => client.invalidateQueries({ queryKey }),
         ),
       );
     },

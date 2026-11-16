@@ -2,7 +2,7 @@ import type { PlanResponse, Sex } from '@lean/shared';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { formatGoalDate, formatNumber, weeklyChange } from './format';
-import { warningText } from './warnings';
+import { planWarningMessages } from './warnings';
 export function StepPlan({
   plan,
   sex,
@@ -64,8 +64,8 @@ export function StepPlan({
         </Card>
       )}
       <div className="space-y-3 text-warning">
-        {plan.warnings.map(({ code }) => (
-          <p key={code}>{warningText(code, { sex, today, adjusted: plan.adjusted })}</p>
+        {planWarningMessages(plan, { sex, today }).map((message) => (
+          <p key={message}>{message}</p>
         ))}
       </div>
       {unreachable && (

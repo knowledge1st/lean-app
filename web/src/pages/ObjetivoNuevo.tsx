@@ -8,6 +8,7 @@ import {
   getProfile,
   getActiveGoal,
   profileKey,
+  activeGoalKey,
   saveProfile,
   previewGoal,
   useCreateGoal,
@@ -28,6 +29,13 @@ import { StepAbout } from '../features/goals/StepAbout';
 import { StepKind } from '../features/goals/StepKind';
 import { StepDetail } from '../features/goals/StepDetail';
 import { StepPlan } from '../features/goals/StepPlan';
+// Keep writes ordered even when a preview is abandoned or the wizard remounts.
+let operations: Promise<unknown> = Promise.resolve();
+function inOrder<T>(operation: () => Promise<T>): Promise<T> {
+  const result = operations.then(operation);
+  operations = result.catch(() => undefined);
+  return result;
+}
 const titles = ['Sobre vos', 'Qué querés lograr', 'Detalle', 'Tu plan'];
 export function ObjetivoNuevo() {
   const navigate = useNavigate();
@@ -36,6 +44,9 @@ export function ObjetivoNuevo() {
   const [draft, setDraft] = useState<Draft>(restored ?? { ...emptyDraft });
   const [ready, setReady] = useState(!!restored);
   const [errors, setErrors] = useState<Errors>({});
+  const submitting = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const today = todayLocal();
   const initial = useQuery({
@@ -43,13 +54,16 @@ export function ObjetivoNuevo() {
     queryFn: async () => {
       const [profile, goal] = await Promise.all([getProfile(), getActiveGoal()]);
       client.setQueryData(profileKey, profile);
+      client.setQueryData(activeGoalKey, goal);
       return { profile, goal };
     },
     enabled: !ready,
+    staleTime: 0,
+    refetchOnMount: 'always',
     retry: false,
   });
   useEffect(() => {
-    if (ready || !initial.data) return;
+    if (ready || initial.isFetching || initial.isError || !initial.data) return;
     const { profile, goal } = initial.data;
     setDraft({
       ...emptyDraft,
@@ -64,7 +78,7 @@ export function ObjetivoNuevo() {
       ...(goal ? { weightKg: String(goal.progress.currentWeightKg) } : {}),
     });
     setReady(true);
-  }, [initial.data, ready]);
+  }, [initial.data, initial.isFetching, initial.isError, ready]);
   useEffect(() => {
     if (ready) storeDraft(draft);
   }, [draft, ready]);
@@ -76,17 +90,26 @@ export function ObjetivoNuevo() {
     enabled: ready && draft.step === 4,
     retry: false,
     staleTime: 0,
-    queryFn: async () => {
-      const input = profileInput(draft);
-      const saved = await client.fetchQuery({ queryKey: profileKey, queryFn: getProfile });
-      if (
-        !saved ||
-        (Object.keys(input) as (keyof ProfileResponse)[]).some((key) => saved[key] !== input[key])
-      ) {
-        client.setQueryData(profileKey, await saveProfile(input));
-      }
-      return previewGoal(goalBody(draft));
-    },
+    queryFn: ({ signal }) =>
+      inOrder(async () => {
+        signal.throwIfAborted();
+        const input = profileInput(draft);
+        const saved = await client.fetchQuery({
+          queryKey: profileKey,
+          queryFn: getProfile,
+          staleTime: 0,
+        });
+        signal.throwIfAborted();
+        if (
+          !saved ||
+          (Object.keys(input) as (keyof ProfileResponse)[]).some((key) => saved[key] !== input[key])
+        ) {
+          client.setQueryData(profileKey, await saveProfile(input));
+        }
+        // A PUT already sent must finish before the next profile write starts.
+        signal.throwIfAborted();
+        return previewGoal(goalBody(draft));
+      }),
   });
   const create = useCreateGoal();
   const change = (key: keyof Draft, value: string) => {
@@ -94,11 +117,14 @@ export function ObjetivoNuevo() {
     setErrors({});
   };
   const go = (step: number) => {
+    if (submitting.current) return;
     setErrors({});
+    setSubmitError(false);
     create.reset();
     setDraft((current) => ({ ...current, step }));
   };
   const submit = async () => {
+    if (submitting.current) return;
     if (draft.step < 4) {
       const nextErrors = validateStep(draft, draft.step, today);
       setErrors(nextErrors);
@@ -109,12 +135,22 @@ export function ObjetivoNuevo() {
       !preview.isError &&
       !preview.data.warnings.some(({ code }) => code === 'date_unreachable')
     ) {
+      submitting.current = true;
+      setSaving(true);
+      setSubmitError(false);
       try {
-        await create.mutateAsync(goalBody(draft));
+        await inOrder(async () => {
+          // Reassert this draft on the server before creation, after all older writes.
+          client.setQueryData(profileKey, await saveProfile(profileInput(draft)));
+          await create.mutateAsync(goalBody(draft));
+        });
         clearDraft();
         navigate('/hoy', { replace: true });
       } catch {
-        /* The error is displayed below. */
+        setSubmitError(true);
+      } finally {
+        submitting.current = false;
+        setSaving(false);
       }
     }
   };
@@ -134,7 +170,11 @@ export function ObjetivoNuevo() {
           <div className="h-full bg-accent" style={{ width: `${draft.step * 25}%` }} />
         </div>
         {draft.step > 1 && (
-          <Button variant="ghost" disabled={create.isPending} onClick={() => go(draft.step - 1)}>
+          <Button
+            variant="ghost"
+            disabled={saving || create.isPending}
+            onClick={() => go(draft.step - 1)}
+          >
             Atrás
           </Button>
         )}
@@ -189,7 +229,7 @@ export function ObjetivoNuevo() {
                 />
               )
             ))}
-          {create.isError && (
+          {(submitError || create.isError) && (
             <p role="alert" className="mt-4 text-danger">
               No pudimos guardar tu objetivo. Probá de nuevo con Empezar.
             </p>
@@ -201,6 +241,7 @@ export function ObjetivoNuevo() {
           className="mx-auto flex w-full max-w-lg"
           disabled={
             !ready ||
+            saving ||
             create.isPending ||
             (draft.step === 4 &&
               (!preview.data ||
@@ -210,7 +251,7 @@ export function ObjetivoNuevo() {
           }
           onClick={() => void submit()}
         >
-          {create.isPending ? 'Guardando…' : draft.step === 4 ? 'Empezar' : 'Siguiente'}
+          {saving || create.isPending ? 'Guardando…' : draft.step === 4 ? 'Empezar' : 'Siguiente'}
         </Button>
       </footer>
     </main>

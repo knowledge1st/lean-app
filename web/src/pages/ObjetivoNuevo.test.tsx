@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import type { Plan } from '@lean/shared';
@@ -46,10 +46,11 @@ function mockApi(preview = plan) {
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
-function setup() {
-  const client = new QueryClient({
+function setup(
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  }),
+) {
   const view = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/objetivo/nuevo']}>
@@ -203,4 +204,140 @@ it('permite omitir por ahora', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Omitir por ahora' }));
   await screen.findByRole('heading', { name: 'Hoy destino' });
   expect(localStorage.getItem('lean.goalWizard.skipped')).toBe('1');
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+it('serializa un PUT viejo y crea con el perfil del plan actual', async () => {
+  const oldPut = deferred<Response>();
+  let serverProfile = { ...profile, heightCm: 160 };
+  const previews: number[] = [];
+  const creations: number[] = [];
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (url, init) => {
+    const path = new URL(String(url)).pathname;
+    if (path === '/api/profile') {
+      if (init?.method === 'PUT') {
+        const input = JSON.parse(String(init.body));
+        if (input.heightCm === 165) await oldPut.promise;
+        serverProfile = input;
+      }
+      return jsonResponse(serverProfile);
+    }
+    if (path === '/api/goals/preview') {
+      previews.push(serverProfile.heightCm);
+      return jsonResponse({ ...plan, daily: { ...plan.daily, kcal: serverProfile.heightCm * 10 } });
+    }
+    if (path === '/api/goals') {
+      creations.push(serverProfile.heightCm);
+      return jsonResponse({ goal: {}, plan });
+    }
+    throw new Error(`Unexpected ${path}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  stored({ step: 4 });
+  setup();
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true),
+  );
+  for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole('button', { name: 'Atrás' }));
+  fill('Altura', '170');
+  next();
+  next();
+  next();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+  await act(async () => {
+    oldPut.resolve(jsonResponse(profile));
+  });
+  await screen.findByText('1.700 kcal');
+  expect(serverProfile.heightCm).toBe(170);
+  expect(previews).toEqual([170]);
+  fireEvent.click(screen.getByRole('button', { name: 'Empezar' }));
+  await screen.findByRole('heading', { name: 'Hoy destino' });
+  expect(creations).toEqual([170]);
+});
+it('bloquea dos clics síncronos en Empezar y permite reintentar si falla', async () => {
+  const fetchMock = mockApi();
+  const pending = deferred<Response>();
+  const implementation = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) =>
+    String(url).endsWith('/api/goals') ? pending.promise : implementation(url, init),
+  );
+  stored({ step: 4 });
+  setup();
+  await screen.findByText('1.876 kcal');
+  const start = screen.getByRole('button', { name: 'Empezar' });
+  act(() => {
+    start.click();
+    start.click();
+  });
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/goals'))).toHaveLength(
+      1,
+    ),
+  );
+  await act(async () => {
+    pending.resolve(jsonResponse({ error: { code: 'failure', message: 'Error' } }, 500));
+  });
+  await screen.findByText(/No pudimos guardar tu objetivo/);
+  fetchMock.mockImplementation(implementation);
+  fireEvent.click(screen.getByRole('button', { name: 'Empezar' }));
+  await screen.findByRole('heading', { name: 'Hoy destino' });
+});
+it('al reabrir sin borrador espera ambos GET frescos aunque haya caché', async () => {
+  const fetchMock = mockApi();
+  const first = setup();
+  await screen.findByLabelText('Altura');
+  first.unmount();
+  sessionStorage.clear();
+  const freshProfile = deferred<Response>();
+  const freshGoal = deferred<Response>();
+  fetchMock.mockImplementation((url) =>
+    String(url).endsWith('/api/profile') ? freshProfile.promise : freshGoal.promise,
+  );
+  setup(first.client);
+  expect(screen.queryByLabelText('Altura')).toBeNull();
+  await act(async () => {
+    freshProfile.resolve(jsonResponse({ ...profile, heightCm: 170 }));
+  });
+  expect(screen.queryByLabelText('Altura')).toBeNull();
+  await act(async () => {
+    freshGoal.resolve(jsonResponse({ progress: { currentWeightKg: 72 } }));
+  });
+  await screen.findByLabelText('Altura');
+  expect((screen.getByLabelText('Altura') as HTMLInputElement).value).toBe('170');
+  expect((screen.getByLabelText('Peso actual') as HTMLInputElement).value).toBe('72');
+});
+
+it('restablece el perfil del borrador antes de crear y permite reintentar un PUT fallido', async () => {
+  const fetchMock = mockApi();
+  const implementation = fetchMock.getMockImplementation()!;
+  let serverHeight = 165;
+  const createdHeights: number[] = [];
+  fetchMock.mockImplementation(async (url, init) => {
+    if (String(url).endsWith('/api/profile') && init?.method === 'PUT') {
+      serverHeight = JSON.parse(String(init.body)).heightCm;
+    }
+    if (String(url).endsWith('/api/goals')) createdHeights.push(serverHeight);
+    return implementation(url, init);
+  });
+  stored({ step: 4 });
+  setup();
+  await screen.findByText('1.876 kcal');
+  serverHeight = 160;
+  fetchMock.mockRejectedValueOnce(new Error('offline'));
+  fireEvent.click(screen.getByRole('button', { name: 'Empezar' }));
+  await screen.findByText(/No pudimos guardar tu objetivo/);
+  expect(createdHeights).toEqual([]);
+  expect(sessionStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Empezar' }));
+  await screen.findByRole('heading', { name: 'Hoy destino' });
+  expect(createdHeights).toEqual([165]);
 });
