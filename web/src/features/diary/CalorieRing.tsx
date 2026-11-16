@@ -1,3 +1,5 @@
+const formatKcal = (value: number) => new Intl.NumberFormat('es-AR').format(value);
+
 export function CalorieRing({ kcal, target }: { kcal: number; target?: number | undefined }) {
   const progress = target && target > 0 ? Math.min(kcal / target, 1) : 0;
   return (
@@ -19,13 +21,15 @@ export function CalorieRing({ kcal, target }: { kcal: number; target?: number | 
           )}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <strong className="text-3xl">{kcal}</strong>
+          <strong className="text-3xl">{formatKcal(kcal)}</strong>
           <span className="text-sm text-muted">kcal consumidas</span>
         </div>
       </div>
       {target != null && (
         <p className="text-sm text-muted">
-          {kcal <= target ? `quedan ${target - kcal} kcal` : `${kcal - target} kcal de más`}
+          {kcal <= target
+            ? `quedan ${formatKcal(target - kcal)} kcal`
+            : `${formatKcal(kcal - target)} kcal de más`}
         </p>
       )}
     </div>

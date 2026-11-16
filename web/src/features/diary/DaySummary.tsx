@@ -12,7 +12,7 @@ export function DaySummary({ summary }: { summary: Summary }) {
       </div>
       {!summary.target && (
         <Link
-          to="/perfil"
+          to="/objetivo/nuevo"
           className="mt-4 flex min-h-11 items-center justify-center text-accent underline"
         >
           Definí tu objetivo

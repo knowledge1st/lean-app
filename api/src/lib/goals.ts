@@ -1,25 +1,10 @@
-import type { ActiveGoal, Milestone, Plan } from '@lean/shared';
+import type { ActiveGoal, Milestone } from '@lean/shared';
 import { and, asc, desc, eq, isNotNull, lte } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { bodyLogs, goals, milestones, targets, type Goal } from '../db/schema';
 import { serializeTarget } from './targets';
 
-export function maxGoalTargetDate(today: string): string {
-  const date = new Date(`${today}T00:00:00Z`);
-  date.setUTCFullYear(date.getUTCFullYear() + 5);
-  return date.toISOString().slice(0, 10);
-}
-
-export function limitAdjustedTargetDate(plan: Plan, today: string): Plan {
-  if (!plan.adjusted || plan.adjusted.targetDate <= maxGoalTargetDate(today)) return plan;
-  const result = { ...plan };
-  delete result.adjusted;
-  result.milestones = [];
-  result.warnings = plan.warnings.some((warning) => warning.code === 'date_unreachable')
-    ? plan.warnings
-    : [...plan.warnings, { code: 'date_unreachable' }];
-  return result;
-}
+export { maxGoalTargetDate, limitAdjustedTargetDate } from '@lean/shared';
 
 export function deriveMilestoneKinds(
   points: { date: string; expectedWeightKg: number }[],

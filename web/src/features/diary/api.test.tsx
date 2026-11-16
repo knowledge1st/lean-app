@@ -8,6 +8,8 @@ import { ToastProvider } from '../../components/ui/Toast';
 import { jsonResponse } from '../../auth/testUtils';
 import { clearToken, setToken } from '../../lib/session';
 import { summaryKey, useDaySummary, useDiaryMutation } from './api';
+import { WeekBudgetBar } from '../goals/WeekBudgetBar';
+import { useWeekSummary } from '../goals/api';
 import { incorporateDiaryResult, type DiaryAction } from './optimistic';
 vi.mock('../../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/api')>();
@@ -125,11 +127,18 @@ it('recarga cada fecha al terminar su última acción aunque otra fecha siga pen
   const dates = [entry.date, '2026-11-15'];
   const requests = [deferred(), deferred()];
   const reads = [0, 0];
+  let weekReads = 0;
   let writes = 0;
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation((input, init) => {
       if (init?.method === 'PATCH') return requests[writes++]!.promise;
+      if (String(input).includes('/summary/week')) {
+        weekReads++;
+        return Promise.resolve(
+          jsonResponse({ budgetKcal: 14000, eatenKcal: 21, remainingKcal: 13979 }),
+        );
+      }
       const index = String(input).includes(dates[0]!) ? 0 : 1;
       reads[index]!++;
       return Promise.resolve(jsonResponse(base(dates[index])));
@@ -138,6 +147,7 @@ it('recarga cada fecha al terminar su última acción aunque otra fecha siga pen
   const { client, wrapper } = setup();
   const { result } = renderHook(
     () => {
+      useWeekSummary('2026-W46');
       useDaySummary(dates[0]!);
       useDaySummary(dates[1]!);
       return useDiaryMutation();
@@ -145,6 +155,7 @@ it('recarga cada fecha al terminar su última acción aunque otra fecha siga pen
     { wrapper },
   );
   await waitFor(() => expect(reads).toEqual([1, 1]));
+  expect(weekReads).toBe(1);
   for (const date of dates) {
     act(() =>
       result.current.mutate({
@@ -157,8 +168,10 @@ it('recarga cada fecha al terminar su última acción aunque otra fecha siga pen
   await waitFor(() => expect(writes).toBe(2));
   await act(async () => requests[0]!.resolve(jsonResponse({ ...entry, grams: 200 })));
   await waitFor(() => expect(reads).toEqual([2, 1]));
+  await waitFor(() => expect(weekReads).toBe(2));
   await act(async () => requests[1]!.reject(new Error('offline')));
   await waitFor(() => expect(reads).toEqual([2, 2]));
+  await waitFor(() => expect(weekReads).toBe(3));
   client.clear();
 });
 it('descarta pendientes al cambiar el token y permite nuevas acciones en la misma fecha', async () => {
@@ -342,9 +355,12 @@ it.each(['success', 'error'])(
       });
     });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
     const other = { ...entry, id: 'other', grams: 300, kcal: 30 };
     await act(async () => requests[1]!.resolve(jsonResponse(other)));
     await waitFor(() => expect(client.isMutating()).toBe(1));
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: summaryKey(entry.date) });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['summary', 'week'] });
     expect(
       client
         .getQueryData<DaySummary>(summaryKey(entry.date))!
@@ -356,10 +372,84 @@ it.each(['success', 'error'])(
       else requests[0]!.reject(new Error('offline'));
     });
     await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: summaryKey(entry.date) });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['summary', 'week'] });
     expect(client.getQueryData<DaySummary>(summaryKey(entry.date))!.meals[0]!.entries).toEqual([
       outcome === 'success' ? { ...entry, grams: 200, kcal: 20 } : entry,
       other,
     ]);
+    client.clear();
+  },
+);
+
+it.each(actions)(
+  'actualiza la barra semanal al confirmar $action.kind ($message)',
+  async ({ action }) => {
+    const request = deferred();
+    const saved = { ...entry, id: action.kind === 'add' ? 'new' : entry.id, grams: 200, kcal: 20 };
+    const original =
+      action.kind === 'edit' && action.changes.status === 'eaten'
+        ? incorporateDiaryResult(base(), action, action.entry)
+        : base();
+    const server = incorporateDiaryResult(
+      original,
+      action,
+      action.kind === 'delete' ? undefined : saved,
+    );
+    let confirmed = false;
+    let dayReads = 0;
+    let weekReads = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockImplementation((input, init) => {
+        if (init?.method && init.method !== 'GET') return request.promise;
+        if (String(input).includes('/summary/week')) {
+          weekReads++;
+          const eatenKcal = confirmed ? server.eaten.kcal : original.eaten.kcal;
+          return Promise.resolve(
+            jsonResponse({ budgetKcal: 100, eatenKcal, remainingKcal: 100 - eatenKcal }),
+          );
+        }
+        if (String(input).includes('/summary/day')) {
+          dayReads++;
+          return Promise.resolve(jsonResponse(confirmed ? server : original));
+        }
+        throw new Error(`Unexpected ${input}`);
+      }),
+    );
+    const { client, wrapper: Wrapper } = setup();
+    const { result } = renderHook(
+      () => {
+        useDaySummary(entry.date);
+        return useDiaryMutation();
+      },
+      {
+        wrapper: ({ children }: PropsWithChildren) => (
+          <Wrapper>
+            {children}
+            <WeekBudgetBar date={entry.date} />
+          </Wrapper>
+        ),
+      },
+    );
+    await screen.findByText(`Te quedan ${100 - original.eaten.kcal} kcal esta semana`);
+    await waitFor(() => expect(dayReads).toBe(1));
+    act(() => result.current.mutate(action));
+    await waitFor(() => expect(client.isMutating()).toBe(1));
+    expect(weekReads).toBe(1);
+    await act(async () => {
+      confirmed = true;
+      request.resolve(
+        action.kind === 'delete' ? new Response(null, { status: 204 }) : jsonResponse(saved),
+      );
+    });
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(dayReads).toBe(2);
+    expect(weekReads).toBe(2);
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe(
+      String(server.eaten.kcal),
+    );
+    expect(screen.getByText(`Te quedan ${100 - server.eaten.kcal} kcal esta semana`)).toBeTruthy();
     client.clear();
   },
 );

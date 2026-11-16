@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router';
 import { AppLayout } from './layout/AppLayout';
 import { Login } from './pages/Login';
+import { ObjetivoNuevo } from './pages/ObjetivoNuevo';
 import { Hoy } from './pages/Hoy';
 import { Plan } from './pages/Plan';
 import { Compras } from './pages/Compras';
@@ -15,6 +16,7 @@ export function AppRoutes() {
         <Route path="/login" element={<Login />} />
       </Route>
       <Route element={<RequireAuth />}>
+        <Route path="/objetivo/nuevo" element={<ObjetivoNuevo />} />
         <Route element={<AppLayout />}>
           <Route path="/hoy" element={<Hoy />} />
           <Route path="/plan" element={<Plan />} />

@@ -22,3 +22,12 @@ export function formatDayLabel(date: string, today: string): string {
     timeZone: 'UTC',
   }).format(new Date(`${date}T12:00:00Z`));
 }
+
+export function isoWeek(date: string): string {
+  const thursday = new Date(`${date}T12:00:00Z`);
+  thursday.setUTCDate(thursday.getUTCDate() + 4 - (thursday.getUTCDay() || 7));
+  const year = thursday.getUTCFullYear();
+  const yearStart = new Date(`${year}-01-01T12:00:00Z`);
+  const week = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { EmptyState } from '../components/ui/EmptyState';
+import { GoalCard } from '../features/goals/GoalCard';
+import { ProfileCard } from '../features/goals/ProfileForm';
 import { Sheet } from '../components/ui/Sheet';
 import { ChangePasswordSheet } from '../features/account/ChangePasswordSheet';
 import { ApiError } from '../lib/api';
@@ -38,6 +39,8 @@ export function Perfil() {
   return (
     <section className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Perfil</h1>
+      <GoalCard />
+      <ProfileCard />
       <Card className="space-y-5">
         <h2 className="text-xl font-semibold">Cuenta</h2>
         <div>
@@ -80,10 +83,6 @@ export function Perfil() {
           </Button>
         </div>
       </Card>
-      <EmptyState
-        title="Tu perfil está por completar"
-        description="Acá podrás configurar tus datos, preferencias y objetivos."
-      />
       <ChangePasswordSheet
         open={passwordOpen}
         onOpenChange={setPasswordOpen}

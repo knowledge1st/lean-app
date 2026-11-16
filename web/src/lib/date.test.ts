@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { addDays, formatDayLabel, parseLocalDateParam, todayLocal } from './date';
+import { isoWeek, addDays, formatDayLabel, parseLocalDateParam, todayLocal } from './date';
 it('usa los componentes locales de la fecha, incluso cerca de medianoche', () => {
   const now = new Date(2026, 10, 14, 23, 59);
   expect(todayLocal(now)).toBe('2026-11-14');
@@ -22,4 +22,15 @@ it('acepta fechas reales y etiqueta días relativos', () => {
   expect(formatDayLabel('2026-11-13', '2026-11-14')).toBe('Ayer');
   expect(formatDayLabel('2026-11-15', '2026-11-14')).toBe('Mañana');
   expect(formatDayLabel('2026-11-01', '2026-11-14')).toMatch(/nov/);
+});
+
+it.each([
+  ['2026-12-31', '2026-W53'],
+  ['2027-01-03', '2026-W53'],
+  ['2027-01-04', '2027-W01'],
+  ['2026-11-14', '2026-W46'],
+  ['2021-01-01', '2020-W53'],
+  ['2024-12-30', '2025-W01'],
+])('calcula la semana ISO de %s', (date, expected) => {
+  expect(isoWeek(date)).toBe(expected);
 });
