@@ -8,6 +8,57 @@ import { bodyFields, type ProgressLog } from './calc';
 
 const saveKey = ['body-logs', 'save'] as const;
 const writes = new WeakMap<QueryClient, Map<string, Promise<BodyLog>>>();
+type WeightSave = {
+  date: string;
+  values: Partial<Record<(typeof bodyFields)[number]['key'], number | undefined>>;
+};
+type DateSaves = {
+  token: string | null;
+  confirmed: ProgressLog | undefined;
+  pending: { id: symbol; values: WeightSave['values'] }[];
+};
+type SaveContext = { id: symbol; state: DateSaves };
+const saves = new WeakMap<QueryClient, Map<string, DateSaves>>();
+const empty = Object.fromEntries(bodyFields.map((f) => [f.key, null])) as Omit<BodyLog, 'date'>;
+
+function recalculate(client: QueryClient, date: string, state: DateSaves) {
+  let log = state.confirmed;
+  for (const { values } of state.pending) {
+    log = { ...empty, trendWeightKg: null, ...log, date };
+    for (const { key } of bodyFields) {
+      log[key] = values[key] ?? log[key];
+    }
+  }
+  for (const [key, data] of client.getQueriesData<{ logs: ProgressLog[] }>({
+    queryKey: bodyLogsKey,
+  })) {
+    if (!data || date < String(key[1]) || date > String(key[2])) continue;
+    client.setQueryData(key, {
+      ...data,
+      logs: [...data.logs.filter((row) => row.date !== date), ...(log ? [log] : [])].sort((a, b) =>
+        a.date.localeCompare(b.date),
+      ),
+    });
+  }
+}
+
+function finishSave(client: QueryClient, date: string, context: SaveContext, data?: BodyLog) {
+  const { id, state } = context;
+  state.pending = state.pending.filter((pending) => pending.id !== id);
+  if (getToken() === state.token && saves.get(client)?.get(date) === state) {
+    if (data) {
+      state.confirmed = {
+        ...state.confirmed,
+        ...data,
+        trendWeightKg: state.confirmed?.trendWeightKg ?? null,
+      };
+    }
+    recalculate(client, date, state);
+  }
+  if (!state.pending.length && saves.get(client)?.get(date) === state) {
+    saves.get(client)?.delete(date);
+  }
+}
 
 export const bodyLogsKey = ['body-logs'] as const;
 export const bodyRangeKey = (from: string, to: string) => [...bodyLogsKey, from, to] as const;
@@ -28,16 +79,9 @@ export function useProgressEntries(from: string, to: string) {
 export function useLogWeight() {
   const client = useQueryClient();
   const toast = useToast();
-  return useMutation({
+  const mutation = useMutation({
     mutationKey: saveKey,
-    mutationFn: async ({
-      date,
-      values,
-    }: {
-      date: string;
-      values: Partial<Record<(typeof bodyFields)[number]['key'], number | undefined>>;
-    }) => {
-      const token = getToken();
+    mutationFn: async ({ date, values, token }: WeightSave & { token: string | null }) => {
       let requests = writes.get(client);
       if (!requests) {
         requests = new Map();
@@ -47,7 +91,7 @@ export function useLogWeight() {
         .catch(() => {})
         .then(() => {
           if (getToken() !== token) throw new Error('La sesión cambió.');
-          return api.put<BodyLog>(`/api/body-logs/${date}`, values);
+          return api.put<BodyLog>(`/api/body-logs/${date}`, values, { token: token ?? '' });
         });
       requests.set(date, request);
       try {
@@ -56,50 +100,42 @@ export function useLogWeight() {
         if (requests.get(date) === request) requests.delete(date);
       }
     },
-    onMutate: async ({ date, values }) => {
-      const token = getToken();
+    onMutate: async ({ date, values, token }) => {
       await client.cancelQueries({ queryKey: bodyLogsKey });
-      if (getToken() !== token) return { token, previous: [] };
-      const cached = client.getQueriesData<{ logs: ProgressLog[] }>({ queryKey: bodyLogsKey });
-      const previous: { key: readonly unknown[]; log: ProgressLog | undefined }[] = [];
-      for (const [key, data] of cached) {
-        if (!data || date < String(key[1]) || date > String(key[2])) continue;
-        const existing = data.logs.find((l) => l.date === date);
-        previous.push({ key, log: existing });
-        const empty = Object.fromEntries(bodyFields.map((f) => [f.key, null])) as Omit<
-          BodyLog,
-          'date'
-        >;
-        const log = { ...empty, trendWeightKg: null, ...existing, date, ...values };
-        client.setQueryData(key, {
-          logs: [...data.logs.filter((l) => l.date !== date), log].sort((a, b) =>
-            a.date.localeCompare(b.date),
-          ),
-        });
+      if (getToken() !== token) return;
+      let dates = saves.get(client);
+      if (!dates) {
+        dates = new Map();
+        saves.set(client, dates);
       }
-      return { token, previous };
+      let state = dates.get(date);
+      if (!state || state.token !== token) {
+        const cached = client.getQueriesData<{ logs: ProgressLog[] }>({ queryKey: bodyLogsKey });
+        const confirmed = cached
+          .filter(([key, data]) => data && date >= String(key[1]) && date <= String(key[2]))
+          .flatMap(([, data]) => data!.logs)
+          .find((row) => row.date === date);
+        state = { token, confirmed, pending: [] };
+        dates.set(date, state);
+      }
+      const id = Symbol();
+      state.pending.push({ id, values });
+      recalculate(client, date, state);
+      return { id, state };
+    },
+    onSuccess: (data, { date }, context) => {
+      if (context) finishSave(client, date, context, data);
     },
     onError: (_error, { date }, context) => {
-      if (!context || getToken() !== context.token) return;
-      context.previous.forEach(({ key, log }) =>
-        client.setQueryData<{ logs: ProgressLog[] }>(key, (current) =>
-          current
-            ? {
-                ...current,
-                logs: [
-                  ...current.logs.filter((row) => row.date !== date),
-                  ...(log ? [log] : []),
-                ].sort((a, b) => a.date.localeCompare(b.date)),
-              }
-            : current,
-        ),
-      );
+      if (!context) return;
+      finishSave(client, date, context);
+      if (getToken() !== context.state.token) return;
       toast('No se pudo guardar el registro. Revisá tu conexión y volvé a intentarlo.');
     },
     onSettled: (_data, _error, _variables, context) => {
       if (
         !context ||
-        getToken() !== context.token ||
+        getToken() !== context.state.token ||
         client.isMutating({ mutationKey: saveKey }) !== 1
       )
         return;
@@ -109,4 +145,11 @@ export function useLogWeight() {
       ]);
     },
   });
+  return {
+    ...mutation,
+    mutate: (variables: WeightSave, options?: Parameters<typeof mutation.mutate>[1]) =>
+      mutation.mutate({ ...variables, token: getToken() }, options),
+    mutateAsync: (variables: WeightSave, options?: Parameters<typeof mutation.mutateAsync>[1]) =>
+      mutation.mutateAsync({ ...variables, token: getToken() }, options),
+  };
 }

@@ -132,7 +132,9 @@ export function useExerciseMutation(date: string) {
           ? {
               logs:
                 action.kind === 'add'
-                  ? [...old.logs, ...(log ? [log] : [])]
+                  ? log && old.logs.some((item) => item.id === log.id)
+                    ? old.logs.map((item) => (item.id === log.id ? log : item))
+                    : [...old.logs, ...(log ? [log] : [])]
                   : old.logs.flatMap((item) => (item.id !== action.id ? [item] : log ? [log] : [])),
             }
           : old,

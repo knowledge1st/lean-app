@@ -35,6 +35,41 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+it('reemplaza por id el alta que el GET ya trajo antes de la respuesta del POST', async () => {
+  const date = '2026-11-14';
+  const existing = { id: 'existing', date, activity: 'Caminata', minutes: 30, kcal: 100 };
+  const added = { ...existing, id: 'added', activity: 'Bicicleta', kcal: 200 };
+  const initial = deferred<{ logs: (typeof existing)[] }>();
+  const refreshed = deferred<{ logs: (typeof existing)[] }>();
+  const posted = deferred<typeof added>();
+  vi.spyOn(api, 'get')
+    .mockImplementationOnce(() => initial.promise as never)
+    .mockImplementationOnce(() => refreshed.promise as never);
+  const post = vi.spyOn(api, 'post').mockImplementation(() => posted.promise as never);
+  const { client, wrapper } = setup();
+  const { result } = renderHook(
+    () => ({ exercise: useExercise(date), mutation: useExerciseMutation(date) }),
+    { wrapper },
+  );
+  let request!: Promise<unknown>;
+  act(() => {
+    request = result.current.mutation.mutateAsync({
+      kind: 'add',
+      fields: { activity: added.activity, minutes: added.minutes, kcal: added.kcal },
+    });
+  });
+  await waitFor(() => expect(post).toHaveBeenCalledOnce());
+  await act(async () => initial.resolve({ logs: [existing, { ...added, kcal: 150 }] }));
+  await waitFor(() => expect(result.current.exercise.data?.logs).toHaveLength(2));
+  await act(async () => {
+    posted.resolve(added);
+    await request;
+  });
+  expect(client.getQueryData(exerciseKey(date))).toEqual({ logs: [existing, added] });
+  await waitFor(() => expect(result.current.exercise.data?.logs).toEqual([existing, added]));
+  expect(result.current.exercise.data?.logs.reduce((total, log) => total + log.kcal, 0)).toBe(300);
+  client.clear();
+});
 it('refetchea la lista completa si el alta termina antes que el GET inicial', async () => {
   const date = '2026-11-14';
   const existing = { id: 'existing', date, activity: 'Caminata', minutes: 30, kcal: 100 };
