@@ -6,6 +6,7 @@ import { useState } from 'react';
 import type { Food } from '@lean/shared';
 import { jsonResponse } from '../../auth/testUtils';
 import { AddFoodSheet } from './AddFoodSheet';
+import * as scannerLoader from '../scanner/ScannerLoadBoundary';
 vi.mock('../scanner/ScannerView', () => ({
   default: ({
     onDetected,
@@ -36,6 +37,7 @@ vi.mock('../../lib/api', async (importOriginal) => {
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -211,6 +213,59 @@ it('valida la creación, conserva lo escrito ante error y pasa a cantidad al gua
     ([input, init]) => String(input) === 'http://localhost/api/foods' && init?.method === 'POST',
   );
   expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ name: 'Mi pan', protein: 10.25 });
+  client.clear();
+});
+
+it('permite cerrar el escáner mientras el módulo sigue cargando', async () => {
+  let resolve!: (module: Awaited<ReturnType<typeof scannerLoader.loadScannerView>>) => void;
+  const pending = new Promise<Awaited<ReturnType<typeof scannerLoader.loadScannerView>>>((done) => {
+    resolve = done;
+  });
+  vi.spyOn(scannerLoader, 'loadScannerView').mockReturnValueOnce(pending);
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([])));
+  const { client } = setup();
+  fireEvent.click(screen.getByRole('button', { name: 'Escanear código de barras' }));
+  expect(screen.getByRole('status').textContent).toBe('Abriendo cámara…');
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar escáner' }));
+  expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();
+  await act(async () => resolve(await import('../scanner/ScannerView')));
+  expect(screen.queryByText('Detectar código')).toBeNull();
+  expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();
+  client.clear();
+});
+
+it('contiene el error de carga y permite cerrar para volver a búsqueda', async () => {
+  vi.spyOn(scannerLoader, 'loadScannerView').mockRejectedValueOnce(new Error('offline'));
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([])));
+  const { client } = setup();
+  fireEvent.click(screen.getByRole('button', { name: 'Escanear código de barras' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    'No se pudo abrir el escáner. Revisá la conexión e intentá de nuevo.',
+  );
+  expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar escáner' }));
+  expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();
+  fireEvent.click(screen.getByText('Crear alimento'));
+  expect(screen.getByLabelText('Nombre')).toBeTruthy();
+  client.clear();
+});
+
+it('reintenta el import fallido con un lazy nuevo y muestra el escáner', async () => {
+  const load = vi
+    .spyOn(scannerLoader, 'loadScannerView')
+    .mockRejectedValueOnce(new Error('chunk no disponible'));
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([])));
+  const { client } = setup();
+  fireEvent.click(screen.getByRole('button', { name: 'Escanear código de barras' }));
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByText('Detectar código')).toBeTruthy();
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('alert')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar escáner' }));
+  expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();
   client.clear();
 });
 

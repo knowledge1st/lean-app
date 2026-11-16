@@ -7,7 +7,9 @@ import { ApiError } from '../../lib/api';
 import { FoodSearch } from './FoodSearch';
 import { CustomFoodForm } from './CustomFoodForm';
 import { QuantityStep } from './QuantityStep';
-const LazyScannerView = lazy(() => import('../scanner/ScannerView'));
+import { loadScannerView, ScannerLoadBoundary } from '../scanner/ScannerLoadBoundary';
+
+const createScanner = () => lazy(() => loadScannerView());
 
 export function AddFoodSheet({
   date,
@@ -21,6 +23,7 @@ export function AddFoodSheet({
   onAdd: (food: Food, grams: number) => void;
 }) {
   const [step, setStep] = useState<'search' | 'custom' | 'quantity' | 'scan'>('search');
+  const [scanner, setScanner] = useState(() => ({ View: createScanner(), attempt: 0 }));
   const [food, setFood] = useState<Food | null>(null);
   const [error, setError] = useState<string>();
   const importing = useImportFood();
@@ -87,32 +90,42 @@ export function AddFoodSheet({
       }
     }
   };
+  const closeScanner = () => {
+    scanGeneration.current += 1;
+    lookupInFlight.current?.abort();
+    lookupInFlight.current = undefined;
+    setScanBusy(false);
+    setStep('search');
+  };
   if (step === 'scan') {
+    const LazyScannerView = scanner.View;
     return (
-      <Suspense
-        fallback={
-          <div
-            role="status"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black text-white"
-          >
-            Abriendo cámara…
-          </div>
+      <ScannerLoadBoundary
+        key={scanner.attempt}
+        onClose={closeScanner}
+        onRetry={() =>
+          setScanner(({ attempt }) => ({ View: createScanner(), attempt: attempt + 1 }))
         }
       >
-        <LazyScannerView
-          onDetected={(code) => void scan(code)}
-          onClose={() => {
-            scanGeneration.current += 1;
-            lookupInFlight.current?.abort();
-            lookupInFlight.current = undefined;
-            setScanBusy(false);
-            setStep('search');
-          }}
-          busy={scanBusy}
-          error={scanError}
-          onCreate={canCreate ? () => setStep('custom') : undefined}
-        />
-      </Suspense>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black p-5 text-white">
+              <p role="status">Abriendo cámara…</p>
+              <button type="button" aria-label="Cerrar escáner" onClick={closeScanner}>
+                Cerrar escáner
+              </button>
+            </div>
+          }
+        >
+          <LazyScannerView
+            onDetected={(code) => void scan(code)}
+            onClose={closeScanner}
+            busy={scanBusy}
+            error={scanError}
+            onCreate={canCreate ? () => setStep('custom') : undefined}
+          />
+        </Suspense>
+      </ScannerLoadBoundary>
     );
   }
   return (
