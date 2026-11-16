@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Food, Meal } from '@lean/shared';
 import { Sheet } from '../../components/ui/Sheet';
 import { MEAL_LABELS } from '../../lib/macros';
@@ -7,9 +7,7 @@ import { ApiError } from '../../lib/api';
 import { FoodSearch } from './FoodSearch';
 import { CustomFoodForm } from './CustomFoodForm';
 import { QuantityStep } from './QuantityStep';
-import { loadScannerView, ScannerLoadBoundary } from '../scanner/ScannerLoadBoundary';
-
-const createScanner = () => lazy(() => loadScannerView());
+import { ScannerView } from '../scanner/ScannerView';
 
 export function AddFoodSheet({
   date,
@@ -23,7 +21,6 @@ export function AddFoodSheet({
   onAdd: (food: Food, grams: number) => void;
 }) {
   const [step, setStep] = useState<'search' | 'custom' | 'quantity' | 'scan'>('search');
-  const [scanner, setScanner] = useState(() => ({ View: createScanner(), attempt: 0 }));
   const [food, setFood] = useState<Food | null>(null);
   const [error, setError] = useState<string>();
   const importing = useImportFood();
@@ -98,34 +95,14 @@ export function AddFoodSheet({
     setStep('search');
   };
   if (step === 'scan') {
-    const LazyScannerView = scanner.View;
     return (
-      <ScannerLoadBoundary
-        key={scanner.attempt}
+      <ScannerView
+        onDetected={(code) => void scan(code)}
         onClose={closeScanner}
-        onRetry={() =>
-          setScanner(({ attempt }) => ({ View: createScanner(), attempt: attempt + 1 }))
-        }
-      >
-        <Suspense
-          fallback={
-            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black p-5 text-white">
-              <p role="status">Abriendo cámara…</p>
-              <button type="button" aria-label="Cerrar escáner" onClick={closeScanner}>
-                Cerrar escáner
-              </button>
-            </div>
-          }
-        >
-          <LazyScannerView
-            onDetected={(code) => void scan(code)}
-            onClose={closeScanner}
-            busy={scanBusy}
-            error={scanError}
-            onCreate={canCreate ? () => setStep('custom') : undefined}
-          />
-        </Suspense>
-      </ScannerLoadBoundary>
+        busy={scanBusy}
+        error={scanError}
+        onCreate={canCreate ? () => setStep('custom') : undefined}
+      />
     );
   }
   return (

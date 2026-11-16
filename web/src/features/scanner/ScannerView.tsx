@@ -1,8 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { ManualBarcodeInput } from './ManualBarcodeInput';
-import { useBarcodeScanner } from './useBarcodeScanner';
+import { loadScannerCamera, ScannerLoadBoundary } from './ScannerLoadBoundary';
+
+const createCamera = () => lazy(() => loadScannerCamera());
 
 type ScannerViewProps = {
   onDetected: (code: string) => void;
@@ -11,47 +13,44 @@ type ScannerViewProps = {
   error?: string | undefined;
   onCreate?: (() => void) | undefined;
 };
-const messages = {
-  starting: 'Abriendo cámara…',
-  denied:
-    'No hay permiso para usar la cámara. Habilitalo en los ajustes del navegador o ingresá el código a mano.',
-  unavailable: 'No encontramos una cámara disponible. Ingresá el código a mano.',
-  error: 'No se pudo iniciar el escáner. Ingresá el código a mano.',
-  scanning: 'Apuntá al código de barras',
-  stopped: '',
-};
 function ScannerContent({ onDetected, busy = false, error, onCreate }: ScannerViewProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [paused, setPaused] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const [camera, setCamera] = useState(() => ({ View: createCamera(), attempt: 0 }));
+  const Camera = camera.View;
   const submit = (code: string) => {
     setPaused(true);
-    stop();
     onDetected(code);
   };
-  const { status, stop } = useBarcodeScanner({
-    videoRef,
-    active: !busy && !paused,
-    onDetect: submit,
-  });
-  const unavailable = ['denied', 'unavailable', 'error'].includes(status);
   return (
     <>
-      <video
-        ref={videoRef}
-        playsInline
-        muted
-        autoPlay
-        aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover"
-      />
-      <div className="pointer-events-none relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-5 text-white">
-        {!unavailable && !paused && !busy && (
-          <div className="aspect-[3/2] w-4/5 max-w-lg rounded-2xl border-2 border-white shadow-[0_0_0_100vmax_rgba(0,0,0,0.55)]" />
-        )}
-        <p role="status" className="relative mt-4 rounded-xl bg-black/70 p-3 text-center">
-          {busy ? 'Buscando…' : messages[status]}
+      <ScannerLoadBoundary
+        key={camera.attempt}
+        onUnavailable={() => setUnavailable(true)}
+        onRetry={() => {
+          setUnavailable(false);
+          setCamera(({ attempt }) => ({ View: createCamera(), attempt: attempt + 1 }));
+        }}
+      >
+        <Suspense
+          fallback={
+            <div className="flex min-h-0 flex-1 items-center justify-center p-5 text-white">
+              <p role="status">Abriendo cámara…</p>
+            </div>
+          }
+        >
+          <Camera
+            active={!busy && !paused}
+            onDetect={submit}
+            onUnavailableChange={setUnavailable}
+          />
+        </Suspense>
+      </ScannerLoadBoundary>
+      {busy && (
+        <p role="status" className="relative p-3 text-center text-white">
+          Buscando…
         </p>
-      </div>
+      )}
       <div className="relative max-h-[60%] shrink-0 space-y-3 overflow-y-auto rounded-t-3xl bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-text">
         {error && (
           <p role="alert" className="text-danger">
