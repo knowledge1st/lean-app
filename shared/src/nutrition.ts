@@ -22,6 +22,18 @@ export function scaleMacros(stored: Macros, fromGrams: number, toGrams: number):
     fat: (stored.fat * toGrams) / fromGrams,
   };
 }
+export function per100gFromServing(values: Macros, servingG: number): Macros {
+  const scaled = scaleMacros(values, servingG, 100);
+  // Remove binary scaling noise before rounding decimal half-up boundaries.
+  const round = (value: number, factor: number) =>
+    Math.round(Number((value * factor).toPrecision(12))) / factor;
+  return {
+    kcal: round(scaled.kcal, 1),
+    protein: round(scaled.protein, 100),
+    carbs: round(scaled.carbs, 100),
+    fat: round(scaled.fat, 100),
+  };
+}
 export function sumMacros(items: Macros[]): Macros {
   // Stored macros have four decimal places (numeric(12,4)); sum integer ten-thousandths.
   const sum = items.reduce(

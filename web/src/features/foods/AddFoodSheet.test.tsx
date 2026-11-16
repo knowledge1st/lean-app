@@ -171,6 +171,7 @@ it('valida la creación, conserva lo escrito ante error y pasa a cantidad al gua
   vi.stubGlobal('fetch', fetchMock);
   const { client } = setup();
   fireEvent.click(screen.getByText('Crear alimento'));
+  fireEvent.click(screen.getByRole('button', { name: 'Por 100 g' }));
   fireEvent.click(screen.getByText('Guardar alimento'));
   expect(screen.getByText('Nombre requerido')).toBeTruthy();
   for (const [label, value] of [
@@ -242,6 +243,7 @@ it('404 abre creación con el código y lo incluye en el POST', async () => {
   expect(barcode.value).toBe('7790001000012');
   expect(barcode.readOnly).toBe(true);
   expect(screen.getByRole('heading', { name: 'Crear alimento' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Por 100 g' }));
   for (const [label, value] of [
     ['Nombre', 'Mi producto'],
     ['Calorías', '200'],
