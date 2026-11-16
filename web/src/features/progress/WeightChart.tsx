@@ -4,6 +4,7 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'rec
 import { Button } from '../../components/ui/Button';
 import { formatNumber } from '../../lib/macros';
 import {
+  chartAxis,
   expectedWeightAt,
   shortDate,
   timestamp,
@@ -24,6 +25,7 @@ export default function WeightChart({
 }) {
   const [range, setRange] = useState<WeightRange>('month');
   const visible = weightWindow(logs, goal, today, range);
+  const axis = chartAxis(visible.data.flatMap((p) => [p.weight, p.trend, p.expected]));
   const points = trajectory(goal);
   const last = [...logs].reverse().find((l) => l.weightKg !== null);
   const trend = [...logs].reverse().find((l) => l.trendWeightKg !== null)?.trendWeightKg;
@@ -72,9 +74,9 @@ export default function WeightChart({
             />
             <YAxis
               width={48}
-              domain={['dataMin - 1', 'dataMax + 1']}
+              domain={axis.domain}
+              ticks={axis.ticks}
               tickFormatter={(v) => formatNumber(Number(v))}
-              tickCount={4}
               stroke="var(--muted)"
               tick={{ fontSize: 12 }}
             />

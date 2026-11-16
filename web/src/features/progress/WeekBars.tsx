@@ -58,13 +58,14 @@ export default function WeekBars({ summary, entries }: { summary: WeekSummary; e
               stroke="var(--protein)"
               strokeDasharray="5 5"
               strokeWidth={2}
-              dot={{ r: 3 }}
+              dot={false}
+              activeDot={false}
               isAnimationActive={false}
             />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <figcaption className="text-sm text-muted">
+      <figcaption className="sr-only">
         {data.bars
           .map(
             (b) =>

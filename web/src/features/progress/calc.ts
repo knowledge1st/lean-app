@@ -123,3 +123,20 @@ export function buildWeekBars(summary: WeekSummary, entries: Entry[]) {
     avgProteinG: days.size ? eaten.reduce((sum, e) => sum + e.protein, 0) / days.size : null,
   };
 }
+
+// Keep at least one unit of padding and extend the upper bound to a whole step.
+export function chartAxis(values: readonly (number | null | undefined)[]): {
+  domain: [number, number];
+  ticks: number[];
+} {
+  const finite = values.filter((value): value is number => value != null && Number.isFinite(value));
+  const min = finite.length ? Math.floor(Math.min(...finite)) - 1 : 0;
+  const max = finite.length ? Math.ceil(Math.max(...finite)) + 1 : 2;
+  const range = max - min;
+  // For wide ranges continue the same 1/2/5/10 sequence at larger magnitudes.
+  const magnitude = 10 ** Math.max(0, Math.ceil(Math.log10(range / 40)));
+  const step = [1, 2, 5, 10].map((n) => n * magnitude).find((n) => Math.ceil(range / n) <= 4)!;
+  const intervals = Math.max(2, Math.ceil(range / step));
+  const ticks = Array.from({ length: intervals + 1 }, (_, i) => min + i * step);
+  return { domain: [min, ticks.at(-1)!], ticks };
+}

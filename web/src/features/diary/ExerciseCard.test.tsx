@@ -20,6 +20,9 @@ function setup(logs: ExerciseLog[] = []) {
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   client.setQueryData(exerciseKey(date), { logs });
+  vi.spyOn(api, 'get').mockImplementation(
+    async () => client.getQueryData(exerciseKey(date)) as never,
+  );
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   render(
     <QueryClientProvider client={client}>
@@ -70,7 +73,8 @@ it('permite alta, edición y baja confirmada sin recargar', async () => {
   await screen.findByText('Todavía no registraste ejercicio hoy');
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(remove).toHaveBeenCalledWith('/api/exercise/exercise');
-  expect(invalidate).toHaveBeenCalledTimes(3);
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: exerciseKey(date) });
+  expect(invalidate).toHaveBeenCalledTimes(6);
   client.clear();
 });
 it.each(['add', 'edit', 'delete'])(

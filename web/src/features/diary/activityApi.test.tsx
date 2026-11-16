@@ -4,7 +4,14 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PropsWithChildren } from 'react';
 import { api } from '../../lib/api';
-import { useWater, useWaterMutation, useExercise, waterKey } from './activityApi';
+import {
+  useWater,
+  useWaterMutation,
+  useExercise,
+  useExerciseMutation,
+  waterKey,
+  exerciseKey,
+} from './activityApi';
 import { clearToken, setToken } from '../../lib/session';
 
 afterEach(() => {
@@ -21,6 +28,46 @@ function setup() {
     ),
   };
 }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+it('refetchea la lista completa si el alta termina antes que el GET inicial', async () => {
+  const date = '2026-11-14';
+  const existing = { id: 'existing', date, activity: 'Caminata', minutes: 30, kcal: 100 };
+  const added = { ...existing, id: 'added', activity: 'Bicicleta' };
+  const initial = deferred<{ logs: (typeof existing)[] }>();
+  const refreshed = deferred<{ logs: (typeof existing)[] }>();
+  const get = vi
+    .spyOn(api, 'get')
+    .mockImplementationOnce(() => initial.promise as never)
+    .mockImplementationOnce(() => refreshed.promise as never);
+  vi.spyOn(api, 'post').mockResolvedValue(added);
+  const { client, wrapper } = setup();
+  const invalidate = vi.spyOn(client, 'invalidateQueries');
+  const { result } = renderHook(
+    () => ({ exercise: useExercise(date), mutation: useExerciseMutation(date) }),
+    { wrapper },
+  );
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await result.current.mutation.mutateAsync({
+      kind: 'add',
+      fields: { activity: added.activity, minutes: added.minutes, kcal: added.kcal },
+    });
+  });
+  expect(client.getQueryData(exerciseKey(date))).toBeUndefined();
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: exerciseKey(date) });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  await act(async () => initial.resolve({ logs: [existing] }));
+  expect(client.getQueryData(exerciseKey(date))).toBeUndefined();
+  await act(async () => refreshed.resolve({ logs: [existing, added] }));
+  await waitFor(() => expect(result.current.exercise.data?.logs).toEqual([existing, added]));
+  client.clear();
+});
 it('consulta agua y ejercicio para la fecha con cancelación', async () => {
   const get = vi.spyOn(api, 'get').mockResolvedValue({ date: '2026-11-14', ml: 0, logs: [] });
   const { client, wrapper } = setup();

@@ -7,7 +7,7 @@ import { useDaySummary } from './api';
 import { useWater, useWaterMutation } from './activityApi';
 
 const format = (value: number) => value.toLocaleString('es-AR');
-type Addition = { ml: number; result: Promise<boolean> };
+type Addition = { sequence: number; ml: number; result: Promise<boolean> };
 export function WaterCard({ date }: { date: string }) {
   return <WaterDay key={date} date={date} />;
 }
@@ -16,9 +16,10 @@ function WaterDay({ date }: { date: string }) {
   const summary = useDaySummary(date);
   const change = useWaterMutation(date);
   const stack = useRef<Addition[]>([]);
+  const sequence = useRef(0);
   const [undoCount, setUndoCount] = useState(0);
   function add(ml: number) {
-    const addition = { ml, result: change(ml) };
+    const addition = { sequence: sequence.current++, ml, result: change(ml) };
     stack.current.push(addition);
     setUndoCount(stack.current.length);
     void addition.result.then((success) => {
@@ -81,6 +82,7 @@ function WaterDay({ date }: { date: string }) {
                     void addition.result.then((saved) => {
                       if (saved) {
                         stack.current.push(addition);
+                        stack.current.sort((a, b) => a.sequence - b.sequence);
                         setUndoCount(stack.current.length);
                       }
                     });

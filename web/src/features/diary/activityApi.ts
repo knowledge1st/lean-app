@@ -127,14 +127,17 @@ export function useExerciseMutation(date: string) {
     onSuccess: async ({ log, token }, action) => {
       if (token !== getToken()) return;
       await client.cancelQueries({ queryKey: exerciseKey(date) });
-      client.setQueryData<{ logs: ExerciseLog[] }>(exerciseKey(date), (old) => ({
-        logs:
-          action.kind === 'add'
-            ? [...(old?.logs ?? []), ...(log ? [log] : [])]
-            : (old?.logs ?? []).flatMap((item) =>
-                item.id !== action.id ? [item] : log ? [log] : [],
-              ),
-      }));
+      client.setQueryData<{ logs: ExerciseLog[] }>(exerciseKey(date), (old) =>
+        old
+          ? {
+              logs:
+                action.kind === 'add'
+                  ? [...old.logs, ...(log ? [log] : [])]
+                  : old.logs.flatMap((item) => (item.id !== action.id ? [item] : log ? [log] : [])),
+            }
+          : old,
+      );
+      void client.invalidateQueries({ queryKey: exerciseKey(date) });
       void client.invalidateQueries({ queryKey: summaryKey(date) });
     },
     onError: () => toast('No se pudo guardar el ejercicio. Intentá de nuevo.'),

@@ -1,6 +1,6 @@
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatNumber } from '../../lib/macros';
-import { shortDate, timestamp, type Measurement, type ProgressLog } from './calc';
+import { chartAxis, shortDate, timestamp, type Measurement, type ProgressLog } from './calc';
 export default function MeasurementChart({
   logs,
   measurement,
@@ -11,6 +11,7 @@ export default function MeasurementChart({
   const data = logs
     .filter((l) => l[measurement.key] !== null)
     .map((l) => ({ time: timestamp(l.date), value: l[measurement.key] }));
+  const axis = chartAxis(data.map((point) => point.value));
   return (
     <figure className="min-w-0 space-y-2">
       <div aria-hidden="true" className="h-60 min-w-0">
@@ -32,9 +33,9 @@ export default function MeasurementChart({
             />
             <YAxis
               width={48}
-              domain={['dataMin - 1', 'dataMax + 1']}
+              domain={axis.domain}
+              ticks={axis.ticks}
               tickFormatter={(v) => formatNumber(Number(v))}
-              tickCount={4}
               stroke="var(--muted)"
             />
             <Tooltip

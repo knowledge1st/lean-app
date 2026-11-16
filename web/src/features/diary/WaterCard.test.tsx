@@ -128,3 +128,28 @@ it('vacía la pila al cambiar de fecha y muestra el total sin meta', async () =>
   await act(async () => {});
   client.clear();
 });
+it('deshace la suma más reciente después de que un deshacer lento falle', async () => {
+  const undo = deferred();
+  const second = deferred();
+  const post = vi
+    .spyOn(api, 'post')
+    .mockResolvedValueOnce({ date, ml: 1250 })
+    .mockImplementationOnce(() => undo.promise as never)
+    .mockImplementationOnce(() => second.promise as never)
+    .mockResolvedValueOnce({ date, ml: 1250 });
+  const { client } = setup();
+  fireEvent.click(screen.getByText('+250 ml'));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByText('Deshacer'));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+  fireEvent.click(screen.getByText('+500 ml'));
+  await act(async () => undo.reject(new Error('offline')));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(3));
+  expect(client.getQueryData<{ ml: number }>(waterKey(date))?.ml).toBe(1750);
+  fireEvent.click(screen.getByText('Deshacer'));
+  expect(client.getQueryData<{ ml: number }>(waterKey(date))?.ml).toBe(1250);
+  await act(async () => second.resolve({ date, ml: 1750 }));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(4));
+  expect(post).toHaveBeenNthCalledWith(4, '/api/water', { date, ml: -500 });
+  client.clear();
+});

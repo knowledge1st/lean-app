@@ -3,6 +3,7 @@ import type { ActiveGoal, Entry } from '@lean/shared';
 import { log, weekSummary } from './testFixtures';
 import {
   buildWeekBars,
+  chartAxis,
   expectedWeightAt,
   formatPlanDifference,
   planDifference,
@@ -87,4 +88,52 @@ it('presenta la semana vacía sin promedio de proteína', () => {
   expect(result.avgProteinG).toBeNull();
   expect(result.loggedDays).toBe(0);
   expect(result.bars.every((b) => b.kcal === 0 && !b.over)).toBe(true);
+});
+
+describe('eje entero de peso y medidas', () => {
+  it.each([
+    [
+      [84.1, 86.8],
+      [83, 89],
+      [83, 85, 87, 89],
+    ],
+    [[80], [79, 81], [79, 80, 81]],
+    [
+      [null, undefined, NaN, Infinity],
+      [0, 2],
+      [0, 1, 2],
+    ],
+    [
+      [20.1, 22.8],
+      [19, 25],
+      [19, 21, 23, 25],
+    ],
+    [
+      [70, 86],
+      [69, 89],
+      [69, 74, 79, 84, 89],
+    ],
+    [
+      [60, 88],
+      [59, 89],
+      [59, 69, 79, 89],
+    ],
+  ])('calcula dominio y marcas para %j', (values, domain, ticks) => {
+    expect(chartAxis(values)).toEqual({ domain, ticks });
+  });
+  it.each([
+    [25, 300],
+    [-2.5, 0.1],
+    [80.1, 85.9],
+  ])('mantiene margen, extremos y espaciado para %j', (...values) => {
+    const { domain, ticks } = chartAxis(values);
+    expect(domain[0]).toBe(Math.floor(Math.min(...values)) - 1);
+    expect(domain[1]).toBeGreaterThanOrEqual(Math.ceil(Math.max(...values)) + 1);
+    expect(ticks.length).toBeGreaterThanOrEqual(3);
+    expect(ticks.length).toBeLessThanOrEqual(5);
+    expect(ticks[0]).toBe(domain[0]);
+    expect(ticks.at(-1)).toBe(domain[1]);
+    expect(ticks.every(Number.isInteger)).toBe(true);
+    expect(new Set(ticks.slice(1).map((tick, i) => tick - ticks[i]!)).size).toBe(1);
+  });
 });
