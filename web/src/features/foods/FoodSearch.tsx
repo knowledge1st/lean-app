@@ -9,11 +9,13 @@ import { FoodResultRow } from './FoodResultRow';
 export function FoodSearch({
   onSelect,
   onCreate,
+  onScan,
   busy = false,
   error,
 }: {
   onSelect: (food: Food) => void;
   onCreate: () => void;
+  onScan: () => void;
   busy?: boolean;
   error?: string | undefined;
 }) {
@@ -45,9 +47,9 @@ export function FoodSearch({
         </div>
         <Button
           variant="secondary"
-          disabled
-          aria-label="Escanear: Próximamente"
-          title="Próximamente"
+          disabled={busy}
+          onClick={onScan}
+          aria-label="Escanear código de barras"
         >
           Escanear
         </Button>
