@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, Navigate, useSearchParams } from 'react-router';
 import { MEALS, type Entry, type Meal } from '@lean/shared';
 import { todayLocal, addDays, formatDayLabel, parseLocalDateParam } from '../lib/date';
+import { useActiveGoal } from '../features/goals/api';
+import { wasWizardSkipped } from '../features/goals/draft';
+import { WeekBudgetBar } from '../features/goals/WeekBudgetBar';
+import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
 import { ErrorState } from '../components/ui/ErrorState';
@@ -18,6 +22,8 @@ export function Hoy() {
   const date = parseLocalDateParam(raw) ?? today;
   const [adding, setAdding] = useState<{ date: string; meal: Meal } | null>(null);
   const [editing, setEditing] = useState<Entry | null>(null);
+  const goal = useActiveGoal();
+  const wizardSkipped = wasWizardSkipped();
   const query = useDaySummary(date);
   const mutation = useDiaryMutation();
   useEffect(() => {
@@ -38,6 +44,9 @@ export function Hoy() {
     mutation.mutate(action);
     setAdding(null);
     setEditing(null);
+  }
+  if (goal.isSuccess && goal.data === null && !wizardSkipped) {
+    return <Navigate to="/objetivo/nuevo" replace />;
   }
   return (
     <section className="min-w-0 space-y-5">
@@ -71,6 +80,25 @@ export function Hoy() {
           →
         </Button>
       </header>
+      {goal.isError && (
+        <ErrorState
+          message="No se pudo cargar tu objetivo."
+          onRetry={() => {
+            void goal.refetch();
+          }}
+        />
+      )}
+      {goal.isSuccess && goal.data === null && wizardSkipped && (
+        <Card>
+          <p>Definí tu objetivo para ver cuánto te queda</p>
+          <Link
+            to="/objetivo/nuevo"
+            className="mt-2 inline-flex min-h-11 items-center rounded-xl bg-accent px-4 py-2 font-semibold text-on-accent"
+          >
+            Definir objetivo
+          </Link>
+        </Card>
+      )}
       {query.isPending ? (
         <div aria-label="Cargando día" className="space-y-4">
           <Skeleton className="h-64" />
@@ -96,6 +124,7 @@ export function Hoy() {
             />
           )}
           <DaySummary summary={query.data} />
+          <WeekBudgetBar date={date} />
           {MEALS.map((meal) => {
             const section = query.data.meals.find((item) => item.meal === meal);
             return (

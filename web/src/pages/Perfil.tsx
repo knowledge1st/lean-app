@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../auth/AuthProvider';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { EmptyState } from '../components/ui/EmptyState';
+import { GoalCard } from '../features/goals/GoalCard';
+import { ProfileCard } from '../features/goals/ProfileForm';
 import { Sheet } from '../components/ui/Sheet';
 import { ChangePasswordSheet } from '../features/account/ChangePasswordSheet';
 import { ApiError } from '../lib/api';
@@ -80,10 +81,8 @@ export function Perfil() {
           </Button>
         </div>
       </Card>
-      <EmptyState
-        title="Tu perfil está por completar"
-        description="Acá podrás configurar tus datos, preferencias y objetivos."
-      />
+      <GoalCard />
+      <ProfileCard />
       <ChangePasswordSheet
         open={passwordOpen}
         onOpenChange={setPasswordOpen}

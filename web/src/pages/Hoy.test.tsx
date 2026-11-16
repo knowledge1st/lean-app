@@ -2,10 +2,12 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, useLocation } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router';
 import { MEALS, ZERO_MACROS, type DaySummary, type Entry, type Food } from '@lean/shared';
 import { jsonResponse } from '../auth/testUtils';
 import { ToastProvider } from '../components/ui/Toast';
+import { activeGoalKey, useCreateGoal } from '../features/goals/api';
+import { markWizardSkipped } from '../features/goals/draft';
 import { todayLocal } from '../lib/date';
 import { Hoy } from './Hoy';
 import { setToken, clearToken } from '../lib/session';
@@ -18,6 +20,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   clearToken();
+  localStorage.clear();
 });
 const summary: DaySummary = {
   date: '2026-11-14',
@@ -56,19 +59,56 @@ const summary: DaySummary = {
         : [],
   })),
 };
+const target = { kcal: 2000, protein: 150, carbs: 200, fat: 60, waterMl: 2000 };
+const activeGoal = {
+  id: 'goal',
+  mode: 'manual',
+  preset: null,
+  startDate: summary.date,
+  startWeightKg: 80,
+  targetWeightKg: null,
+  targetDate: null,
+  target,
+  milestones: [],
+  progress: { startWeightKg: 80, currentWeightKg: 80, targetWeightKg: null, percent: null },
+};
 function Location() {
   const location = useLocation();
-  return <output aria-label="URL">{location.search}</output>;
+  const navigationType = useNavigationType();
+  return (
+    <>
+      <output aria-label="URL">{location.search}</output>
+      <output aria-label="Ruta">{location.pathname}</output>
+      <output aria-label="Navegación">{navigationType}</output>
+    </>
+  );
 }
-function setup(path = '/hoy?fecha=2026-11-14') {
+function setup(path = '/hoy?fecha=2026-11-14', seed = true, create = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  if (seed) {
+    client.setQueryDefaults(activeGoalKey, { staleTime: Infinity });
+    client.setQueryData(activeGoalKey, activeGoal);
+    client.setQueryDefaults(['summary', 'week'], { staleTime: Infinity });
+    client.setQueryData(['summary', 'week', '2026-W46'], { budgetKcal: null });
+  }
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <ToastProvider>
-          <Hoy />
+          <Routes>
+            <Route
+              path="/hoy"
+              element={
+                <>
+                  <Hoy />
+                  {create && <CreateGoal />}
+                </>
+              }
+            />
+            <Route path="/objetivo/nuevo" element={<h1>Nuevo objetivo</h1>} />
+          </Routes>
           <Location />
         </ToastProvider>
       </MemoryRouter>
@@ -336,3 +376,136 @@ it.each(['error', 'success'] as const)(
     client.clear();
   },
 );
+
+function CreateGoal() {
+  const mutation = useCreateGoal();
+  return (
+    <button
+      onClick={() =>
+        mutation.mutate({
+          goal: { mode: 'manual', kcal: 2000, proteinG: 150, carbsG: 200, fatG: 60 },
+          weightKg: 80,
+        })
+      }
+    >
+      Crear objetivo
+    </button>
+  );
+}
+
+it('muestra lo restante y las metas de macros del resumen diario y el presupuesto semanal', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof fetch>()
+      .mockImplementation((input) =>
+        Promise.resolve(
+          jsonResponse(
+            String(input).includes('/goals/')
+              ? activeGoal
+              : String(input).includes('/summary/week')
+                ? { budgetKcal: 14000, eatenKcal: 4550, remainingKcal: 9450 }
+                : { ...summary, target, eaten: { kcal: 500, protein: 30, carbs: 40, fat: 10 } },
+          ),
+        ),
+      ),
+  );
+  const client = setup(undefined, false);
+  expect(await screen.findByText('quedan 1500 kcal')).toBeTruthy();
+  expect(await screen.findByText('Te quedan 9.450 kcal esta semana')).toBeTruthy();
+  const proteinValue = screen.getByText('30 / 150 g');
+  expect(proteinValue).toBeTruthy();
+  const proteinBar = proteinValue.parentElement?.nextElementSibling
+    ?.firstElementChild as HTMLElement;
+  expect(proteinBar.style.width).toBe('20%');
+  expect(screen.getByText('40 / 200 g')).toBeTruthy();
+  expect(screen.getByText('10 / 60 g')).toBeTruthy();
+  expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('4550');
+  client.clear();
+});
+
+it.each(['redirect', 'skipped', 'error', 'loading'] as const)(
+  'maneja el objetivo al ingresar: %s',
+  async (state) => {
+    if (state === 'skipped') markWizardSkipped();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockImplementation((input) => {
+        if (String(input).includes('/goals/')) {
+          if (state === 'loading') return new Promise(() => {});
+          return Promise.resolve(
+            jsonResponse(
+              {
+                error: {
+                  code: state === 'error' ? 'server_error' : 'goal_not_found',
+                  message: 'No se pudo cargar el objetivo.',
+                },
+              },
+              state === 'error' ? 500 : 404,
+            ),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse(String(input).includes('/summary/week') ? { budgetKcal: null } : summary),
+        );
+      }),
+    );
+    const client = setup(undefined, false);
+    if (state === 'redirect') {
+      await screen.findByText('Nuevo objetivo');
+      expect(screen.getByLabelText('Ruta').textContent).toBe('/objetivo/nuevo');
+      expect(screen.getByLabelText('Navegación').textContent).toBe('REPLACE');
+    } else {
+      if (state === 'error') await screen.findByText('No se pudo cargar tu objetivo.');
+      else if (state === 'skipped') {
+        await screen.findByText('Definí tu objetivo para ver cuánto te queda');
+        expect(screen.getByRole('link', { name: 'Definir objetivo' }).getAttribute('href')).toBe(
+          '/objetivo/nuevo',
+        );
+      } else await screen.findByText('Pan');
+      expect(screen.getByLabelText('Ruta').textContent).toBe('/hoy');
+      expect(
+        (await screen.findByRole('link', { name: 'Definí tu objetivo' })).getAttribute('href'),
+      ).toBe('/objetivo/nuevo');
+    }
+    client.clear();
+  },
+);
+
+it('actualiza las metas y el presupuesto al crear un objetivo e invalidar los resúmenes', async () => {
+  markWizardSkipped();
+  let created = false;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        created = true;
+        return Promise.resolve(jsonResponse({ goal: activeGoal, plan: {} }));
+      }
+      if (url.includes('/goals/'))
+        return Promise.resolve(
+          created
+            ? jsonResponse(activeGoal)
+            : jsonResponse({ error: { code: 'goal_not_found', message: 'Sin objetivo.' } }, 404),
+        );
+      if (url.includes('/summary/week'))
+        return Promise.resolve(
+          jsonResponse({
+            budgetKcal: created ? 14000 : null,
+            eatenKcal: 4550,
+            remainingKcal: created ? 9450 : null,
+          }),
+        );
+      return Promise.resolve(jsonResponse({ ...summary, target: created ? target : null }));
+    }),
+  );
+  const client = setup(undefined, false, true);
+  await screen.findByText('Definí tu objetivo para ver cuánto te queda');
+  expect(screen.queryByText('quedan 2000 kcal')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Crear objetivo' }));
+  expect(await screen.findByText('quedan 2000 kcal')).toBeTruthy();
+  expect(await screen.findByText('Te quedan 9.450 kcal esta semana')).toBeTruthy();
+  expect(screen.queryByText('Definí tu objetivo para ver cuánto te queda')).toBeNull();
+  client.clear();
+});
