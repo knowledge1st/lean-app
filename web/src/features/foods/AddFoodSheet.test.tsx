@@ -343,29 +343,80 @@ it('muestra errores de red en el escáner y cerrar vuelve a búsqueda', async ()
   expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();
   client.clear();
 });
-it('ignora una búsqueda pendiente al cerrar y permite escanear al reabrir', async () => {
-  let resolve!: (response: Response) => void;
-  const pending = new Promise<Response>((done) => {
-    resolve = done;
+
+it.each([
+  ['lookup', 'resolve'],
+  ['lookup', 'reject'],
+  ['import', 'resolve'],
+  ['import', 'reject'],
+])('reabre de inmediato durante %s y descarta su resultado tardío (%s)', async (phase, outcome) => {
+  let resolveOld!: (response: Response) => void;
+  let rejectOld!: (error: Error) => void;
+  let resolveNew!: (response: Response) => void;
+  const oldPending = new Promise<Response>((resolve, reject) => {
+    resolveOld = resolve;
+    rejectOld = reject;
   });
-  const fetchMock = vi
-    .fn<typeof fetch>()
-    .mockImplementation((input) =>
-      String(input).includes('/barcode/') ? pending : Promise.resolve(jsonResponse([])),
-    );
+  const newPending = new Promise<Response>((resolve) => {
+    resolveNew = resolve;
+  });
+  let oldSignal: AbortSignal | undefined;
+  let lookupCalls = 0;
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+    if (String(input).includes('/barcode/')) {
+      lookupCalls += 1;
+      if (lookupCalls > 1) return newPending;
+      oldSignal = init?.signal ?? undefined;
+      return phase === 'lookup' ? oldPending : Promise.resolve(jsonResponse({ ...food, id: null }));
+    }
+    if (init?.method === 'POST') return oldPending;
+    return Promise.resolve(jsonResponse([]));
+  });
   vi.stubGlobal('fetch', fetchMock);
   const { client } = setup();
   await openScanner();
+  await waitFor(() => expect(lookupCalls).toBe(1));
+  if (phase === 'import') {
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true),
+    );
+  }
   fireEvent.click(screen.getByText('Cerrar escáner'));
+  if (phase === 'lookup') expect(oldSignal?.aborted).toBe(true);
   fireEvent.click(screen.getByLabelText('Escanear código de barras'));
-  expect(((await screen.findByText('Detectar código')) as HTMLButtonElement).disabled).toBe(true);
-  await act(async () => resolve(jsonResponse(food)));
-  await waitFor(() =>
-    expect((screen.getByText('Detectar código') as HTMLButtonElement).disabled).toBe(false),
-  );
-  expect(screen.queryByLabelText('Gramos')).toBeNull();
-  fetchMock.mockResolvedValueOnce(jsonResponse(food));
+  expect(((await screen.findByText('Detectar código')) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(screen.getByText('Detectar código'));
+  await waitFor(() => expect(lookupCalls).toBe(2));
+  await act(async () => {
+    if (outcome === 'resolve') resolveOld(jsonResponse(food));
+    else rejectOld(new DOMException('cancelado', 'AbortError'));
+  });
+  expect((screen.getByText('Detectar código') as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.queryByLabelText('Gramos')).toBeNull();
+  await act(async () => resolveNew(jsonResponse(food)));
   expect(await screen.findByLabelText('Gramos')).toBeTruthy();
+  client.clear();
+});
+it('desmontar la hoja aborta la búsqueda pendiente sin mostrar errores', async () => {
+  let signal: AbortSignal | undefined;
+  let reject!: (error: Error) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (!String(input).includes('/barcode/')) return Promise.resolve(jsonResponse([]));
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>((_, fail) => {
+        reject = fail;
+      });
+    }),
+  );
+  const { client } = setup();
+  await openScanner();
+  await waitFor(() => expect(signal).toBeDefined());
+  cleanup();
+  expect(signal?.aborted).toBe(true);
+  await act(async () => reject(new DOMException('cancelado', 'AbortError')));
+  expect(screen.queryByRole('alert')).toBeNull();
   client.clear();
 });

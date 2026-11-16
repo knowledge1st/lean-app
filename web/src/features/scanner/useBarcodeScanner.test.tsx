@@ -7,10 +7,12 @@ import type { DetectorLike } from './detector';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 const flush = () =>
   act(async () => {
@@ -242,4 +244,72 @@ it('sin mediaDevices ofrece el ingreso manual con estado unavailable', async () 
   render(<Harness />);
   await flush();
   expect(screen.getByText('unavailable')).toBeTruthy();
+});
+
+it('reintenta crear el detector después de una carga fallida', async () => {
+  const s = setup();
+  s.createDetector.mockRejectedValueOnce(new Error('WASM'));
+  await flush();
+  expect(screen.getByText('error')).toBeTruthy();
+  expect(s.track.stop).toHaveBeenCalledTimes(1);
+  s.rerender(<s.Harness active={false} />);
+  s.rerender(<s.Harness />);
+  await flush();
+  expect(screen.getByText('scanning')).toBeTruthy();
+  expect(s.createDetector).toHaveBeenCalledTimes(2);
+});
+it('diez fallos consecutivos de detect liberan la cámara y terminan en error', async () => {
+  const s = setup();
+  s.detect.mockRejectedValue(new Error('frame'));
+  await flush();
+  await tick(1800);
+  expect(screen.getByText('scanning')).toBeTruthy();
+  expect(s.track.stop).not.toHaveBeenCalled();
+  await tick();
+  expect(screen.getByText('error')).toBeTruthy();
+  expect(s.track.stop).toHaveBeenCalledTimes(1);
+  await tick(1000);
+  expect(s.detect).toHaveBeenCalledTimes(10);
+});
+it('un frame exitoso reinicia la cuenta de errores consecutivos', async () => {
+  const s = setup();
+  s.detect.mockRejectedValue(new Error('frame'));
+  await flush();
+  await tick(1800);
+  s.detect.mockResolvedValueOnce([]);
+  await tick(2000);
+  expect(screen.getByText('scanning')).toBeTruthy();
+  expect(s.track.stop).not.toHaveBeenCalled();
+  await tick();
+  expect(screen.getByText('error')).toBeTruthy();
+});
+it('un rechazo vigente de play libera la cámara y termina en error', async () => {
+  vi.mocked(HTMLVideoElement.prototype.play).mockRejectedValue(new Error('play'));
+  const s = setup();
+  await flush();
+  expect(screen.getByText('error')).toBeTruthy();
+  expect(s.track.stop).toHaveBeenCalledTimes(1);
+  expect(s.createDetector).not.toHaveBeenCalled();
+  await tick(1000);
+  expect(s.detect).not.toHaveBeenCalled();
+});
+it('ignora el rechazo de play después de desmontar', async () => {
+  const pending = deferred<void>();
+  vi.mocked(HTMLVideoElement.prototype.play).mockReturnValue(pending.promise);
+  const s = setup();
+  await flush();
+  expect(screen.getByText('starting')).toBeTruthy();
+  s.unmount();
+  await act(async () => pending.reject(new DOMException('cancelado', 'AbortError')));
+  await tick(1000);
+  expect(s.track.stop).toHaveBeenCalledTimes(1);
+  expect(s.createDetector).not.toHaveBeenCalled();
+  expect(s.onDetect).not.toHaveBeenCalled();
+  expect(s.container.textContent).toBe('');
+});
+it('continúa si play no devuelve una promesa', async () => {
+  vi.mocked(HTMLVideoElement.prototype.play).mockReturnValue(undefined as unknown as Promise<void>);
+  setup();
+  await flush();
+  expect(screen.getByText('scanning')).toBeTruthy();
 });

@@ -25,14 +25,18 @@ export function AddFoodSheet({
   const [error, setError] = useState<string>();
   const importing = useImportFood();
   const lookup = useBarcodeLookup();
+  const scanImport = useImportFood();
+  const [scanBusy, setScanBusy] = useState(false);
   const [initialBarcode, setInitialBarcode] = useState<string>();
   const [scanError, setScanError] = useState<string>();
   const [canCreate, setCanCreate] = useState(false);
   const scanGeneration = useRef(0);
-  const lookupInFlight = useRef(false);
+  const lookupInFlight = useRef<AbortController | undefined>(undefined);
   useEffect(
     () => () => {
       scanGeneration.current += 1;
+      lookupInFlight.current?.abort();
+      lookupInFlight.current = undefined;
     },
     [],
   );
@@ -43,16 +47,18 @@ export function AddFoodSheet({
   };
   const scan = async (code: string) => {
     if (lookupInFlight.current) return;
-    lookupInFlight.current = true;
+    const controller = new AbortController();
+    lookupInFlight.current = controller;
+    setScanBusy(true);
     const generation = scanGeneration.current;
-    const current = () => generation === scanGeneration.current;
+    const current = () => generation === scanGeneration.current && !controller.signal.aborted;
     setScanError(undefined);
     setCanCreate(false);
     setInitialBarcode(code);
     try {
-      let selected = await lookup.mutateAsync(code);
+      let selected = await lookup.mutateAsync({ code, signal: controller.signal });
       if (!current()) return;
-      if (!selected.id) selected = await importing.mutateAsync(selected.barcode ?? code);
+      if (!selected.id) selected = await scanImport.mutateAsync(selected.barcode ?? code);
       if (!current()) return;
       if (!selected.id) throw new Error('No se pudo importar el alimento.');
       choose(selected);
@@ -75,7 +81,10 @@ export function AddFoodSheet({
         );
       }
     } finally {
-      lookupInFlight.current = false;
+      if (lookupInFlight.current === controller) {
+        lookupInFlight.current = undefined;
+        setScanBusy(false);
+      }
     }
   };
   if (step === 'scan') {
@@ -94,9 +103,12 @@ export function AddFoodSheet({
           onDetected={(code) => void scan(code)}
           onClose={() => {
             scanGeneration.current += 1;
+            lookupInFlight.current?.abort();
+            lookupInFlight.current = undefined;
+            setScanBusy(false);
             setStep('search');
           }}
-          busy={lookup.isPending || importing.isPending}
+          busy={scanBusy}
           error={scanError}
           onCreate={canCreate ? () => setStep('custom') : undefined}
         />

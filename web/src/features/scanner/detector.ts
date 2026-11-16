@@ -17,16 +17,26 @@ export async function createBarcodeDetector(): Promise<DetectorLike> {
     }
   }
   ponyfillPromise ??= (async () => {
-    const { BarcodeDetector, prepareZXingModule } = await import('barcode-detector/ponyfill');
-    const { default: wasmUrl } = await import('zxing-wasm/reader/zxing_reader.wasm?url');
-    prepareZXingModule({
-      overrides: {
-        locateFile: (path: string, prefix: string) =>
-          path.endsWith('.wasm') ? wasmUrl : prefix + path,
-      },
-    });
+    const { BarcodeDetector, prepareZXingModule, purgeZXingModule } =
+      await import('barcode-detector/ponyfill');
+    try {
+      const { default: wasmUrl } = await import('zxing-wasm/reader/zxing_reader.wasm?url');
+      await prepareZXingModule({
+        fireImmediately: true,
+        overrides: {
+          locateFile: (path: string, prefix: string) =>
+            path.endsWith('.wasm') ? wasmUrl : prefix + path,
+        },
+      });
+    } catch (failure) {
+      purgeZXingModule();
+      throw failure;
+    }
     return BarcodeDetector;
-  })();
+  })().catch((failure: unknown) => {
+    ponyfillPromise = undefined;
+    throw failure;
+  });
   const Detector = await ponyfillPromise;
   return new Detector({ formats: [...SCAN_FORMATS] });
 }

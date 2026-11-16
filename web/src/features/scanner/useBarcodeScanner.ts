@@ -4,6 +4,7 @@ import { createBarcodeDetector, SCAN_FORMATS, type DetectorLike } from './detect
 
 export type ScannerStatus =
   'starting' | 'scanning' | 'denied' | 'unavailable' | 'error' | 'stopped';
+const MAX_CONSECUTIVE_FAILURES = 10;
 const defaultGetUserMedia = (constraints: MediaStreamConstraints) =>
   navigator.mediaDevices.getUserMedia(constraints);
 
@@ -89,10 +90,22 @@ export function useBarcodeScanner({
       }
       stream = acquired;
       video.srcObject = acquired;
-      void video.play().catch(() => {});
+      try {
+        await video.play();
+      } catch {
+        if (current()) {
+          release();
+          setStatus('error');
+        }
+        return;
+      }
+      if (!current()) return;
       let reader: DetectorLike;
       try {
-        detector.current ??= createDetector();
+        detector.current ??= createDetector().catch((failure: unknown) => {
+          detector.current = undefined;
+          throw failure;
+        });
         reader = await detector.current;
       } catch {
         if (current()) {
@@ -103,12 +116,14 @@ export function useBarcodeScanner({
       }
       if (!current()) return;
       setStatus('scanning');
+      let consecutiveFailures = 0;
       const scan = async () => {
         if (!current()) return;
         if (video.readyState >= 2 && !detecting.current) {
           detecting.current = true;
           try {
             const results = await reader.detect(video);
+            consecutiveFailures = 0;
             if (!current()) return;
             for (const result of results) {
               const code = result.rawValue.replace(/\s/g, '');
@@ -127,7 +142,10 @@ export function useBarcodeScanner({
               }
             }
           } catch {
-            // A failed frame must not end the session.
+            if (current() && ++consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+              release();
+              setStatus('error');
+            }
           } finally {
             detecting.current = false;
           }
