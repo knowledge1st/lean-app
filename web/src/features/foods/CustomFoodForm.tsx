@@ -1,25 +1,28 @@
 import { useState } from 'react';
-import { createFoodSchema, type Food } from '@lean/shared';
+import { createFoodSchema, per100gFromServing, type Food } from '@lean/shared';
 import { Input } from '../../components/ui/Input';
 import { NumberInput } from '../../components/ui/NumberInput';
 import { Button } from '../../components/ui/Button';
-import { decimalValue } from '../../lib/macros';
+import { decimalValue, formatNumber } from '../../lib/macros';
 import { useCreateFood } from './api';
 const numericFields = [
   { key: 'kcal', label: 'Calorías', unit: 'kcal' },
   { key: 'protein', label: 'Proteína', unit: 'g' },
   { key: 'carbs', label: 'Carbohidratos', unit: 'g' },
   { key: 'fat', label: 'Grasa', unit: 'g' },
-  { key: 'servingG', label: 'Gramos por porción (opcional)', unit: 'g' },
 ] as const;
 export function CustomFoodForm({
   onBack,
   onCreated,
   initialBarcode,
+  mode,
+  onModeChange,
 }: {
   initialBarcode?: string | undefined;
   onBack: () => void;
   onCreated: (food: Food) => void;
+  mode: 'serving' | 'per100g';
+  onModeChange: (mode: 'serving' | 'per100g') => void;
 }) {
   const [fields, setFields] = useState({
     name: '',
@@ -35,35 +38,77 @@ export function CustomFoodForm({
   const mutation = useCreateFood();
   const update = (key: keyof typeof fields, value: string) =>
     setFields((current) => ({ ...current, [key]: value }));
+  const byServing = mode === 'serving';
+  const servingG = fields.servingG.trim() ? decimalValue(fields.servingG) : undefined;
+  const servingResult = createFoodSchema.shape.servingG.safeParse(servingG);
+  const values = {
+    kcal: decimalValue(fields.kcal),
+    protein: decimalValue(fields.protein),
+    carbs: decimalValue(fields.carbs),
+    fat: decimalValue(fields.fat),
+  };
+  const inputErrors: Record<string, string> = {};
+  if (byServing) {
+    if (servingG === undefined) inputErrors.servingG = 'Indicá los gramos de la porción';
+    else if (!servingResult.success) inputErrors.servingG = servingResult.error.issues[0]!.message;
+    for (const { key } of numericFields) {
+      if (!Number.isFinite(values[key]) || values[key] < 0)
+        inputErrors[key] = 'Ingresá un número mayor o igual a 0';
+    }
+  }
+  const canConvert = byServing && Object.keys(inputErrors).length === 0;
+  const storedValues = canConvert ? per100gFromServing(values, servingG!) : values;
+  const result = createFoodSchema.safeParse({
+    ...fields,
+    ...storedValues,
+    barcode: initialBarcode,
+    servingG,
+    servingLabel: fields.servingLabel.trim() || (byServing ? '1 porción' : undefined),
+  });
+  const showPreview =
+    (!byServing || canConvert) &&
+    Object.values(storedValues).every((value) => Number.isFinite(value) && value >= 0);
+  const servingInput = (
+    <NumberInput
+      label={byServing ? 'Gramos por porción' : 'Gramos por porción (opcional)'}
+      unit="g"
+      value={fields.servingG}
+      onChange={(event) => update('servingG', event.target.value)}
+      error={errors.servingG}
+    />
+  );
   return (
     <form
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
         if (mutation.isPending) return;
-        const result = createFoodSchema.safeParse({
-          ...fields,
-          barcode: initialBarcode,
-          kcal: decimalValue(fields.kcal),
-          protein: decimalValue(fields.protein),
-          carbs: decimalValue(fields.carbs),
-          fat: decimalValue(fields.fat),
-          servingG: fields.servingG.trim() ? decimalValue(fields.servingG) : undefined,
-          servingLabel: fields.servingLabel.trim() || undefined,
-        });
+        const nextErrors = { ...inputErrors };
         if (!result.success) {
-          setErrors(
-            Object.fromEntries(
-              result.error.issues.map((issue) => [String(issue.path[0] ?? 'form'), issue.message]),
-            ),
-          );
-          return;
+          for (const issue of result.error.issues) {
+            const key = String(issue.path[0] ?? 'form');
+            nextErrors[key] ??= issue.message;
+          }
         }
-        setErrors({});
+        if (canConvert) {
+          const context = `Con una porción de ${formatNumber(servingG!)} g, eso da`;
+          for (const { key, label } of numericFields) {
+            if (storedValues[key] > (key === 'kcal' ? 900 : 100)) {
+              nextErrors[key] =
+                `${context} más de ${key === 'kcal' ? '900 kcal' : `100 g de ${label.toLowerCase()}`} cada 100 g. Revisá los gramos de la porción o los valores.`;
+            }
+          }
+          if (storedValues.protein + storedValues.carbs + storedValues.fat > 100 + 1e-8) {
+            const message = `${context} más de 100 g de macros en total cada 100 g. Revisá los gramos de la porción o los valores.`;
+            for (const key of ['protein', 'carbs', 'fat']) nextErrors[key] ??= message;
+            delete nextErrors.form;
+          }
+        }
+        setErrors(nextErrors);
+        if (Object.keys(nextErrors).length || !result.success) return;
         mutation.mutate(result.data, { onSuccess: onCreated });
       }}
     >
-      <p className="text-sm text-muted">Valores por 100 g</p>
       {initialBarcode && (
         <Input label="Código de barras" value={initialBarcode} readOnly error={errors.barcode} />
       )}
@@ -82,16 +127,50 @@ export function CustomFoodForm({
         onChange={(event) => update('brand', event.target.value)}
         error={errors.brand}
       />
+      <div className="space-y-2" role="group" aria-label="Los valores de la etiqueta son:">
+        <p className="text-sm font-medium">Los valores de la etiqueta son:</p>
+        <div className="flex gap-2">
+          {(
+            [
+              ['serving', 'Por porción'],
+              ['per100g', 'Por 100 g'],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              variant={mode === value ? 'primary' : 'secondary'}
+              aria-pressed={mode === value}
+              onClick={() => {
+                onModeChange(value);
+                setErrors({});
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {byServing && servingInput}
       {numericFields.map(({ key, label, unit }) => (
         <NumberInput
           key={key}
-          label={label}
+          label={byServing ? `${label} por porción` : label}
           unit={unit}
           value={fields[key]}
           onChange={(event) => update(key, event.target.value)}
           error={errors[key]}
         />
       ))}
+      <div aria-live="polite">
+        {showPreview && (
+          <p className="text-sm text-muted">
+            Se guarda como {formatNumber(storedValues.kcal, 2)} kcal · P{' '}
+            {formatNumber(storedValues.protein, 2)} g · C {formatNumber(storedValues.carbs, 2)} g ·
+            G {formatNumber(storedValues.fat, 2)} g cada 100 g
+          </p>
+        )}
+      </div>
+      {!byServing && servingInput}
       <Input
         label="Descripción de la porción (opcional)"
         maxLength={40}

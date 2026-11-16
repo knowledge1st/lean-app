@@ -22,6 +22,7 @@ export function AddFoodSheet({
 }) {
   const [step, setStep] = useState<'search' | 'custom' | 'quantity' | 'scan'>('search');
   const [food, setFood] = useState<Food | null>(null);
+  const [valuesMode, setValuesMode] = useState<'serving' | 'per100g'>('serving');
   const [error, setError] = useState<string>();
   const importing = useImportFood();
   const lookup = useBarcodeLookup();
@@ -154,6 +155,8 @@ export function AddFoodSheet({
       )}
       {step === 'custom' && (
         <CustomFoodForm
+          mode={valuesMode}
+          onModeChange={setValuesMode}
           initialBarcode={initialBarcode}
           onBack={() => setStep('search')}
           onCreated={choose}

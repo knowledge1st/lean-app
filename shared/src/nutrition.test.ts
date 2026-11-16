@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { macrosForGrams, roundMacros, scaleMacros, sumMacros, ZERO_MACROS } from './nutrition';
+import {
+  macrosForGrams,
+  per100gFromServing,
+  roundMacros,
+  scaleMacros,
+  sumMacros,
+  ZERO_MACROS,
+} from './nutrition';
 
 const food = { kcal: 200, protein: 10.25, carbs: 20.5, fat: 3.15 };
 describe('nutrition', () => {
@@ -12,6 +19,28 @@ describe('nutrition', () => {
     });
     expect(macrosForGrams(food, 33.3).protein).toBeCloseTo(3.41325, 10);
   });
+  it('converts label values per serving to values per 100 g', () => {
+    expect(per100gFromServing({ kcal: 100, protein: 3, carbs: 12.5, fat: 4 }, 25)).toEqual({
+      kcal: 400,
+      protein: 12,
+      carbs: 50,
+      fat: 16,
+    });
+  });
+  it('rounds converted calories to integers and macros to two decimals', () => {
+    expect(per100gFromServing({ kcal: 100, protein: 1, carbs: 2, fat: 3 }, 30)).toEqual({
+      kcal: 333,
+      protein: 3.33,
+      carbs: 6.67,
+      fat: 10,
+    });
+    expect(per100gFromServing({ kcal: 1, protein: 1.005, carbs: 0, fat: 0 }, 100).protein).toBe(
+      1.01,
+    );
+  });
+  it('preserves schema-compatible values for a 100 g serving', () => {
+    expect(per100gFromServing(food, 100)).toEqual(food);
+  });
   it('scales stored macros in both directions', () => {
     const scaled = scaleMacros(food, 100, 250);
     expect(scaled).toEqual({ kcal: 500, protein: 25.625, carbs: 51.25, fat: 7.875 });
@@ -19,6 +48,7 @@ describe('nutrition', () => {
   });
   it.each([0, -1, NaN, Infinity, -Infinity])('rejects invalid grams %s', (grams) => {
     expect(() => macrosForGrams(food, grams)).toThrow(RangeError);
+    expect(() => per100gFromServing(food, grams)).toThrow(RangeError);
     expect(() => scaleMacros(food, grams, 100)).toThrow(RangeError);
     expect(() => scaleMacros(food, 100, grams)).toThrow(RangeError);
   });

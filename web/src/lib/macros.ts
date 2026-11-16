@@ -11,8 +11,8 @@ export const MACROS = [
   { key: 'carbs', label: 'Carbohidratos', color: 'var(--carbs)' },
   { key: 'fat', label: 'Grasa', color: 'var(--fat)' },
 ] as const;
-export const formatNumber = (value: number) =>
-  value.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+export const formatNumber = (value: number, maximumFractionDigits = 1) =>
+  value.toLocaleString('es-AR', { maximumFractionDigits });
 export function decimalValue(value: string): number {
   return /^\d+(?:[.,]\d+)?$/.test(value.trim()) ? Number(value.trim().replace(',', '.')) : NaN;
 }
