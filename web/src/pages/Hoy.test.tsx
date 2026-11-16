@@ -418,7 +418,7 @@ it('muestra lo restante y las metas de macros del resumen diario y el presupuest
       ),
   );
   const client = setup(undefined, false);
-  expect(await screen.findByText('quedan 1500 kcal')).toBeTruthy();
+  expect(await screen.findByText('quedan 1.500 kcal')).toBeTruthy();
   expect(await screen.findByText('Te quedan 9.450 kcal esta semana')).toBeTruthy();
   const proteinValue = screen.getByText('30 / 150 g');
   expect(proteinValue).toBeTruthy();
@@ -509,9 +509,9 @@ it('actualiza las metas y el presupuesto al crear un objetivo e invalidar los re
   );
   const client = setup(undefined, false, true);
   await screen.findByText('Definí tu objetivo para ver cuánto te queda');
-  expect(screen.queryByText('quedan 2000 kcal')).toBeNull();
+  expect(screen.queryByText('quedan 2.000 kcal')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Crear objetivo' }));
-  expect(await screen.findByText('quedan 2000 kcal')).toBeTruthy();
+  expect(await screen.findByText('quedan 2.000 kcal')).toBeTruthy();
   expect(await screen.findByText('Te quedan 9.450 kcal esta semana')).toBeTruthy();
   expect(screen.queryByText('Definí tu objetivo para ver cuánto te queda')).toBeNull();
   client.clear();

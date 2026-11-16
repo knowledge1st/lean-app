@@ -215,3 +215,11 @@ it('Cambiar objetivo precarga perfil y peso frescos con una caché inicial vací
   expect((screen.getByLabelText('Peso actual') as HTMLInputElement).value).toBe('76.5');
   client.clear();
 });
+
+it('muestra objetivo, datos personales y cuenta en ese orden', async () => {
+  renderAuth(<Perfil />, '/perfil');
+  await screen.findByText('@jose');
+  expect(
+    screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+  ).toEqual(['Mi objetivo', 'Datos personales', 'Cuenta']);
+});

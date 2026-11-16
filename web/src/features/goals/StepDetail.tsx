@@ -26,6 +26,7 @@ export function StepDetail(props: StepProps & { today: string }) {
           today,
         )
       : null;
+  const unreachable = plan?.warnings.some(({ code }) => code === 'date_unreachable');
   const macrosKcal =
     numeric(draft.proteinG) * 4 + numeric(draft.carbsG) * 4 + numeric(draft.fatG) * 9;
   return (
@@ -41,7 +42,7 @@ export function StepDetail(props: StepProps & { today: string }) {
             min={addDays(today, 1)}
             max={maxGoalTargetDate(today)}
           />
-          {plan?.weekly.expectedWeightChangeKg != null && (
+          {!unreachable && plan?.weekly.expectedWeightChangeKg != null && (
             <p aria-live="polite">{weeklyChange(plan.weekly.expectedWeightChangeKg)}</p>
           )}
         </>

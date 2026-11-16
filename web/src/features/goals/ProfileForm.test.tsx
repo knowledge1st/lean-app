@@ -25,6 +25,9 @@ it('invita a completar un perfil ausente, valida sin enviar y permite crearlo', 
   fireEvent.click(await screen.findByRole('button', { name: 'Completar mis datos' }));
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   expect(put).not.toHaveBeenCalled();
+  expect(screen.getAllByText('Elegí una opción')).toHaveLength(2);
+  expect(screen.getByText('Indicá tu fecha de nacimiento')).toBeTruthy();
+  expect(screen.getByText('Indicá tu altura')).toBeTruthy();
   expect(screen.getByLabelText('Altura').getAttribute('aria-invalid')).toBe('true');
   fireEvent.click(screen.getByLabelText('Mujer'));
   fireEvent.change(screen.getByLabelText('Fecha de nacimiento'), {

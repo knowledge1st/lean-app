@@ -27,6 +27,26 @@ export const emptyDraft = {
 };
 export type Draft = typeof emptyDraft;
 export type Errors = Partial<Record<keyof Draft, string>>;
+const requiredMessages: Errors = {
+  sex: 'Elegí una opción',
+  activityLevel: 'Elegí una opción',
+  mode: 'Elegí una opción',
+  preset: 'Elegí una opción',
+  birthDate: 'Indicá tu fecha de nacimiento',
+  heightCm: 'Indicá tu altura',
+  weightKg: 'Indicá tu peso',
+  targetWeightKg: 'Indicá tu peso objetivo',
+  targetDate: 'Elegí una fecha',
+  kcal: 'Indicá las calorías',
+  proteinG: 'Indicá la proteína',
+  carbsG: 'Indicá los carbohidratos',
+  fatG: 'Indicá la grasa',
+};
+export function fieldError(draft: Draft, name: keyof Draft, message: string): string {
+  return typeof draft[name] === 'string' && !draft[name].trim()
+    ? (requiredMessages[name] ?? message)
+    : message;
+}
 export const numeric = (value: string) =>
   value.trim() === '' ? NaN : Number(value.replace(',', '.'));
 export function profileInput(draft: Draft): ProfileInput {
@@ -103,6 +123,8 @@ export function validateStep(draft: Draft, step: number, today = todayLocal()): 
     )
       errors.targetDate = 'Elegí una fecha desde mañana hasta dentro de 5 años';
   }
+  for (const name of Object.keys(errors) as (keyof Draft)[])
+    errors[name] = fieldError(draft, name, errors[name]!);
   return errors;
 }
 export function reachableStep(draft: Draft): number {

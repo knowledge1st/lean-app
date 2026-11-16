@@ -21,11 +21,14 @@ export function planWarningMessages(
   plan: { warnings: Plan['warnings']; adjusted?: Plan['adjusted'] },
   context: Context,
 ): string[] {
+  const unreachable = plan.warnings.some(({ code }) => code === 'date_unreachable');
   const messages = plan.warnings.flatMap(({ code }) => {
+    if (unreachable && (code === 'rate_capped' || code === 'date_in_past')) return [];
     if (plan.adjusted && code === 'rate_capped') return [];
     if (plan.adjusted && code === 'date_in_past') return ['La fecha ya pasó.'];
     return [warningText(code, context)];
   });
-  if (plan.adjusted) messages.push(arrival({ ...context, adjusted: plan.adjusted }));
+  if (plan.adjusted && !unreachable)
+    messages.push(arrival({ ...context, adjusted: plan.adjusted }));
   return messages;
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { buildPlan, limitAdjustedTargetDate } from '@lean/shared';
 import { StepPlan } from './StepPlan';
 import { StepDetail } from './StepDetail';
@@ -115,5 +115,54 @@ it.each(['floor', 'multiple'] as const)(
     expect(
       screen.getAllByText(/Con un ritmo saludable llegás el .* El plan ya usa esa fecha\./),
     ).toHaveLength(1);
+    expect(
+      screen.getByRole('status').compareDocumentPosition(screen.getByText('Tu meta diaria')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   },
 );
+
+it('oculta ritmo y fechas en ambos pasos si el gasto no permite bajar', () => {
+  const today = '2026-11-16';
+  const draft = {
+    ...emptyDraft,
+    sex: 'female',
+    birthDate: '1990-01-01',
+    heightCm: '140',
+    weightKg: '45',
+    activityLevel: 'sedentary',
+    mode: 'weight_date',
+    targetWeightKg: '42',
+    targetDate: '2027-03-01',
+  };
+  const plan = buildPlan(
+    { sex: 'female', birthDate: draft.birthDate, heightCm: 140, activity: 'sedentary' },
+    { weightKg: 45 },
+    { mode: 'weight_date', targetWeightKg: 42, targetDate: draft.targetDate },
+    today,
+  );
+  expect(plan.warnings).toContainEqual({ code: 'date_unreachable' });
+  const view = render(<StepDetail draft={draft} errors={{}} change={() => {}} today={today} />);
+  expect(screen.getByText(/Con tu gasto diario no es posible/)).toBeTruthy();
+  expect(screen.queryByText(/Vas a/)).toBeNull();
+  view.unmount();
+  const onEdit = vi.fn();
+  render(
+    <StepPlan
+      plan={plan}
+      sex="female"
+      today={today}
+      requestedDate={draft.targetDate}
+      onEdit={onEdit}
+    />,
+  );
+  expect(screen.queryByText(/Vas a|Fecha estimada/)).toBeNull();
+  const warning = screen.getByRole('status');
+  expect(
+    warning.compareDocumentPosition(screen.getByText('Tu meta diaria')) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Cambiar objetivo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cambiar detalle' }));
+  expect(onEdit.mock.calls).toEqual([[2], [3]]);
+});

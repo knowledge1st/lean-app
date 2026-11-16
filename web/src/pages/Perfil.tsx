@@ -39,6 +39,8 @@ export function Perfil() {
   return (
     <section className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Perfil</h1>
+      <GoalCard />
+      <ProfileCard />
       <Card className="space-y-5">
         <h2 className="text-xl font-semibold">Cuenta</h2>
         <div>
@@ -81,8 +83,6 @@ export function Perfil() {
           </Button>
         </div>
       </Card>
-      <GoalCard />
-      <ProfileCard />
       <ChangePasswordSheet
         open={passwordOpen}
         onOpenChange={setPasswordOpen}

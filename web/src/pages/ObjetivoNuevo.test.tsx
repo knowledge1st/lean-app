@@ -126,7 +126,7 @@ it('valida, conserva al volver atrás y restaura el mismo paso al recargar', asy
   expect(screen.getByRole('heading', { name: 'Sobre vos' })).toBeTruthy();
   await about();
   next();
-  expect(screen.getByText('Elegí qué querés lograr')).toBeTruthy();
+  expect(screen.getByText('Elegí una opción')).toBeTruthy();
   fireEvent.click(screen.getByRole('radio', { name: /Llegar a un peso/ }));
   next();
   fill('Peso objetivo', '65');
@@ -167,7 +167,7 @@ it('descarta borrador corrupto y no permite saltar pasos inválidos', async () =
   setup();
   expect(screen.getByRole('heading', { name: 'Sobre vos' })).toBeTruthy();
 });
-it('muestra fecha ajustada y bloquea un plan inviable con opciones para cambiarlo', async () => {
+it('oculta la fecha ajustada y bloquea un plan inviable con opciones para cambiarlo', async () => {
   mockApi({
     ...plan,
     adjusted: { targetDate: addDays(todayLocal(), 120) },
@@ -175,7 +175,10 @@ it('muestra fecha ajustada y bloquea un plan inviable con opciones para cambiarl
   });
   stored({ step: 4 });
   setup();
-  await screen.findByText(/El plan ya usa esa fecha/);
+  await screen.findByText(/Con tu gasto diario no es posible/);
+  expect(screen.queryByText(/El plan ya usa esa fecha/)).toBeNull();
+  expect(screen.queryByText(/Vas a/)).toBeNull();
+  expect(screen.queryByText(/Fecha estimada/)).toBeNull();
   expect(screen.getByText(/Con tu gasto diario no es posible/)).toBeTruthy();
   expect((screen.getByRole('button', { name: 'Empezar' }) as HTMLButtonElement).disabled).toBe(
     true,

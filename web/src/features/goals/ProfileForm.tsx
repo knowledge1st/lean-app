@@ -5,7 +5,7 @@ import { Card } from '../../components/ui/Card';
 import { Sheet } from '../../components/ui/Sheet';
 import { ApiError } from '../../lib/api';
 import { useProfile, useSaveProfile } from './api';
-import { emptyDraft, numeric, type Draft, type Errors } from './draft';
+import { emptyDraft, fieldError, numeric, type Draft, type Errors } from './draft';
 import { Choices, Field } from './fields';
 import { formatNumber } from './format';
 
@@ -112,7 +112,11 @@ export function ProfileForm({
     if (!result.success) {
       const nextErrors: Errors = {};
       for (const issue of result.error.issues)
-        nextErrors[issue.path[0] as keyof Draft] = issue.message;
+        nextErrors[issue.path[0] as keyof Draft] = fieldError(
+          draft,
+          issue.path[0] as keyof Draft,
+          issue.message,
+        );
       setErrors(nextErrors);
       return;
     }
