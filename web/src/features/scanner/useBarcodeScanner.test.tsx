@@ -192,6 +192,31 @@ it('active false libera la cámara y cancela frames', async () => {
   await tick(1000);
   expect(s.detect).not.toHaveBeenCalled();
 });
+it('detecta al volver visible aunque una detección anterior siga pendiente', async () => {
+  const s = setup();
+  const pending = deferred<Array<{ rawValue: string }>>();
+  s.detect.mockReturnValueOnce(pending.promise).mockResolvedValueOnce([{ rawValue: '12345678' }]);
+  await flush();
+  await tick();
+  expect(s.detect).toHaveBeenCalledTimes(1);
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+  act(() => document.dispatchEvent(new Event('visibilitychange')));
+  expect(s.track.stop).toHaveBeenCalledTimes(1);
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  act(() => document.dispatchEvent(new Event('visibilitychange')));
+  await flush();
+  expect(s.getUserMedia).toHaveBeenCalledTimes(2);
+  expect(screen.getByText('scanning')).toBeTruthy();
+  await tick();
+  expect(s.detect).toHaveBeenCalledTimes(2);
+  expect(s.onDetect).toHaveBeenCalledExactlyOnceWith('12345678');
+  await act(async () => {
+    pending.resolve([{ rawValue: '87654321' }]);
+  });
+  await tick(1000);
+  expect(s.onDetect).toHaveBeenCalledExactlyOnceWith('12345678');
+  expect(s.detect).toHaveBeenCalledTimes(2);
+});
 it('no superpone detect y descarta resultados pendientes después de stop', async () => {
   const s = setup();
   const pending = deferred<Array<{ rawValue: string }>>();

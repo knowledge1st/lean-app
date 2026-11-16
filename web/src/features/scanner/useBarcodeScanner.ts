@@ -26,7 +26,6 @@ export function useBarcodeScanner({
   const [status, setStatus] = useState<ScannerStatus>('stopped');
   const callback = useRef(onDetect);
   const detector = useRef<Promise<DetectorLike> | undefined>(undefined);
-  const detecting = useRef(false);
   const stopRef = useRef(() => {});
   useEffect(() => {
     callback.current = onDetect;
@@ -117,10 +116,11 @@ export function useBarcodeScanner({
       if (!current()) return;
       setStatus('scanning');
       let consecutiveFailures = 0;
+      let detecting = false;
       const scan = async () => {
         if (!current()) return;
-        if (video.readyState >= 2 && !detecting.current) {
-          detecting.current = true;
+        if (video.readyState >= 2 && !detecting) {
+          detecting = true;
           try {
             const results = await reader.detect(video);
             consecutiveFailures = 0;
@@ -147,7 +147,7 @@ export function useBarcodeScanner({
               setStatus('error');
             }
           } finally {
-            detecting.current = false;
+            detecting = false;
           }
         }
         if (current()) timer = setTimeout(() => void scan(), intervalMs);
