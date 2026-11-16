@@ -6,3 +6,5 @@ export * from './schemas/food';
 export * from './schemas/entry';
 export * from './nutrition';
 export * from './goals';
+export * from './schemas/profile';
+export * from './schemas/goal';

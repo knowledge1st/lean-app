@@ -1,8 +1,16 @@
-import { daySummarySchema, MEALS, ZERO_MACROS, type DaySummary, type Entry } from '@lean/shared';
+import {
+  daySummarySchema,
+  MEALS,
+  ZERO_MACROS,
+  type DaySummary,
+  type Entry,
+  weekSummarySchema,
+} from '@lean/shared';
 import { Hono } from 'hono';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hasTestDatabase } from '../../test/helpers/db';
 import { diaryFixture } from '../../test/helpers/diary';
+import { goalsFixture, weightGoal } from '../../test/helpers/goals';
 import type { AppEnv } from '../env';
 import { app } from '../index';
 import { handleError } from '../lib/errors';
@@ -111,7 +119,108 @@ describe('summary without database', () => {
       expect(await response.json()).toMatchObject({ error: { code: 'validation_error' } });
     },
   );
+  it.each(['2100-W52', '2021-W53', '2026-W00', '2026-W54', 'bad', ''])(
+    'rejects invalid week %s',
+    async (week) => {
+      const response = await validationApp.request(`/api/summary/week?week=${week}`, {}, testEnv);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { code: 'validation_error' } });
+    },
+  );
   it('requires a token', async () => {
     expect((await app.request('/api/summary/day?date=2026-11-14', {}, testEnv)).status).toBe(401);
+  });
+});
+
+describe.skipIf(!hasTestDatabase)('weekly summary integration', { timeout: 30_000 }, () => {
+  let f: ReturnType<typeof goalsFixture>;
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-16T12:00:00Z'));
+    f = goalsFixture();
+    await f.setup();
+  }, 30_000);
+  afterEach(async () => {
+    vi.useRealTimers();
+    await f.cleanup();
+  }, 30_000);
+  it.each([
+    ['2026-11-16', 7],
+    ['2026-11-19', 4],
+  ])('sums eaten entries and budgets starting %s', async (start, targetDays) => {
+    vi.setSystemTime(new Date(`${start}T12:00:00Z`));
+    await f.create();
+    const food = await f.food();
+    // Three individually rounded entries total 201, but their stored sum rounds to 200.
+    for (let i = 0; i < 3; i++) await f.entry(food.id!, { date: '2026-11-16', grams: 33.3 });
+    await f.entry(food.id!, { date: '2026-11-18', grams: 100 });
+    await f.entry(food.id!, { date: '2026-11-22', grams: 150 });
+    await f.entry(food.id!, { date: '2026-11-20', status: 'planned', grams: 400 });
+    await f.entry(food.id!, { date: '2026-11-23', grams: 400 });
+    const response = await f.request('/summary/week?week=2026-W47');
+    expect(response.status).toBe(200);
+    const result = weekSummarySchema.parse(await response.json());
+    expect(result).toMatchObject({
+      week: '2026-W47',
+      from: '2026-11-16',
+      to: '2026-11-22',
+      eatenKcal: 700,
+      budgetKcal: targetDays * 2000,
+      remainingKcal: targetDays * 2000 - 700,
+      loggedDays: 3,
+      expectedWeightKg: null,
+    });
+    expect(result.days.map((day) => day.eatenKcal)).toEqual([200, 0, 200, 0, 0, 0, 300]);
+    expect(result.days.map((day) => day.date)).toEqual([
+      '2026-11-16',
+      '2026-11-17',
+      '2026-11-18',
+      '2026-11-19',
+      '2026-11-20',
+      '2026-11-21',
+      '2026-11-22',
+    ]);
+    expect(result.days.map((day) => day.targetKcal)).toEqual(
+      Array(7 - targetDays)
+        .fill(null)
+        .concat(Array(targetDays).fill(2000)),
+    );
+  });
+  it('allows negative remaining calories and returns null without a budget', async () => {
+    const food = await f.food();
+    await f.entry(food.id!, { date: '2026-11-22', grams: 1000 });
+    const empty = weekSummarySchema.parse(
+      await (await f.request('/summary/week?week=2026-W47')).json(),
+    );
+    expect(empty).toMatchObject({ eatenKcal: 2000, budgetKcal: null, remainingKcal: null });
+    vi.setSystemTime(new Date('2026-11-22T12:00:00Z'));
+    await f.create({
+      weightKg: 100,
+      goal: { mode: 'manual', kcal: 500, proteinG: 50, carbsG: 50, fatG: 10 },
+    });
+    const result = weekSummarySchema.parse(
+      await (await f.request('/summary/week?week=2026-W47')).json(),
+    );
+    expect(result).toMatchObject({ budgetKcal: 500, remainingKcal: -1500 });
+  });
+  it('interpolates the Sunday goal and retains the archived goal curve for earlier weeks', async () => {
+    await f.profile();
+    const saved = await f.create(weightGoal);
+    const first = saved.plan.milestones[0]!;
+    const expected = Math.round((100 + ((first.expectedWeightKg - 100) * 6) / 7) * 10) / 10;
+    const initialWeek = weekSummarySchema.parse(
+      await (await f.request('/summary/week?week=2026-W47')).json(),
+    );
+    expect(initialWeek.expectedWeightKg).toBe(expected);
+    vi.setSystemTime(new Date('2026-11-23T12:00:00Z'));
+    await f.create();
+    const historical = weekSummarySchema.parse(
+      await (await f.request('/summary/week?week=2026-W47')).json(),
+    );
+    expect(historical.expectedWeightKg).toBe(expected);
+    const current = weekSummarySchema.parse(
+      await (await f.request('/summary/week?week=2026-W48')).json(),
+    );
+    expect(current.expectedWeightKg).toBeNull();
   });
 });

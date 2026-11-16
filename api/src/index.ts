@@ -8,6 +8,8 @@ import { entries } from './routes/entries';
 import { summary } from './routes/summary';
 import { foods } from './routes/foods';
 import { health } from './routes/health';
+import { profile } from './routes/profile';
+import { goals, targets } from './routes/goals';
 
 export const app = new Hono<AppEnv>();
 
@@ -29,6 +31,9 @@ app.route('/api/me', me);
 app.route('/api/foods', foods);
 app.route('/api/entries', entries);
 app.route('/api/summary', summary);
+app.route('/api/profile', profile);
+app.route('/api/goals', goals);
+app.route('/api/targets', targets);
 
 app.notFound(handleNotFound);
 app.onError(handleError);
