@@ -9,6 +9,7 @@ import { ToastProvider } from '../components/ui/Toast';
 import { activeGoalKey, useCreateGoal } from '../features/goals/api';
 import { markWizardSkipped } from '../features/goals/draft';
 import { todayLocal } from '../lib/date';
+import { useWater, useExercise } from '../features/diary/activityApi';
 import { Hoy } from './Hoy';
 import { setToken, clearToken } from '../lib/session';
 import { recalculateSummary } from '../features/diary/optimistic';
@@ -16,6 +17,11 @@ vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
   return { ...actual, api: actual.createApiClient({ baseUrl: 'http://localhost' }) };
 });
+vi.mock('../features/diary/activityApi', () => ({
+  useWater: vi.fn((date: string) => ({ data: { date, ml: 0 }, isPending: false })),
+  useWaterMutation: () => vi.fn().mockResolvedValue(true),
+  useExercise: vi.fn(() => ({ data: { logs: [] }, isPending: false })),
+}));
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -429,7 +435,11 @@ it('muestra lo restante y las metas de macros del resumen diario y el presupuest
   expect(proteinBar.style.width).toBe('20%');
   expect(screen.getByText('40 / 200 g')).toBeTruthy();
   expect(screen.getByText('10 / 60 g')).toBeTruthy();
-  expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('4550');
+  expect(
+    screen
+      .getByRole('progressbar', { name: 'Presupuesto semanal consumido' })
+      .getAttribute('aria-valuenow'),
+  ).toBe('4550');
   client.clear();
 });
 
@@ -516,5 +526,18 @@ it('actualiza las metas y el presupuesto al crear un objetivo e invalidar los re
   expect(await screen.findByText('quedan 2.000 kcal')).toBeTruthy();
   expect(await screen.findByText('Te quedan 9.450 kcal esta semana')).toBeTruthy();
   expect(screen.queryByText('Definí tu objetivo para ver cuánto te queda')).toBeNull();
+  client.clear();
+});
+
+it('renderiza agua y ejercicio y consulta la fecha seleccionada', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(summary)));
+  const client = setup();
+  expect(await screen.findByRole('heading', { name: 'Agua' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Ejercicio' })).toBeTruthy();
+  expect(useWater).toHaveBeenCalledWith(summary.date);
+  expect(useExercise).toHaveBeenCalledWith(summary.date);
+  fireEvent.click(screen.getByLabelText('Día siguiente'));
+  expect(useWater).toHaveBeenCalledWith('2026-11-15');
+  expect(useExercise).toHaveBeenCalledWith('2026-11-15');
   client.clear();
 });
