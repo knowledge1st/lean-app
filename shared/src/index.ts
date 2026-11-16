@@ -5,3 +5,4 @@ export * from './schemas/food';
 
 export * from './schemas/entry';
 export * from './nutrition';
+export * from './goals';
