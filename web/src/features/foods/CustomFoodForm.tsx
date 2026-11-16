@@ -34,7 +34,7 @@ export function CustomFoodForm({
     servingG: '',
     servingLabel: '',
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(false);
   const mutation = useCreateFood();
   const update = (key: keyof typeof fields, value: string) =>
     setFields((current) => ({ ...current, [key]: value }));
@@ -57,7 +57,19 @@ export function CustomFoodForm({
     }
   }
   const canConvert = byServing && Object.keys(inputErrors).length === 0;
-  const storedValues = canConvert ? per100gFromServing(values, servingG!) : values;
+  // Validate each available value after conversion, even if another field is incomplete.
+  // Input errors block submission for placeholders used by unconvertible fields.
+  const storedValues = byServing
+    ? per100gFromServing(
+        Object.fromEntries(
+          numericFields.map(({ key }) => [
+            key,
+            inputErrors.servingG || inputErrors[key] ? 0 : values[key],
+          ]),
+        ) as typeof values,
+        servingG !== undefined && servingResult.success ? servingG : 100,
+      )
+    : values;
   const result = createFoodSchema.safeParse({
     ...fields,
     ...storedValues,
@@ -68,6 +80,35 @@ export function CustomFoodForm({
   const showPreview =
     (!byServing || canConvert) &&
     Object.values(storedValues).every((value) => Number.isFinite(value) && value >= 0);
+  const nextErrors = { ...inputErrors };
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      // The total has its own form alert and is suppressed by individual macro limits.
+      if (issue.path.length === 0 && issue.message === 'La suma de macros no puede superar 100 g')
+        continue;
+      const key = String(issue.path[0] ?? 'form');
+      nextErrors[key] ??= issue.message;
+    }
+  }
+  if (byServing && !inputErrors.servingG) {
+    const context = `Con una porción de ${formatNumber(servingG!)} g, eso da`;
+    for (const { key, label } of numericFields) {
+      if (storedValues[key] > (key === 'kcal' ? 900 : 100)) {
+        nextErrors[key] =
+          `${context} más de ${key === 'kcal' ? '900 kcal' : `100 g de ${label.toLowerCase()}`} cada 100 g. Revisá los gramos de la porción o los valores.`;
+      }
+    }
+  }
+  if (
+    (!byServing || canConvert) &&
+    [storedValues.protein, storedValues.carbs, storedValues.fat].every((value) => value <= 100) &&
+    storedValues.protein + storedValues.carbs + storedValues.fat > 100 + 1e-8
+  ) {
+    nextErrors.macros = byServing
+      ? `Con una porción de ${formatNumber(servingG!)} g, eso da más de 100 g de macros en total cada 100 g. Revisá los gramos de la porción o los valores.`
+      : 'La suma de macros no puede superar 100 g';
+  }
+  const errors = submitted ? nextErrors : {};
   const servingInput = (
     <NumberInput
       label={byServing ? 'Gramos por porción' : 'Gramos por porción (opcional)'}
@@ -83,28 +124,7 @@ export function CustomFoodForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (mutation.isPending) return;
-        const nextErrors = { ...inputErrors };
-        if (!result.success) {
-          for (const issue of result.error.issues) {
-            const key = String(issue.path[0] ?? 'form');
-            nextErrors[key] ??= issue.message;
-          }
-        }
-        if (canConvert) {
-          const context = `Con una porción de ${formatNumber(servingG!)} g, eso da`;
-          for (const { key, label } of numericFields) {
-            if (storedValues[key] > (key === 'kcal' ? 900 : 100)) {
-              nextErrors[key] =
-                `${context} más de ${key === 'kcal' ? '900 kcal' : `100 g de ${label.toLowerCase()}`} cada 100 g. Revisá los gramos de la porción o los valores.`;
-            }
-          }
-          if (storedValues.protein + storedValues.carbs + storedValues.fat > 100 + 1e-8) {
-            const message = `${context} más de 100 g de macros en total cada 100 g. Revisá los gramos de la porción o los valores.`;
-            for (const key of ['protein', 'carbs', 'fat']) nextErrors[key] ??= message;
-            delete nextErrors.form;
-          }
-        }
-        setErrors(nextErrors);
+        setSubmitted(true);
         if (Object.keys(nextErrors).length || !result.success) return;
         mutation.mutate(result.data, { onSuccess: onCreated });
       }}
@@ -142,7 +162,7 @@ export function CustomFoodForm({
               aria-pressed={mode === value}
               onClick={() => {
                 onModeChange(value);
-                setErrors({});
+                setSubmitted(false);
               }}
             >
               {label}
@@ -161,6 +181,11 @@ export function CustomFoodForm({
           error={errors[key]}
         />
       ))}
+      {errors.macros && (
+        <p role="alert" className="text-danger">
+          {errors.macros}
+        </p>
+      )}
       <div aria-live="polite">
         {showPreview && (
           <p className="text-sm text-muted">

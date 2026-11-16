@@ -176,16 +176,17 @@ it.each([
   expect(posts()).toHaveLength(0);
   client.clear();
 });
-it('explica la suma convertida de macros y marca los tres campos', () => {
+it('muestra la suma convertida de macros una sola vez como alerta general', () => {
   const { client, posts } = setup();
   fill(true, { kcal: '10', protein: '2', carbs: '2', fat: '2' });
   grams('5');
   submit();
   expect(
     screen.getAllByText(/Con una porción de 5 g, eso da más de 100 g de macros en total/),
-  ).toHaveLength(3);
+  ).toHaveLength(1);
+  expect(screen.getByRole('alert').textContent).toContain('más de 100 g de macros en total');
   for (const label of ['Proteína', 'Carbohidratos', 'Grasa']) {
-    expect(screen.getByLabelText(`${label} por porción`).getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByLabelText(`${label} por porción`).getAttribute('aria-invalid')).toBeNull();
   }
   expect(posts()).toHaveLength(0);
   client.clear();
@@ -244,6 +245,115 @@ it.each(['', '-1', 'abc'])('rechaza valores por porción inválidos %s sin envia
   grams('25');
   submit();
   expect(screen.getByLabelText('Proteína por porción').getAttribute('aria-invalid')).toBe('true');
+  expect(posts()).toHaveLength(0);
+  client.clear();
+});
+
+it('rechaza las 901 kcal resultantes de redondear 540,3 kcal en 60 g', () => {
+  const { client, posts } = setup();
+  fill(true, { kcal: '540,3', protein: '0', carbs: '0', fat: '0' });
+  grams('60');
+  expect(screen.getByText(/Se guarda como 901 kcal/)).toBeTruthy();
+  submit();
+  expect(screen.getByText(/más de 900 kcal/)).toBeTruthy();
+  expect(screen.getByLabelText('Calorías por porción').getAttribute('aria-invalid')).toBe('true');
+  expect(posts()).toHaveLength(0);
+  client.clear();
+});
+it('redondea 4,03 g en 40 g a 10,08 g en la vista previa y el envío', async () => {
+  const { client, posts, onCreated } = setup();
+  fill(true, { kcal: '0', protein: '4,03', carbs: '0', fat: '0' });
+  grams('40');
+  expect(screen.getByText(/Se guarda como 0 kcal · P 10,08 g/)).toBeTruthy();
+  submit();
+  await waitFor(() => expect(onCreated).toHaveBeenCalled());
+  expect(JSON.parse(String(posts()[0]?.[1]?.body)).protein).toBe(10.08);
+  client.clear();
+});
+it('revalida todos los campos después del envío y limpia errores al cambiar de modo', () => {
+  const { client, posts } = setup();
+  fill(true, { kcal: '40', protein: '6', carbs: '0', fat: '0' });
+  grams('5');
+  const protein = screen.getByLabelText('Proteína por porción');
+  expect(protein.getAttribute('aria-invalid')).toBeNull();
+  expect(screen.queryByText(/más de 100 g de proteína/)).toBeNull();
+  submit();
+  expect(protein.getAttribute('aria-invalid')).toBe('true');
+  grams('25');
+  expect(screen.getByText(/Se guarda como 160 kcal · P 24 g/)).toBeTruthy();
+  expect(protein.getAttribute('aria-invalid')).toBeNull();
+  expect(screen.queryByText(/más de 100 g de proteína/)).toBeNull();
+  fireEvent.change(protein, { target: { value: '26' } });
+  expect(protein.getAttribute('aria-invalid')).toBe('true');
+  fireEvent.change(protein, { target: { value: '6' } });
+  expect(protein.getAttribute('aria-invalid')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: '' } });
+  expect(screen.getByLabelText('Nombre').getAttribute('aria-invalid')).toBe('true');
+  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Corregido' } });
+  expect(screen.getByLabelText('Nombre').getAttribute('aria-invalid')).toBeNull();
+  grams('5');
+  expect(protein.getAttribute('aria-invalid')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: 'Por 100 g' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Por porción' }));
+  expect(protein.getAttribute('aria-invalid')).toBeNull();
+  grams('4');
+  expect(protein.getAttribute('aria-invalid')).toBeNull();
+  expect(posts()).toHaveLength(0);
+  client.clear();
+});
+it.each(['', 'abc', '-1'])(
+  'valida solo los valores convertidos con grasa incompleta o inválida: %s',
+  (fat) => {
+    const { client, posts } = setup();
+    fill(true, { kcal: '1000,5', protein: '120', carbs: '40', fat });
+    grams('250');
+    submit();
+    expect(screen.getByLabelText('Grasa por porción').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByText('Ingresá un número mayor o igual a 0')).toBeTruthy();
+    for (const label of ['Calorías', 'Proteína', 'Carbohidratos']) {
+      expect(screen.getByLabelText(`${label} por porción`).getAttribute('aria-invalid')).toBeNull();
+    }
+    expect(screen.queryByText('Las calorías deben ser enteras')).toBeNull();
+    expect(screen.queryByText('Debe ser menor o igual a 100')).toBeNull();
+    expect(posts()).toHaveLength(0);
+    client.clear();
+  },
+);
+it.each([true, false])(
+  'omite el aviso de suma si un macro supera el límite, porción: %s',
+  (serving) => {
+    const { client, posts } = setup();
+    if (!serving) fireEvent.click(screen.getByRole('button', { name: 'Por 100 g' }));
+    fill(serving, { kcal: '40', protein: serving ? '10' : '200', carbs: '0', fat: '0' });
+    if (serving) grams('5');
+    submit();
+    expect(
+      screen
+        .getByLabelText(serving ? 'Proteína por porción' : 'Proteína')
+        .getAttribute('aria-invalid'),
+    ).toBe('true');
+    for (const label of ['Carbohidratos', 'Grasa']) {
+      expect(
+        screen
+          .getByLabelText(serving ? `${label} por porción` : label)
+          .getAttribute('aria-invalid'),
+      ).toBeNull();
+    }
+    expect(screen.queryByText(/más de 100 g de macros en total|La suma de macros/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(posts()).toHaveLength(0);
+    client.clear();
+  },
+);
+it('muestra una sola alerta por la suma en modo por 100 g y la revalida al editar', () => {
+  const { client, posts } = setup();
+  fireEvent.click(screen.getByRole('button', { name: 'Por 100 g' }));
+  fill(false, { kcal: '100', protein: '40', carbs: '40', fat: '40' });
+  submit();
+  expect(screen.getAllByRole('alert')).toHaveLength(1);
+  expect(screen.getByRole('alert').textContent).toBe('La suma de macros no puede superar 100 g');
+  fireEvent.change(screen.getByLabelText('Grasa'), { target: { value: '20' } });
+  expect(screen.queryByRole('alert')).toBeNull();
   expect(posts()).toHaveLength(0);
   client.clear();
 });

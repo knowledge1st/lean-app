@@ -38,6 +38,15 @@ describe('nutrition', () => {
       1.01,
     );
   });
+  it('rounds decimal half-up boundaries despite floating-point scaling noise', () => {
+    expect(per100gFromServing({ kcal: 540.3, protein: 0, carbs: 0, fat: 0 }, 60).kcal).toBe(901);
+    expect(per100gFromServing({ kcal: 0, protein: 4.03, carbs: 4.03, fat: 4.03 }, 40)).toEqual({
+      kcal: 0,
+      protein: 10.08,
+      carbs: 10.08,
+      fat: 10.08,
+    });
+  });
   it('preserves schema-compatible values for a 100 g serving', () => {
     expect(per100gFromServing(food, 100)).toEqual(food);
   });

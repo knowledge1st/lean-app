@@ -24,11 +24,14 @@ export function scaleMacros(stored: Macros, fromGrams: number, toGrams: number):
 }
 export function per100gFromServing(values: Macros, servingG: number): Macros {
   const scaled = scaleMacros(values, servingG, 100);
+  // Remove binary scaling noise before rounding decimal half-up boundaries.
+  const round = (value: number, factor: number) =>
+    Math.round(Number((value * factor).toPrecision(12))) / factor;
   return {
-    kcal: Math.round(scaled.kcal),
-    protein: Math.round((scaled.protein + Number.EPSILON) * 100) / 100,
-    carbs: Math.round((scaled.carbs + Number.EPSILON) * 100) / 100,
-    fat: Math.round((scaled.fat + Number.EPSILON) * 100) / 100,
+    kcal: round(scaled.kcal, 1),
+    protein: round(scaled.protein, 100),
+    carbs: round(scaled.carbs, 100),
+    fat: round(scaled.fat, 100),
   };
 }
 export function sumMacros(items: Macros[]): Macros {
