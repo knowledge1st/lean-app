@@ -4,6 +4,9 @@ import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react
 import { Route, Routes, useNavigationType } from 'react-router';
 import { jsonResponse, renderAuth, testUser } from '../auth/testUtils';
 import { setToken } from '../lib/session';
+import type { ActiveGoal } from '@lean/shared';
+import { DRAFT_KEY, emptyDraft, storeDraft } from '../features/goals/draft';
+import { ObjetivoNuevo } from './ObjetivoNuevo';
 import { Perfil } from './Perfil';
 
 vi.mock('../lib/api', async (importOriginal) => {
@@ -14,6 +17,7 @@ vi.mock('../lib/api', async (importOriginal) => {
 const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   setToken('token');
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
@@ -145,4 +149,69 @@ it('muestra el error del servidor, conserva el formulario y permite reintentar e
   expect(screen.getByLabelText('Altura').getAttribute('value')).toBe('175');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+it('Cambiar objetivo precarga perfil y peso frescos con una caché inicial vacía de hace menos de 30 s', async () => {
+  const goal: ActiveGoal = {
+    id: 'goal',
+    mode: 'manual',
+    preset: null,
+    startDate: '2026-11-01',
+    startWeightKg: 80,
+    targetWeightKg: null,
+    targetDate: null,
+    progress: { startWeightKg: 80, currentWeightKg: 76.5, targetWeightKg: null, percent: null },
+    target: { kcal: 2000, protein: 140, carbs: 220, fat: 62, waterMl: 2500 },
+    milestones: [],
+  };
+  fetchMock.mockImplementation(async (url) => {
+    if (String(url).endsWith('/api/me')) return jsonResponse(testUser);
+    if (String(url).endsWith('/api/profile')) return jsonResponse(profile);
+    if (String(url).endsWith('/api/goals/active')) return jsonResponse(goal);
+    throw new Error(`Unexpected ${url}`);
+  });
+  const { client } = renderAuth(
+    <Routes>
+      <Route path="/perfil" element={<Perfil />} />
+      <Route path="/objetivo/nuevo" element={<ObjetivoNuevo />} />
+    </Routes>,
+    '/perfil',
+  );
+  await screen.findByText('175 cm');
+  await screen.findByRole('button', { name: 'Cambiar objetivo' });
+  // La primera apertura, antes de crear el perfil y objetivo, dejó ambos vacíos.
+  client.setQueryData(['goals', 'wizard', 'initial'], { profile: null, goal: null });
+  storeDraft({ ...emptyDraft, heightCm: '190', weightKg: '99' });
+  let resolveProfile!: (response: Response) => void;
+  let resolveGoal!: (response: Response) => void;
+  const freshProfile = new Promise<Response>((resolve) => {
+    resolveProfile = resolve;
+  });
+  const freshGoal = new Promise<Response>((resolve) => {
+    resolveGoal = resolve;
+  });
+  fetchMock.mockImplementation((url) =>
+    String(url).endsWith('/api/profile') ? freshProfile : freshGoal,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Cambiar objetivo' }));
+  expect(sessionStorage.getItem(DRAFT_KEY)).toBeNull();
+  expect(screen.queryByLabelText('Altura')).toBeNull();
+  await act(async () => {
+    resolveProfile(jsonResponse(profile));
+  });
+  expect(screen.queryByLabelText('Altura')).toBeNull();
+  await act(async () => {
+    resolveGoal(jsonResponse(goal));
+  });
+  await screen.findByLabelText('Altura');
+  expect((screen.getByLabelText('Altura') as HTMLInputElement).value).toBe('175');
+  expect((screen.getByLabelText('Fecha de nacimiento') as HTMLInputElement).value).toBe(
+    profile.birthDate,
+  );
+  expect((screen.getByLabelText('Hombre') as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole('radio', { name: /Algo activo/ }) as HTMLInputElement).checked).toBe(
+    true,
+  );
+  expect((screen.getByLabelText('Peso actual') as HTMLInputElement).value).toBe('76.5');
+  client.clear();
 });

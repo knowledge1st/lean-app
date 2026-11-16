@@ -226,7 +226,14 @@ it('conserva los datos restaurados si también falla la recarga del resumen', as
   const client = setup();
   await screen.findByText('Pan');
   fireEvent.click(screen.getByText('Ya lo comí'));
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/summary/day?')),
+    ).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/summary/week?')),
+    ).toHaveLength(1);
+  });
   await waitFor(() =>
     expect(client.getQueryState(['summary', 'day', summary.date])?.status).toBe('error'),
   );

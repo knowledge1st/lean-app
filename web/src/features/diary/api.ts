@@ -154,7 +154,10 @@ export function useDiaryMutation() {
         return;
       await Promise.all([
         ...(!context.session.days.has(context.date)
-          ? [client.invalidateQueries({ queryKey: context.key })]
+          ? [
+              client.invalidateQueries({ queryKey: context.key }),
+              client.invalidateQueries({ queryKey: ['summary', 'week'] }),
+            ]
           : []),
         client.invalidateQueries({ queryKey: ['foods', 'recent'] }),
         client.invalidateQueries({ queryKey: ['foods', 'frequent'] }),
