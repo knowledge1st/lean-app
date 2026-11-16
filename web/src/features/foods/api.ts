@@ -28,3 +28,12 @@ export function useFoodList(tab: 'recent' | 'frequent', enabled: boolean) {
     enabled,
   });
 }
+
+export const getFoodByBarcode = (code: string, signal?: AbortSignal) =>
+  api.get<Food>('/api/foods/barcode/' + encodeURIComponent(code), signal ? { signal } : {});
+export const useBarcodeLookup = () =>
+  useMutation({
+    networkMode: 'always',
+    mutationFn: ({ code, signal }: { code: string; signal: AbortSignal }) =>
+      getFoodByBarcode(code, signal),
+  });

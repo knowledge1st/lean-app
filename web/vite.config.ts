@@ -32,7 +32,8 @@ export default defineConfig(({ command, mode, isPreview }) => {
             const connections = ["'self'", apiOrigin, ...wsOrigins].filter(Boolean).join(' ');
             const policy = [
               "default-src 'self'",
-              `script-src 'self'${nonceSource}`,
+              // El WASM de ZXing necesita compilar WebAssembly.
+              `script-src 'self' 'wasm-unsafe-eval'${nonceSource}`,
               // Radix/react-remove-scroll injects <style> elements without a nonce.
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",

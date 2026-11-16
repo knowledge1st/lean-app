@@ -29,7 +29,7 @@ it.each(['recent', 'frequent'] as const)(
     client.setQueryData(['foods', tab], []);
     const { container } = render(
       <QueryClientProvider client={client}>
-        <FoodSearch onSelect={vi.fn()} onCreate={vi.fn()} />
+        <FoodSearch onScan={vi.fn()} onSelect={vi.fn()} onCreate={vi.fn()} />
       </QueryClientProvider>,
     );
     expect(document.activeElement).toBe(screen.getByLabelText('Buscar alimento'));
@@ -65,7 +65,7 @@ it.each(['recent', 'frequent', 'search'] as const)(
     client.setQueryData(key, data);
     render(
       <QueryClientProvider client={client}>
-        <FoodSearch onSelect={vi.fn()} onCreate={vi.fn()} />
+        <FoodSearch onScan={vi.fn()} onSelect={vi.fn()} onCreate={vi.fn()} />
       </QueryClientProvider>,
     );
     if (tab === 'frequent') fireEvent.click(screen.getByRole('button', { name: 'Frecuentes' }));
@@ -85,7 +85,7 @@ it('muestra error completo sin datos', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <FoodSearch onSelect={vi.fn()} onCreate={vi.fn()} />
+      <FoodSearch onScan={vi.fn()} onSelect={vi.fn()} onCreate={vi.fn()} />
     </QueryClientProvider>,
   );
   expect(await screen.findByRole('button', { name: 'Reintentar' })).toBeTruthy();

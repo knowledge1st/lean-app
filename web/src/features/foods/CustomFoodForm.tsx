@@ -15,7 +15,9 @@ const numericFields = [
 export function CustomFoodForm({
   onBack,
   onCreated,
+  initialBarcode,
 }: {
+  initialBarcode?: string | undefined;
   onBack: () => void;
   onCreated: (food: Food) => void;
 }) {
@@ -41,6 +43,7 @@ export function CustomFoodForm({
         if (mutation.isPending) return;
         const result = createFoodSchema.safeParse({
           ...fields,
+          barcode: initialBarcode,
           kcal: decimalValue(fields.kcal),
           protein: decimalValue(fields.protein),
           carbs: decimalValue(fields.carbs),
@@ -61,6 +64,9 @@ export function CustomFoodForm({
       }}
     >
       <p className="text-sm text-muted">Valores por 100 g</p>
+      {initialBarcode && (
+        <Input label="Código de barras" value={initialBarcode} readOnly error={errors.barcode} />
+      )}
       <Input
         autoFocus
         label="Nombre"
