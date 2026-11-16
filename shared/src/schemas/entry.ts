@@ -76,6 +76,8 @@ export const mealSummarySchema = z.object({
   entries: z.array(entrySchema),
 });
 export const daySummarySchema = z.object({
+  waterMl: z.number(),
+  exerciseKcal: z.number(),
   date: localDateSchema,
   eaten: macrosSchema,
   planned: macrosSchema,

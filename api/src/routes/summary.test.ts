@@ -38,6 +38,8 @@ describe.skipIf(!hasTestDatabase)('summary integration', () => {
     expect(result).toMatchObject({
       date: '2026-11-14',
       target: null,
+      waterMl: 0,
+      exerciseKcal: 0,
       eaten: { kcal: 200, protein: 10.2, carbs: 20.5, fat: 3.1 },
       planned: { kcal: 200, protein: 10.3, carbs: 20.5, fat: 3.2 },
     });
@@ -67,6 +69,33 @@ describe.skipIf(!hasTestDatabase)('summary integration', () => {
     expect(roundedKcalSum).toBe(201);
     expect(result.eaten.kcal).toBe(200);
   });
+  it('sums daily water and exercise without changing targets and isolates users', async () => {
+    const before = daySummarySchema.parse(
+      await (await f.request('/summary/day?date=2026-11-14')).json(),
+    );
+    await f.request('/water', 'POST', { date: '2026-11-14', ml: 500 });
+    for (const kcal of [100, 250])
+      await f.request('/exercise', 'POST', {
+        date: '2026-11-14',
+        activity: 'Caminar',
+        minutes: 30,
+        kcal,
+      });
+    await f.request('/water', 'POST', { date: '2026-11-15', ml: 900 });
+    await f.request('/exercise', 'POST', {
+      date: '2026-11-15',
+      activity: 'Correr',
+      minutes: 30,
+      kcal: 500,
+    });
+    const after = daySummarySchema.parse(
+      await (await f.request('/summary/day?date=2026-11-14')).json(),
+    );
+    expect(after).toEqual({ ...before, waterMl: 500, exerciseKcal: 350 });
+    expect(
+      await (await f.request('/summary/day?date=2026-11-14', 'GET', undefined, 1)).json(),
+    ).toMatchObject({ waterMl: 0, exerciseKcal: 0 });
+  });
   it('rounds a stored protein sum at a decimal tie in the day and meal totals', async () => {
     const food = await f.food(0, { protein: 0.5 });
     await f.entry(food.id!, { grams: 1, meal: 'lunch' });
@@ -92,6 +121,8 @@ describe.skipIf(!hasTestDatabase)('summary integration', () => {
         eaten: ZERO_MACROS,
         planned: ZERO_MACROS,
         target: null,
+        waterMl: 0,
+        exerciseKcal: 0,
         meals: MEALS.map((meal) => ({
           meal,
           eaten: ZERO_MACROS,
@@ -185,6 +216,25 @@ describe.skipIf(!hasTestDatabase)('weekly summary integration', { timeout: 30_00
         .fill(null)
         .concat(Array(targetDays).fill(2000)),
     );
+  });
+  it('keeps a real daily target and weekly budget unchanged by exercise', async () => {
+    await f.create();
+    const before = daySummarySchema.parse(
+      await (await f.request('/summary/day?date=2026-11-16')).json(),
+    );
+    const weekBefore = await (await f.request('/summary/week?week=2026-W47')).json();
+    expect(before.target?.kcal).toBe(2000);
+    await f.request('/exercise', 'POST', {
+      date: '2026-11-16',
+      activity: 'Correr',
+      minutes: 60,
+      kcal: 750,
+    });
+    const after = daySummarySchema.parse(
+      await (await f.request('/summary/day?date=2026-11-16')).json(),
+    );
+    expect(after).toEqual({ ...before, exerciseKcal: 750 });
+    expect(await (await f.request('/summary/week?week=2026-W47')).json()).toEqual(weekBefore);
   });
   it('allows negative remaining calories and returns null without a budget', async () => {
     const food = await f.food();

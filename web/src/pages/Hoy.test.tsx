@@ -25,6 +25,8 @@ afterEach(() => {
 const summary: DaySummary = {
   date: '2026-11-14',
   target: null,
+  waterMl: 0,
+  exerciseKcal: 0,
   eaten: ZERO_MACROS,
   planned: { kcal: 100, protein: 5, carbs: 10, fat: 2.5 },
   meals: MEALS.map((meal) => ({

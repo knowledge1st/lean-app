@@ -11,6 +11,10 @@ import { health } from './routes/health';
 import { profile } from './routes/profile';
 import { goals, targets } from './routes/goals';
 
+import { bodyLogs } from './routes/bodyLogs';
+import { water } from './routes/water';
+import { exercise } from './routes/exercise';
+
 export const app = new Hono<AppEnv>();
 
 app.use('*', cors());
@@ -34,6 +38,9 @@ app.route('/api/summary', summary);
 app.route('/api/profile', profile);
 app.route('/api/goals', goals);
 app.route('/api/targets', targets);
+app.route('/api/body-logs', bodyLogs);
+app.route('/api/water', water);
+app.route('/api/exercise', exercise);
 
 app.notFound(handleNotFound);
 app.onError(handleError);

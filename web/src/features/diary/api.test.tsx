@@ -47,6 +47,8 @@ function base(date = entry.date): DaySummary {
   return {
     date,
     target: null,
+    waterMl: 0,
+    exerciseKcal: 0,
     eaten,
     planned: ZERO_MACROS,
     meals: MEALS.map((meal) => ({

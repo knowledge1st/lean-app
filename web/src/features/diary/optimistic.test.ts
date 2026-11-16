@@ -23,6 +23,8 @@ const food: Food = {
 const summary: DaySummary = {
   date: '2026-11-14',
   target: null,
+  waterMl: 0,
+  exerciseKcal: 0,
   eaten: ZERO_MACROS,
   planned: ZERO_MACROS,
   meals: MEALS.map((meal) => ({ meal, entries: [], eaten: ZERO_MACROS, planned: ZERO_MACROS })),
