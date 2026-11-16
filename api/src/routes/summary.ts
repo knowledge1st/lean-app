@@ -9,6 +9,9 @@ import {
   type DaySummary,
   type EntryStatus,
 } from '@lean/shared';
+import { and, eq, sql } from 'drizzle-orm';
+import { exerciseLogs } from '../db/schema';
+import { selectWater } from './water';
 import { Hono } from 'hono';
 import { getDb } from '../db/client';
 import type { AppEnv } from '../env';
@@ -22,7 +25,15 @@ summary.get('/day', validate('query', summaryDayQuerySchema), async (c) => {
   const { date } = c.req.valid('query'),
     db = getDb(c.env),
     userId = c.get('userId');
-  const rows = await selectEntries(db, userId, date, date);
+  const [rows, target, waterMl, exerciseTotals] = await Promise.all([
+    selectEntries(db, userId, date, date),
+    getTargetForDate(db, userId, date),
+    selectWater(db, userId, date),
+    db
+      .select({ kcal: sql<number>`coalesce(sum(${exerciseLogs.kcal}), 0)`.mapWith(Number) })
+      .from(exerciseLogs)
+      .where(and(eq(exerciseLogs.userId, userId), eq(exerciseLogs.date, date))),
+  ]);
   const total = (items: typeof rows, status: EntryStatus) =>
     roundMacros(
       sumMacros(items.filter((r) => r.entry.status === status).map((r) => storedMacros(r.entry))),
@@ -40,7 +51,9 @@ summary.get('/day', validate('query', summaryDayQuerySchema), async (c) => {
         entries: items.map(serializeEntry),
       };
     }),
-    target: await getTargetForDate(db, userId, date),
+    target,
+    waterMl,
+    exerciseKcal: exerciseTotals[0]?.kcal ?? 0,
   };
   return c.json(result);
 });
