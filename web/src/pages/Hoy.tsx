@@ -11,6 +11,8 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { ErrorState } from '../components/ui/ErrorState';
 import { DaySummary } from '../features/diary/DaySummary';
 import { MealSection } from '../features/diary/MealSection';
+import { WaterCard } from '../features/diary/WaterCard';
+import { ExerciseCard } from '../features/diary/ExerciseCard';
 import { EntrySheet } from '../features/diary/EntrySheet';
 import { AddFoodSheet } from '../features/foods/AddFoodSheet';
 import { useDaySummary, useDiaryMutation } from '../features/diary/api';
@@ -141,6 +143,8 @@ export function Hoy() {
           })}
         </>
       )}
+      <WaterCard date={date} />
+      <ExerciseCard date={date} />
       {adding && adding.date === date && (
         <AddFoodSheet
           key={`${adding.date}-${adding.meal}`}

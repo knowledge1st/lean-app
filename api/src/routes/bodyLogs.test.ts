@@ -47,9 +47,7 @@ describe.skipIf(!hasTestDatabase)('body logs integration', { timeout: 30000 }, (
   });
   it('rounds trend weights to two decimals at floating-point ties', async () => {
     expect((await f.request('/body-logs/2026-11-14', 'PUT', { weightKg: 80 })).status).toBe(200);
-    expect((await f.request('/body-logs/2026-11-15', 'PUT', { weightKg: 81.15 })).status).toBe(
-      200,
-    );
+    expect((await f.request('/body-logs/2026-11-15', 'PUT', { weightKg: 81.15 })).status).toBe(200);
     const response = await f.request('/body-logs?from=2026-11-14&to=2026-11-15');
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
