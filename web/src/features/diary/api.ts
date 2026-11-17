@@ -10,6 +10,17 @@ import {
   type EntryChanges,
 } from './optimistic';
 export const summaryKey = (date: string) => ['summary', 'day', date] as const;
+export function waitForDiaryIdle(client: QueryClient): Promise<void> {
+  if (client.isMutating({ mutationKey: ['diary'] }) === 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsubscribe = client.getMutationCache().subscribe(() => {
+      if (client.isMutating({ mutationKey: ['diary'] }) === 0) {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
+}
 export const getDaySummary = (date: string, signal?: AbortSignal) =>
   api.get<DaySummary>(`/api/summary/day?date=${date}`, signal ? { signal } : {});
 export const createEntry = (body: {
@@ -17,6 +28,7 @@ export const createEntry = (body: {
   meal: Entry['meal'];
   foodId: string;
   grams: number;
+  status?: Entry['status'];
 }) => api.post<Entry>('/api/entries', body);
 export const updateEntry = (id: string, changes: EntryChanges) =>
   api.patch<Entry>(`/api/entries/${id}`, changes);
@@ -63,6 +75,7 @@ export function useDiaryMutation() {
           meal: action.meal,
           foodId: action.food.id!,
           grams: action.grams,
+          ...(action.status ? { status: action.status } : {}),
         });
       const requests = diarySession(client).requests;
       const id = action.entry.id;

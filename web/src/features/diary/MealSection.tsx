@@ -6,11 +6,13 @@ import { EntryRow } from './EntryRow';
 export function MealSection({
   meal,
   disabled,
+  missed,
   onAdd,
   onEdit,
   onEat,
 }: {
   meal: DaySummary['meals'][number];
+  missed?: boolean | undefined;
   disabled?: boolean | undefined;
   onAdd: () => void;
   onEdit: (entry: Entry) => void;
@@ -31,6 +33,7 @@ export function MealSection({
             key={entry.id}
             entry={entry}
             disabled={disabled}
+            missed={missed}
             onEdit={onEdit}
             onEat={onEat}
           />

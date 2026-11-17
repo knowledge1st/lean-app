@@ -10,7 +10,15 @@ import {
 } from '@lean/shared';
 export type EntryChanges = Partial<Pick<Entry, 'grams' | 'meal' | 'status'>>;
 export type DiaryAction =
-  | { kind: 'add'; food: Food; grams: number; meal: Meal; date: string; temporaryId: string }
+  | {
+      kind: 'add';
+      food: Food;
+      grams: number;
+      meal: Meal;
+      date: string;
+      temporaryId: string;
+      status?: Entry['status'];
+    }
   | { kind: 'edit'; entry: Entry; changes: EntryChanges }
   | { kind: 'delete'; entry: Entry };
 export function recalculateSummary(summary: DaySummary, entries: Entry[]): DaySummary {
@@ -41,7 +49,7 @@ export function applyDiaryAction(summary: DaySummary, action: DiaryAction): DayS
         id: temporaryId,
         date,
         meal,
-        status: 'eaten',
+        status: action.status ?? 'eaten',
         foodId: food.id!,
         grams,
         ...roundMacros(macrosForGrams(food, grams)),

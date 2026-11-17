@@ -7,7 +7,7 @@ import { MEALS, ZERO_MACROS, type DaySummary, type Entry } from '@lean/shared';
 import { ToastProvider } from '../../components/ui/Toast';
 import { jsonResponse } from '../../auth/testUtils';
 import { clearToken, setToken } from '../../lib/session';
-import { summaryKey, useDaySummary, useDiaryMutation } from './api';
+import { summaryKey, useDaySummary, useDiaryMutation, waitForDiaryIdle } from './api';
 import { WeekBudgetBar } from '../goals/WeekBudgetBar';
 import { useWeekSummary } from '../goals/api';
 import { incorporateDiaryResult, type DiaryAction } from './optimistic';
@@ -463,3 +463,54 @@ it.each(actions)(
     client.clear();
   },
 );
+
+it('waitForDiaryIdle resuelve de inmediato sin suscribirse si el diario está inactivo', async () => {
+  const { client } = setup();
+  const subscribe = vi.spyOn(client.getMutationCache(), 'subscribe');
+  await waitForDiaryIdle(client);
+  expect(subscribe).not.toHaveBeenCalled();
+  client.clear();
+});
+it('waitForDiaryIdle espera todas las mutaciones del diario y se desuscribe, ignorando otras', async () => {
+  const { client } = setup();
+  const cache = client.getMutationCache();
+  const requests = [deferred(), deferred(), deferred()];
+  const executions = requests.map((request, index) =>
+    cache
+      .build(client, {
+        mutationKey: index === 2 ? ['other'] : ['diary'],
+        mutationFn: () => request.promise,
+      })
+      .execute(undefined)
+      .catch(() => {}),
+  );
+  const originalSubscribe = cache.subscribe.bind(cache);
+  const unsubscribe = vi.fn();
+  const subscribe = vi.spyOn(cache, 'subscribe').mockImplementation((listener) => {
+    const stop = originalSubscribe(listener);
+    return () => {
+      unsubscribe();
+      stop();
+    };
+  });
+  const done = vi.fn();
+  const waiting = waitForDiaryIdle(client).then(done);
+  expect(subscribe).toHaveBeenCalledOnce();
+  await Promise.resolve();
+  expect(done).not.toHaveBeenCalled();
+  requests[0]!.resolve(jsonResponse({}));
+  await executions[0];
+  expect(done).not.toHaveBeenCalled();
+  expect(unsubscribe).not.toHaveBeenCalled();
+  requests[1]!.reject(new Error('offline'));
+  await waiting;
+  expect(client.isMutating({ mutationKey: ['diary'] })).toBe(0);
+  expect(client.isMutating()).toBe(1);
+  expect(done).toHaveBeenCalledOnce();
+  expect(unsubscribe).toHaveBeenCalledOnce();
+  requests[2]!.resolve(jsonResponse({}));
+  await Promise.all(executions);
+  expect(unsubscribe).toHaveBeenCalledOnce();
+  subscribe.mockRestore();
+  client.clear();
+});
