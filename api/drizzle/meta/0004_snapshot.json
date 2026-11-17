@@ -112,12 +112,8 @@
           "name": "body_logs_user_id_users_id_fk",
           "tableFrom": "body_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -252,12 +248,8 @@
           "name": "checkins_goal_id_goals_id_fk",
           "tableFrom": "checkins",
           "tableTo": "goals",
-          "columnsFrom": [
-            "goal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["goal_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -345,12 +337,8 @@
           "name": "exercise_logs_user_id_users_id_fk",
           "tableFrom": "exercise_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -549,12 +537,8 @@
           "name": "foods_owner_id_users_id_fk",
           "tableFrom": "foods",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -700,12 +684,8 @@
           "name": "goals_user_id_users_id_fk",
           "tableFrom": "goals",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -915,12 +895,8 @@
           "name": "meal_entries_user_id_users_id_fk",
           "tableFrom": "meal_entries",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -928,12 +904,8 @@
           "name": "meal_entries_food_id_foods_id_fk",
           "tableFrom": "meal_entries",
           "tableTo": "foods",
-          "columnsFrom": [
-            "food_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["food_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1030,12 +1002,8 @@
           "name": "milestones_goal_id_goals_id_fk",
           "tableFrom": "milestones",
           "tableTo": "goals",
-          "columnsFrom": [
-            "goal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["goal_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1110,12 +1078,8 @@
           "name": "profiles_user_id_users_id_fk",
           "tableFrom": "profiles",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1207,12 +1171,8 @@
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1314,12 +1274,8 @@
           "name": "shopping_items_user_id_users_id_fk",
           "tableFrom": "shopping_items",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1327,12 +1283,8 @@
           "name": "shopping_items_food_id_foods_id_fk",
           "tableFrom": "shopping_items",
           "tableTo": "foods",
-          "columnsFrom": [
-            "food_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["food_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1448,12 +1400,8 @@
           "name": "targets_goal_id_goals_id_fk",
           "tableFrom": "targets",
           "tableTo": "goals",
-          "columnsFrom": [
-            "goal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["goal_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1529,9 +1477,7 @@
         "users_username_unique": {
           "name": "users_username_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "username"
-          ]
+          "columns": ["username"]
         }
       },
       "policies": {},
@@ -1603,12 +1549,8 @@
           "name": "water_logs_user_id_users_id_fk",
           "tableFrom": "water_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1629,83 +1571,47 @@
     "public.activity_level": {
       "name": "activity_level",
       "schema": "public",
-      "values": [
-        "sedentary",
-        "light",
-        "moderate",
-        "active"
-      ]
+      "values": ["sedentary", "light", "moderate", "active"]
     },
     "public.composition_preset": {
       "name": "composition_preset",
       "schema": "public",
-      "values": [
-        "cut",
-        "recomp",
-        "lean_bulk"
-      ]
+      "values": ["cut", "recomp", "lean_bulk"]
     },
     "public.entry_status": {
       "name": "entry_status",
       "schema": "public",
-      "values": [
-        "planned",
-        "eaten"
-      ]
+      "values": ["planned", "eaten"]
     },
     "public.food_source": {
       "name": "food_source",
       "schema": "public",
-      "values": [
-        "off",
-        "seed",
-        "custom"
-      ]
+      "values": ["off", "seed", "custom"]
     },
     "public.goal_mode": {
       "name": "goal_mode",
       "schema": "public",
-      "values": [
-        "target_weight",
-        "body_composition",
-        "manual"
-      ]
+      "values": ["target_weight", "body_composition", "manual"]
     },
     "public.goal_status": {
       "name": "goal_status",
       "schema": "public",
-      "values": [
-        "active",
-        "archived"
-      ]
+      "values": ["active", "archived"]
     },
     "public.meal": {
       "name": "meal",
       "schema": "public",
-      "values": [
-        "breakfast",
-        "lunch",
-        "afternoon_snack",
-        "dinner",
-        "snack"
-      ]
+      "values": ["breakfast", "lunch", "afternoon_snack", "dinner", "snack"]
     },
     "public.sex": {
       "name": "sex",
       "schema": "public",
-      "values": [
-        "female",
-        "male"
-      ]
+      "values": ["female", "male"]
     },
     "public.target_reason": {
       "name": "target_reason",
       "schema": "public",
-      "values": [
-        "initial",
-        "adjustment",
-        "manual"
-      ]
+      "values": ["initial", "adjustment", "manual"]
     }
   },
   "schemas": {},

@@ -50,11 +50,9 @@ describe('custom barcode conflicts without database', () => {
       if (method === 'PATCH') selectWhere.mockResolvedValueOnce([current]);
       vi.mocked(getDb).mockReturnValue({
         insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ returning }) }),
-        update: vi
-          .fn()
-          .mockReturnValue({
-            set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning }) }),
-          }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning }) }),
+        }),
         select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: selectWhere }) }),
       } as unknown as Db);
       const app = new Hono<AppEnv>();
@@ -88,16 +86,12 @@ describe('custom barcode conflicts without database', () => {
     const original = new Error('unique violation', { cause: { code: '23505' } });
     const limit = vi.fn().mockResolvedValue([]);
     vi.mocked(getDb).mockReturnValue({
-      insert: vi
-        .fn()
-        .mockReturnValue({
-          values: vi.fn().mockReturnValue({ returning: vi.fn().mockRejectedValue(original) }),
-        }),
-      select: vi
-        .fn()
-        .mockReturnValue({
-          from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit }) }),
-        }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({ returning: vi.fn().mockRejectedValue(original) }),
+      }),
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit }) }),
+      }),
     } as unknown as Db);
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
