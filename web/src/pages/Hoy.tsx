@@ -22,6 +22,7 @@ import { EntrySheet } from '../features/diary/EntrySheet';
 import { AddFoodSheet } from '../features/foods/AddFoodSheet';
 import { useDaySummary, useDiaryMutation } from '../features/diary/api';
 import type { DiaryAction } from '../features/diary/optimistic';
+import type { MacroKey } from '../lib/macros';
 export function Hoy() {
   const features = useTextLogFeatures();
   const [writing, setWriting] = useState(false);
@@ -40,6 +41,7 @@ export function Hoy() {
   const [adding, setAdding] = useState<{ date: string; meal: Meal } | null>(null);
   const [repeating, setRepeating] = useState<Meal | null>(null);
   const [editing, setEditing] = useState<Entry | null>(null);
+  const [selectedMacro, setSelectedMacro] = useState<MacroKey | null>(null);
   const goal = useActiveGoal();
   const wizardSkipped = wasWizardSkipped();
   const query = useDaySummary(date);
@@ -146,7 +148,11 @@ export function Hoy() {
               }}
             />
           )}
-          <DaySummary summary={query.data} />
+          <DaySummary
+            summary={query.data}
+            selectedMacro={selectedMacro}
+            onSelectMacro={setSelectedMacro}
+          />
           <WeekBudgetBar date={date} />
           {features.data?.textLog && (
             <Button variant="secondary" onClick={() => setWriting(true)}>
@@ -160,6 +166,7 @@ export function Hoy() {
                 <MealSection
                   key={meal}
                   meal={section}
+                  highlight={selectedMacro}
                   onAdd={() => setAdding({ date, meal })}
                   onRepeat={() => setRepeating(meal)}
                   onEdit={setEditing}

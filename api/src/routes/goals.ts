@@ -1,4 +1,11 @@
-import { buildPlan, createGoalSchema, targetsQuerySchema, type Profile } from '@lean/shared';
+import {
+  buildPlan,
+  createGoalSchema,
+  rebalanceMacrosForKcal,
+  targetsQuerySchema,
+  updateTargetKcalSchema,
+  type Profile,
+} from '@lean/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { getDb } from '../db/client';
@@ -6,7 +13,7 @@ import { bodyLogs, goals as table, milestones, targets as targetTable } from '..
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
 import { limitAdjustedTargetDate, maxGoalTargetDate, serializeGoal } from '../lib/goals';
-import { getTargetForDate } from '../lib/targets';
+import { getTargetForDate, selectTargetForDate } from '../lib/targets';
 import { today as localToday } from '../lib/today';
 import { validate } from '../lib/validate';
 import { selectProfile, serializeProfile } from './profile';
@@ -44,6 +51,39 @@ goals.get('/active', async (c) => {
   if (!row) throw new AppError(404, 'goal_not_found', 'Objetivo no encontrado');
   const profile = await selectProfile(db, userId);
   return c.json(await serializeGoal(db, userId, row, localToday(profile?.timeZone)));
+});
+// Lets the user override the generated daily calories. Protein and fat stay, carbs absorb
+// the difference, and the new target applies from today on without touching past days.
+goals.put('/active/target', validate('json', updateTargetKcalSchema), async (c) => {
+  const { kcal } = c.req.valid('json');
+  const db = getDb(c.env),
+    userId = c.get('userId');
+  const profile = await selectProfile(db, userId);
+  const today = localToday(profile?.timeZone);
+  const [goal] = await db
+    .select()
+    .from(table)
+    .where(and(eq(table.userId, userId), eq(table.status, 'active')));
+  if (!goal) throw new AppError(404, 'goal_not_found', 'Objetivo no encontrado');
+  const current = await selectTargetForDate(db, userId, today);
+  const base = current?.target;
+  const macros = rebalanceMacrosForKcal(kcal, {
+    proteinG: Number(base?.proteinG ?? 0),
+    fatG: Number(base?.fatG ?? 0),
+  });
+  const waterMl = base?.waterMl ?? 0;
+  // Share the goal-creation lock and insert only while the goal is still active.
+  const [, inserted] = await db.batch([
+    db.execute(sql`SELECT pg_advisory_xact_lock(3, hashtext(${userId}))`),
+    db.execute(sql`INSERT INTO targets (goal_id, effective_from, kcal, protein_g, carbs_g, fat_g, water_ml, reason)
+      SELECT g.id, ${today}::date, ${kcal}, ${String(macros.proteinG)}::numeric,
+        ${String(macros.carbsG)}::numeric, ${String(macros.fatG)}::numeric, ${waterMl}, 'manual'
+      FROM goals g WHERE g.id = ${goal.id}::uuid AND g.user_id = ${userId}::uuid AND g.status = 'active'
+      RETURNING id`),
+  ]);
+  if (!inserted.rows.length)
+    throw new AppError(409, 'goal_not_active', 'El objetivo ya no está activo');
+  return c.json(await serializeGoal(db, userId, goal, today));
 });
 for (const path of ['/preview', '/'] as const) {
   goals.post(path, validate('json', createGoalSchema), async (c) => {
