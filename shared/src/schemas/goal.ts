@@ -1,3 +1,4 @@
+import { isoWeekSchema } from '../week';
 import { z } from 'zod';
 import { localDateSchema, targetSchema } from './entry';
 import { oneDecimalSchema } from './profile';
@@ -52,40 +53,8 @@ export const createGoalSchema = z.strictObject(
 export type CreateGoalInput = z.infer<typeof createGoalSchema>;
 export const targetsQuerySchema = z.object({ date: localDateSchema });
 
-function firstMonday(year: number): Date {
-  const date = new Date(Date.UTC(year, 0, 4));
-  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-  return date;
-}
-export const isoWeekSchema = z.string({ error: 'Semana inválida' }).refine((week) => {
-  if (!/^\d{4}-W\d{2}$/.test(week)) return false;
-  const year = Number(week.slice(0, 4)),
-    number = Number(week.slice(6));
-  if (
-    year < 1900 ||
-    year > 2100 ||
-    number < 1 ||
-    number > (firstMonday(year + 1).getTime() - firstMonday(year).getTime()) / (7 * 86400000)
-  )
-    return false;
-  const monday = firstMonday(year);
-  monday.setUTCDate(monday.getUTCDate() + (number - 1) * 7);
-  const sunday = new Date(monday);
-  sunday.setUTCDate(sunday.getUTCDate() + 6);
-  return (
-    localDateSchema.safeParse(monday.toISOString().slice(0, 10)).success &&
-    localDateSchema.safeParse(sunday.toISOString().slice(0, 10)).success
-  );
-}, 'Semana ISO inválida');
+export { isoWeekSchema, isoWeekRange } from '../week';
 export const summaryWeekQuerySchema = z.object({ week: isoWeekSchema });
-export function isoWeekRange(week: string): { from: string; to: string } {
-  isoWeekSchema.parse(week);
-  const date = firstMonday(Number(week.slice(0, 4)));
-  date.setUTCDate(date.getUTCDate() + (Number(week.slice(6)) - 1) * 7);
-  const from = date.toISOString().slice(0, 10);
-  date.setUTCDate(date.getUTCDate() + 6);
-  return { from, to: date.toISOString().slice(0, 10) };
-}
 const milestoneSchema = z.object({
   date: localDateSchema,
   expectedWeightKg: z.number(),

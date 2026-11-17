@@ -11,3 +11,7 @@ export * from './schemas/goal';
 
 export * from './schemas/progress';
 export * from './progress/trend';
+
+export * from './week';
+export * from './schemas/plan';
+export * from './schemas/shopping';

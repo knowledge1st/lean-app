@@ -1,4 +1,10 @@
 import {
+  addDays,
+  copyEntriesSchema,
+  isoWeekRange,
+  markEatenSchema,
+  MEALS,
+  weekdayIndex,
   createEntrySchema,
   entriesQuerySchema,
   macrosForGrams,
@@ -7,7 +13,7 @@ import {
   type Entry,
   type Macros,
 } from '@lean/shared';
-import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb, type Db } from '../db/client';
@@ -114,6 +120,95 @@ entries.post('/', validate('json', createEntrySchema), async (c) => {
     .returning();
   if (!entry) throw notFound();
   return c.json(serializeEntry({ entry, food }), 201);
+});
+entries.post('/copy', validate('json', copyEntriesSchema), async (c) => {
+  const input = c.req.valid('json'),
+    db = getDb(c.env),
+    userId = c.get('userId');
+  const source =
+    input.scope === 'week' ? isoWeekRange(input.from) : { from: input.from, to: input.from };
+  const target = input.scope === 'week' ? isoWeekRange(input.to) : { from: input.to, to: input.to };
+  const rows = await selectEntries(db, userId, source.from, source.to);
+  const values = rows.map(({ entry }) => ({
+    id: crypto.randomUUID(),
+    userId,
+    date: input.scope === 'week' ? addDays(target.from, weekdayIndex(entry.date)) : target.from,
+    meal: entry.meal,
+    foodId: entry.foodId,
+    grams: entry.grams,
+    status: 'planned' as const,
+    kcal: entry.kcal,
+    protein: entry.protein,
+    carbs: entry.carbs,
+    fat: entry.fat,
+  }));
+  const deletion = db
+    .delete(table)
+    .where(
+      and(
+        eq(table.userId, userId),
+        gte(table.date, target.from),
+        lte(table.date, target.to),
+        eq(table.status, 'planned'),
+      ),
+    );
+  let created: (typeof table.$inferSelect)[] = [];
+  if (input.mode === 'replace') {
+    // The DELETE needs a fresh snapshot after any competing replacement commits.
+    const result = await db.batch([
+      db.execute(sql`SELECT pg_advisory_xact_lock(5, hashtext(${userId}))`),
+      deletion,
+      ...(values.length ? [db.insert(table).values(values).returning()] : []),
+    ]);
+    created = result[2] ?? [];
+  } else if (values.length) {
+    [created] = await db.batch([db.insert(table).values(values).returning()]);
+  }
+  const foodById = new Map(rows.map(({ food }) => [food.id, food]));
+  created.sort(
+    (a, b) =>
+      a.date.localeCompare(b.date) ||
+      MEALS.indexOf(a.meal) - MEALS.indexOf(b.meal) ||
+      a.createdAt.getTime() - b.createdAt.getTime() ||
+      a.id.localeCompare(b.id),
+  );
+  return c.json(
+    created.map((entry) => serializeEntry({ entry, food: foodById.get(entry.foodId)! })),
+    201,
+  );
+});
+entries.post('/mark-eaten', validate('json', markEatenSchema), async (c) => {
+  const { date, meal } = c.req.valid('json'),
+    db = getDb(c.env),
+    userId = c.get('userId');
+  const changed = await db
+    .update(table)
+    .set({ status: 'eaten', updatedAt: new Date() })
+    .where(
+      and(
+        eq(table.userId, userId),
+        eq(table.date, date),
+        eq(table.status, 'planned'),
+        meal ? eq(table.meal, meal) : undefined,
+      ),
+    )
+    .returning({ id: table.id });
+  if (!changed.length) return c.json([]);
+  const rows = await db
+    .select({ entry: table, food: foods })
+    .from(table)
+    .innerJoin(foods, eq(table.foodId, foods.id))
+    .where(
+      and(
+        eq(table.userId, userId),
+        inArray(
+          table.id,
+          changed.map((row) => row.id),
+        ),
+      ),
+    )
+    .orderBy(asc(table.date), asc(table.meal), asc(table.createdAt), asc(table.id));
+  return c.json(rows.map(serializeEntry));
 });
 entries.patch(
   '/:id',
