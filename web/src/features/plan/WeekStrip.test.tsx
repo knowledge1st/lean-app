@@ -5,6 +5,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MEALS, ZERO_MACROS, type DaySummary } from '@lean/shared';
 import { WeekStrip } from './WeekStrip';
 import { summaryKey } from '../diary/api';
+// The API client reads its base URL at import time; CI has no .env.local.
+vi.hoisted(() => {
+  vi.stubEnv('VITE_API_URL', 'http://api.test');
+});
 vi.mock('../../lib/date', async (original) => ({
   ...(await original<typeof import('../../lib/date')>()),
   todayLocal: () => '2026-11-16',
