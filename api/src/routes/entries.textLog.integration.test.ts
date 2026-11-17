@@ -11,7 +11,7 @@ import { buildCatalog } from '../lib/textLog/catalog';
 import { getFreeModels, refreshFreeRemaining, savedModels } from '../lib/textLog/freeModels';
 import { remainingToday, reserveAiUse } from '../lib/textLog/quota';
 import { testEnv } from '../test-env';
-import { createTextLogEntryRoutes } from './entries';
+import { createTextLogEntryRoutes } from './entriesTextLog';
 
 // Real database, quota and interpreter, with only discovery/account requests stubbed.
 // No integration test can contact OpenRouter, even with a configured database.

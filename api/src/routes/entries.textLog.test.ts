@@ -9,7 +9,8 @@ import { handleError } from '../lib/errors';
 import { getFreeModels, savedModels, refreshFreeRemaining } from '../lib/textLog/freeModels';
 import { reserveAiUse, finishAiUse, remainingToday } from '../lib/textLog/quota';
 import { testEnv } from '../test-env';
-import { entries, createTextLogEntryRoutes } from './entries';
+import { entries } from './entries';
+import { createTextLogEntryRoutes } from './entriesTextLog';
 
 vi.mock('../db/client', () => ({ getDb: vi.fn() }));
 vi.mock('../lib/textLog/freeModels', () => ({
@@ -120,7 +121,9 @@ beforeEach(() => {
         };
       },
     }),
-    execute: vi.fn().mockResolvedValue({ rows: [{ itemIndex: 0, chosen: food, chosenScore: 1, food, score: 1 }] }),
+    execute: vi.fn().mockResolvedValue({
+      rows: [{ itemIndex: 0, chosen: food, chosenScore: 1, food, score: 1 }],
+    }),
     insert,
     delete: deleteUsage,
   } as unknown as Db;
@@ -238,18 +241,29 @@ describe('parse-text with injected fetch', () => {
   });
   it('shares the deadline between discovery and model calls', async () => {
     vi.useFakeTimers();
-    vi.mocked(getFreeModels).mockImplementationOnce(() => new Promise((resolve) => {
-      setTimeout(() => resolve(state), 10_000);
-    }));
-    network.mockImplementation(() => new Promise((resolve) => {
-      setTimeout(() => resolve(reply()), 25_000);
-    }));
+    vi.mocked(getFreeModels).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(state), 10_000);
+        }),
+    );
+    network.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(reply()), 25_000);
+        }),
+    );
     const response = request('parse-text', input);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(await (await response).json()).toMatchObject({ interpreter: 'rules' });
-    expect(finishAiUse).toHaveBeenCalledWith(db, 'usage', expect.objectContaining({
-      attempts: 1, outcome: 'timeout',
-    }));
+    expect(finishAiUse).toHaveBeenCalledWith(
+      db,
+      'usage',
+      expect.objectContaining({
+        attempts: 1,
+        outcome: 'timeout',
+      }),
+    );
     expect(network.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
     expect(deleteUsage).not.toHaveBeenCalled();
   });
@@ -259,9 +273,10 @@ describe('parse-text with injected fetch', () => {
     vi.spyOn(db, 'select').mockImplementation(((...args: Parameters<typeof db.select>) => {
       const query = select(...args);
       return {
-        from: (table: Parameters<typeof getTableName>[0]) => getTableName(table) === 'foods'
-          ? { where: () => ({ orderBy: () => new Promise(() => {}) }) }
-          : query.from(table),
+        from: (table: Parameters<typeof getTableName>[0]) =>
+          getTableName(table) === 'foods'
+            ? { where: () => ({ orderBy: () => new Promise(() => {}) }) }
+            : query.from(table),
       };
     }) as typeof db.select);
     const response = request('parse-text', input);
