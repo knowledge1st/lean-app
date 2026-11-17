@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import { isoWeekOf, isoWeekRange, type DaySummary } from '@lean/shared';
 import { addDays } from '../../lib/date';
 import { Button } from '../../components/ui/Button';
 import { Sheet } from '../../components/ui/Sheet';
 import { useToast } from '../../components/ui/Toast';
-import { getDaySummary, summaryKey, useDiaryMutation } from '../diary/api';
+import { getDaySummary, summaryKey, useDiaryMutation, waitForDiaryIdle } from '../diary/api';
 import { CopyDaySheet } from './CopyDaySheet';
 import { useCopyEntries, useGenerateShopping, type CopyEntriesBody } from './api';
 export function PlanActions({ week, summary }: { week: string; summary: DaySummary }) {
@@ -19,7 +19,8 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
   const diary = useDiaryMutation();
   const toast = useToast();
   const navigate = useNavigate();
-  const busy = checking || copy.isPending || shopping.isPending || diary.isPending;
+  const diaryPending = useIsMutating({ mutationKey: ['diary'] }) > 0;
+  const busy = checking || copy.isPending || shopping.isPending || diaryPending;
   async function performCopy(body: CopyEntriesBody) {
     try {
       await copy.mutateAsync(body);
@@ -33,6 +34,7 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
   async function prepareCopy(body: Omit<CopyEntriesBody, 'mode'>) {
     setChecking(true);
     try {
+      await waitForDiaryIdle(client);
       const dates =
         body.scope === 'day'
           ? [body.to]
@@ -73,6 +75,7 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
           title="Acciones del plan"
         >
           <div className="flex flex-col gap-3">
+            {checking && diaryPending && <p role="status">Esperando…</p>}
             <Button disabled={busy} onClick={() => setSheet('copy')}>
               Copiar este día a…
             </Button>
@@ -94,12 +97,16 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
             <Button
               disabled={busy}
               onClick={async () => {
+                setChecking(true);
                 try {
+                  await waitForDiaryIdle(client);
                   await shopping.mutateAsync(week);
                   setSheet(null);
                   navigate(`/compras?semana=${week}`);
                 } catch (error) {
                   toast(error instanceof Error ? error.message : 'No se pudo generar la lista.');
+                } finally {
+                  setChecking(false);
                 }
               }}
             >
@@ -159,20 +166,28 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
           title="Vaciar lo planificado del día"
         >
           <p className="mb-4">¿Borramos todas las comidas planificadas de este día?</p>
+          {checking && diaryPending && <p role="status">Esperando…</p>}
           <div className="flex gap-3">
             <Button
               variant="danger"
               disabled={busy}
               onClick={async () => {
-                const entries = summary.meals
-                  .flatMap((meal) => meal.entries)
-                  .filter((entry) => entry.status === 'planned');
-                const results = await Promise.allSettled(
-                  entries.map((entry) => diary.mutateAsync({ kind: 'delete', entry })),
-                );
-                if (results.every((result) => result.status === 'fulfilled'))
-                  toast('Plan del día vaciado');
-                setSheet(null);
+                setChecking(true);
+                try {
+                  await waitForDiaryIdle(client);
+                  const current = client.getQueryData<DaySummary>(summaryKey(summary.date));
+                  const entries = (current?.meals ?? [])
+                    .flatMap((meal) => meal.entries)
+                    .filter((entry) => entry.status === 'planned' && !entry.id.startsWith('temp-'));
+                  const results = await Promise.allSettled(
+                    entries.map((entry) => diary.mutateAsync({ kind: 'delete', entry })),
+                  );
+                  if (results.every((result) => result.status === 'fulfilled'))
+                    toast('Plan del día vaciado');
+                  setSheet(null);
+                } finally {
+                  setChecking(false);
+                }
               }}
             >
               Vaciar

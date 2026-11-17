@@ -10,6 +10,17 @@ import {
   type EntryChanges,
 } from './optimistic';
 export const summaryKey = (date: string) => ['summary', 'day', date] as const;
+export function waitForDiaryIdle(client: QueryClient): Promise<void> {
+  if (client.isMutating({ mutationKey: ['diary'] }) === 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsubscribe = client.getMutationCache().subscribe(() => {
+      if (client.isMutating({ mutationKey: ['diary'] }) === 0) {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
+}
 export const getDaySummary = (date: string, signal?: AbortSignal) =>
   api.get<DaySummary>(`/api/summary/day?date=${date}`, signal ? { signal } : {});
 export const createEntry = (body: {
