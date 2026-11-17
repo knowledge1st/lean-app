@@ -81,6 +81,15 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Comprobar migraciones de producción
+        env:
+          MIGRATIONS_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [[ -z "$MIGRATIONS_DATABASE_URL" ]]; then
+            echo "::error::Falta el secreto BACKUP_DATABASE_URL"
+            exit 1
+          fi
+          pnpm --filter @lean/api db:check
       - run: pnpm --filter @lean/api exec wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -69,6 +69,18 @@ Las migraciones de producción se ejecutan a mano; no se automatizan:
 DATABASE_URL='<url de production con el rol dueño>' pnpm --filter @lean/api db:migrate
 ```
 
+Antes de publicar la API, el deploy verifica que producción tenga todas las migraciones
+del journal usando el secreto `BACKUP_DATABASE_URL` (el mismo del respaldo; el chequeo
+solo lee). Si falta el secreto o hay migraciones pendientes, el deploy se detiene.
+Si hay pendientes, ejecutá la migración a mano con el comando anterior y volvé a lanzar
+`deploy-api.yml` con **Run workflow**.
+
+Para comprobarlo en local:
+
+```bash
+MIGRATIONS_DATABASE_URL='<url de production del respaldo>' pnpm --filter @lean/api db:check
+```
+
 URL web: https://knowledge1st.github.io/lean-app/
 
 URL API: https://lean-api.toferozo.workers.dev
