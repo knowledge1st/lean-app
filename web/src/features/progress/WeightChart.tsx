@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import type { ActiveGoal } from '@lean/shared';
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Button } from '../../components/ui/Button';
 import { formatNumber } from '../../lib/macros';
 import {
@@ -18,13 +26,19 @@ export default function WeightChart({
   logs,
   goal,
   today,
+  goalChanges = [],
 }: {
   logs: ProgressLog[];
   goal?: ActiveGoal | null;
   today: string;
+  goalChanges?: string[];
 }) {
   const [range, setRange] = useState<WeightRange>('month');
   const visible = weightWindow(logs, goal, today, range);
+  const changes = [...new Set(goalChanges)].filter(
+    (date) => date >= visible.from && date <= visible.to,
+  );
+  const midpoint = (timestamp(visible.from) + timestamp(visible.to)) / 2;
   const axis = chartAxis(visible.data.flatMap((p) => [p.weight, p.trend, p.expected]));
   const points = trajectory(goal);
   const last = [...logs].reverse().find((l) => l.weightKg !== null);
@@ -62,6 +76,20 @@ export default function WeightChart({
             margin={{ top: 12, right: 22, bottom: 8, left: 0 }}
             accessibilityLayer={false}
           >
+            {changes.map((date) => (
+              <ReferenceLine
+                key={date}
+                x={timestamp(date)}
+                stroke="var(--muted)"
+                strokeDasharray="4 4"
+                label={{
+                  value: 'Meta',
+                  position: timestamp(date) >= midpoint ? 'insideTopRight' : 'insideTopLeft',
+                  fontSize: 11,
+                  fill: 'var(--muted)',
+                }}
+              />
+            ))}
             <XAxis
               dataKey="time"
               type="number"
@@ -121,6 +149,13 @@ export default function WeightChart({
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {changes.length > 0 && (
+        <ul className="sr-only" aria-label="Cambios de meta">
+          {changes.map((date) => (
+            <li key={date}>Cambio de meta: {shortDate(date)}</li>
+          ))}
+        </ul>
+      )}
       <figcaption className="text-sm text-muted">
         {last
           ? `Último peso registrado: ${formatNumber(last.weightKg!)} kg, ${shortDate(last.date)}. `

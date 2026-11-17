@@ -31,3 +31,13 @@ export function isoWeek(date: string): string {
   const week = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
+
+export function formatWeekRange(start: string, end: string): string {
+  const dateFormat = (options: Intl.DateTimeFormatOptions, date: string) =>
+    new Intl.DateTimeFormat('es-AR', { ...options, timeZone: 'UTC' }).format(
+      new Date(`${date}T12:00:00Z`),
+    );
+  const sameMonth = start.slice(0, 7) === end.slice(0, 7);
+  const sameYear = start.slice(0, 4) === end.slice(0, 4);
+  return `Semana del ${dateFormat(sameMonth ? { day: 'numeric' } : { day: 'numeric', month: 'long', ...(!sameYear ? { year: 'numeric' } : {}) }, start)} al ${dateFormat({ day: 'numeric', month: 'long', ...(!sameYear ? { year: 'numeric' } : {}) }, end)}`;
+}

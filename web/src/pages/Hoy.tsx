@@ -1,3 +1,4 @@
+import { CheckinCard } from '../features/checkin/CheckinCard';
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router';
 import { MEALS, type Entry, type Meal } from '@lean/shared';
@@ -82,6 +83,7 @@ export function Hoy() {
           →
         </Button>
       </header>
+      <CheckinCard />
       {goal.isError && (
         <ErrorState
           message="No se pudo cargar tu objetivo."

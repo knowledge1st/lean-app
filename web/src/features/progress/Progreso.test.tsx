@@ -9,6 +9,7 @@ import { todayLocal, addDays } from '../../lib/date';
 import { jsonResponse } from '../../auth/testUtils';
 import { bodyRangeKey } from './api';
 import { log, weekSummary } from './testFixtures';
+import { checkin } from '../checkin/testFixtures';
 import type { ProgressLog } from './calc';
 
 vi.mock('../../lib/api', async (importOriginal) => {
@@ -29,6 +30,7 @@ vi.mock('recharts', () => ({
   XAxis: () => null,
   YAxis: () => null,
   Tooltip: () => null,
+  ReferenceLine: ({ x }: { x: number }) => <span data-testid="goal-change" data-x={x} />,
 }));
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -40,9 +42,14 @@ afterEach(() => {
 function setup(
   logs: ProgressLog[] = [],
   put: () => Promise<Response> = () => Promise.resolve(jsonResponse({})),
+  revisions: (typeof checkin)[] | null = [],
 ) {
   const fetchMock = vi.fn((url: string, options?: RequestInit) => {
     if (options?.method === 'PUT') return put();
+    if (url.includes('/checkins?limit='))
+      return revisions === null
+        ? Promise.reject(new Error('offline'))
+        : Promise.resolve(jsonResponse({ checkins: revisions }));
     if (url.includes('/body-logs')) return Promise.resolve(jsonResponse({ logs }));
     if (url.includes('/goals/active'))
       return Promise.resolve(
@@ -148,4 +155,34 @@ it('cambiar el rango no vuelve a pedir logs', async () => {
   expect(screen.getByRole('button', { name: 'Todo' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '3 meses' }));
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/body-logs'))).toHaveLength(1);
+});
+
+it('integra historial y marcas de ajustes aceptados en la fecha local', async () => {
+  const today = todayLocal();
+  setup([log(today, 80)], undefined, [
+    { ...checkin, accepted: true, resolvedAt: new Date().toISOString() },
+    { ...checkin, id: 'kept', accepted: false, resolvedAt: new Date().toISOString() },
+    {
+      ...checkin,
+      id: 'seen',
+      status: 'on_track',
+      accepted: true,
+      resolvedAt: new Date().toISOString(),
+    },
+  ]);
+  await screen.findByText(/Último peso registrado/);
+  expect(await screen.findByRole('heading', { name: 'Revisiones semanales' })).toBeTruthy();
+  expect(screen.getByText('Aceptado')).toBeTruthy();
+  expect(screen.getAllByTestId('goal-change')).toHaveLength(1);
+  expect(screen.getByTestId('goal-change').getAttribute('data-x')).toBe(
+    String(Date.parse(`${today}T12:00:00Z`)),
+  );
+});
+
+it('conserva el gráfico sin marcas si falla el historial', async () => {
+  setup([log(todayLocal(), 80)], undefined, null);
+  await screen.findByText(/Último peso registrado/);
+  expect(await screen.findByText('No se pudieron cargar las revisiones.')).toBeTruthy();
+  expect(screen.queryByTestId('goal-change')).toBeNull();
+  expect(screen.getByTestId('weight-points')).toBeTruthy();
 });

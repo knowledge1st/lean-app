@@ -1,0 +1,22 @@
+import type { Checkin } from '@lean/shared';
+export const checkin: Checkin = {
+  id: 'checkin-1',
+  goalId: 'goal-1',
+  weekStart: '2026-11-09',
+  weekEnd: '2026-11-15',
+  status: 'adjust',
+  loggedDays: 12,
+  weighIns: 4,
+  avgIntakeKcal: 2000,
+  estimatedTdee: 2400,
+  trendWeightKg: 79,
+  actualWeeklyChangeKg: -0.2,
+  expectedWeeklyChangeKg: -0.5,
+  current: { kcal: 2000, proteinG: 150, carbsG: 200, fatG: 67 },
+  proposed: { kcal: 1850, proteinG: 150, carbsG: 170, fatG: 63 },
+  deltaKcal: -150,
+  reason: 'slower_than_plan',
+  accepted: null,
+  resolvedAt: null,
+  createdAt: '2026-11-16T12:00:00Z',
+};
