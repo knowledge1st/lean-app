@@ -98,6 +98,14 @@ export function ScannerView(props: ScannerViewProps) {
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black" />
         <Dialog.Content
           aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            requestAnimationFrame(() => {
+              document
+                .querySelector<HTMLButtonElement>('button[aria-label="Escanear código de barras"]')
+                ?.focus();
+            });
+          }}
           style={viewport ? { height: viewport.height, top: viewport.top } : undefined}
           className="fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden bg-black pt-[calc(3.5rem+env(safe-area-inset-top))] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
         >

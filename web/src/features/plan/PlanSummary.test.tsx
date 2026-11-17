@@ -1,14 +1,22 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { ZERO_MACROS, type DaySummary } from '@lean/shared';
 import { PlanSummary } from './PlanSummary';
-const goal = vi.hoisted(() => ({ data: null as object | null | undefined }));
+const goal = vi.hoisted(() => ({
+  data: null as object | null | undefined,
+  isPending: false,
+  isError: false,
+  refetch: vi.fn(),
+}));
 vi.mock('../goals/api', () => ({ useActiveGoal: () => goal }));
 afterEach(() => {
   cleanup();
   goal.data = null;
+  goal.isPending = false;
+  goal.isError = false;
+  goal.refetch.mockClear();
 });
 const summary: DaySummary = {
   date: '2026-11-16',
@@ -62,4 +70,26 @@ it('no invita a definir objetivo mientras se consulta el objetivo activo', () =>
     </MemoryRouter>,
   );
   expect(screen.queryByRole('link', { name: 'Definí tu objetivo' })).toBeNull();
+});
+
+it('muestra carga y permite recuperar el objetivo sin ocultar los totales', () => {
+  goal.data = undefined;
+  goal.isPending = true;
+  const view = render(
+    <MemoryRouter>
+      <PlanSummary summary={{ ...summary, target: null }} />
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('status', { name: 'Cargando objetivo' })).toBeTruthy();
+  expect(screen.getByText('1.100 kcal')).toBeTruthy();
+  goal.isPending = false;
+  goal.isError = true;
+  view.rerender(
+    <MemoryRouter>
+      <PlanSummary summary={{ ...summary, target: null }} />
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('alert').textContent).toContain('No se pudo cargar el objetivo');
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(goal.refetch).toHaveBeenCalledOnce();
 });

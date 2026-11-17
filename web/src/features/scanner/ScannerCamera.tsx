@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Button } from '../../components/ui/Button';
 import { useBarcodeScanner } from './useBarcodeScanner';
 
 const messages = {
@@ -20,7 +21,8 @@ export default function ScannerCamera({
   onUnavailableChange: (unavailable: boolean) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { status } = useBarcodeScanner({ videoRef, active, onDetect });
+  const [session, setSession] = useState(0);
+  const { status } = useBarcodeScanner({ videoRef, active, onDetect, session });
   const unavailable = ['denied', 'unavailable', 'error'].includes(status);
   useEffect(() => {
     onUnavailableChange(unavailable);
@@ -43,6 +45,14 @@ export default function ScannerCamera({
           <p role="status" className="relative mt-4 rounded-xl bg-black/70 p-3 text-center">
             {messages[status]}
           </p>
+        )}
+        {unavailable && (
+          <Button
+            className="pointer-events-auto relative mt-3 bg-surface text-text"
+            onClick={() => setSession((value) => value + 1)}
+          >
+            Reintentar
+          </Button>
         )}
       </div>
     </div>

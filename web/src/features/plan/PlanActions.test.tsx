@@ -149,7 +149,7 @@ it('espera el alta antes de consultar destinos y pregunta agregar/reemplazar al 
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/entries/copy'))).toBe(false);
   expect(screen.getByRole('button', { name: 'Reemplazar' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
-  await screen.findByText('Semana copiada');
+  await screen.findByText('Copiaste la semana');
   const copy = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/entries/copy'))!;
   expect(JSON.parse(String(copy[1]?.body))).toEqual({
     scope: 'week',
@@ -176,6 +176,8 @@ it('espera el alta y vacía con el id real de caché, ignorando ids temporales',
     }
   });
   await completeAdd();
+  await screen.findByText('¿Querés borrar 1 entrada planificada de este día?');
+  fireEvent.click(screen.getByRole('button', { name: 'Vaciar' }));
   await screen.findByText('Plan del día vaciado');
   unsubscribe();
   const deletes = fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE');
@@ -220,5 +222,53 @@ it('deshabilita las acciones mientras otra instancia del diario está pendiente'
         .disabled,
     ).toBe(false),
   );
+  client.clear();
+});
+
+it('anuncia la consulta de destinos y la copia en curso', async () => {
+  const { client, fetchMock } = setup();
+  let finishDays!: (response: Response) => void;
+  let finishCopy!: (response: Response) => void;
+  const destinations = new Promise<Response>((resolve) => {
+    finishDays = resolve;
+  });
+  const copying = new Promise<Response>((resolve) => {
+    finishCopy = resolve;
+  });
+  fetchMock.mockImplementation((_input, init) =>
+    init?.method === 'POST' ? copying : destinations.then((response) => response.clone()),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar la semana anterior' }));
+  expect(await screen.findByText('Cargando días…')).toHaveProperty('role', 'status');
+  await act(async () => {
+    finishDays(jsonResponse(day()));
+  });
+  expect(await screen.findByText('Copiando…')).toHaveProperty('role', 'status');
+  expect(
+    (screen.getByRole('button', { name: 'Copiar la semana anterior' }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await act(async () => {
+    finishCopy(jsonResponse([]));
+  });
+  await screen.findByText('Copiaste la semana');
+  client.clear();
+});
+
+it('anuncia la generación de compras y ofrece Ver al finalizar', async () => {
+  const { client, fetchMock } = setup();
+  let finish!: (response: Response) => void;
+  fetchMock.mockReturnValue(
+    new Promise<Response>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Generar lista de compras' }));
+  expect(await screen.findByText('Generando lista…')).toHaveProperty('role', 'status');
+  await act(async () => {
+    finish(jsonResponse([]));
+  });
+  await screen.findByText('Lista de compras actualizada');
+  expect(screen.getByRole('button', { name: 'Ver' })).toBeTruthy();
   client.clear();
 });

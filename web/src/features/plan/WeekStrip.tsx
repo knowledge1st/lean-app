@@ -1,4 +1,5 @@
-import { useDaySummary } from '../diary/api';
+import { useQueries } from '@tanstack/react-query';
+import { getDaySummary, summaryKey, useDaySummary } from '../diary/api';
 import { todayLocal } from '../../lib/date';
 import { formatNumber } from '../../lib/macros';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -36,7 +37,7 @@ function WeekDay({
     <div className="min-w-0">
       <button
         type="button"
-        aria-label={`${dayLabel} · ${formatNumber(total, 0)} kcal${indicator ? ` · ${indicator.label.toLowerCase()}` : ''}${date === today ? ' · hoy' : ''}`}
+        aria-label={`${dayLabel} · ${query.data ? `${formatNumber(total, 0)} kcal` : query.isPending ? 'cargando' : 'sin datos'}${indicator ? ` · ${indicator.label.toLowerCase()}` : ''}${date === today ? ' · hoy' : ''}`}
         aria-pressed={selected}
         onClick={() => onSelect(date)}
         className={`min-h-11 w-full min-w-0 rounded-xl border py-2 text-center ${selected ? 'border-accent bg-accent text-on-accent' : 'border-border bg-surface'}`}
@@ -45,8 +46,15 @@ function WeekDay({
           {initial}
           {date === today && <span aria-hidden="true"> •</span>}
         </span>
-        <span className="block font-semibold">{Number(date.slice(-2))}</span>
-        <span className="block text-[11px] tabular-nums">{formatNumber(total, 0)}</span>
+        <span className="block font-semibold">{formatNumber(Number(date.slice(-2)), 0)}</span>
+        {!query.data && query.isPending ? (
+          <Skeleton className="mx-auto h-8 w-8" />
+        ) : (
+          <span className="block text-[11px] tabular-nums">
+            {query.data ? formatNumber(total, 0) : '—'}
+            <span className="block">{query.data ? 'kcal' : '\u00a0'}</span>
+          </span>
+        )}
         {indicator ? (
           <span
             aria-label={indicator.label}
@@ -58,16 +66,6 @@ function WeekDay({
           <span aria-hidden="true" className="block h-6" />
         )}
       </button>
-      {query.isPending && <Skeleton className="mt-1 h-1" />}
-      {query.isError && (
-        <ErrorState
-          className="mt-1 p-1 text-xs [&_button]:min-w-0 [&_button]:w-full [&_button]:px-0 [&_button]:text-[9px]"
-          message="Error"
-          onRetry={() => {
-            void query.refetch();
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -80,17 +78,38 @@ export function WeekStrip({
   selected: string;
   onSelect: (date: string) => void;
 }) {
+  const queries = useQueries({
+    queries: dates.map((date) => ({
+      queryKey: summaryKey(date),
+      queryFn: ({ signal }: { signal: AbortSignal }) => getDaySummary(date, signal),
+      enabled: false,
+    })),
+  });
+  const failed = queries.filter((query) => query.isError);
   return (
-    <nav aria-label="Días de la semana, totales en kcal" className="grid min-w-0 grid-cols-7 gap-1">
-      {dates.map((date, index) => (
-        <WeekDay
-          key={date}
-          date={date}
-          initial={['L', 'M', 'M', 'J', 'V', 'S', 'D'][index]!}
-          selected={date === selected}
-          onSelect={onSelect}
+    <div className="space-y-3">
+      <nav
+        aria-label="Días de la semana, totales en kcal"
+        className="grid min-w-0 grid-cols-7 gap-1 [&_button]:min-w-11"
+      >
+        {dates.map((date, index) => (
+          <WeekDay
+            key={date}
+            date={date}
+            initial={['L', 'M', 'M', 'J', 'V', 'S', 'D'][index]!}
+            selected={date === selected}
+            onSelect={onSelect}
+          />
+        ))}
+      </nav>
+      {failed.length > 0 && (
+        <ErrorState
+          message="No se pudieron cargar algunos días"
+          onRetry={() => {
+            void Promise.all(failed.map((query) => query.refetch()));
+          }}
         />
-      ))}
-    </nav>
+      )}
+    </div>
   );
 }

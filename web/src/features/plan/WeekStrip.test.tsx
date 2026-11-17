@@ -121,3 +121,26 @@ it('una semana vacía con meta muestra siete ceros sin indicadores', () => {
   expect(screen.queryByLabelText(/meta/)).toBeNull();
   client.clear();
 });
+
+it('muestra carga sin ceros y reúne los errores con un único reintento', async () => {
+  const dates = ['2026-11-16', '2026-11-17'];
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <WeekStrip dates={dates} selected={dates[0]!} onSelect={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  expect(screen.getAllByRole('button', { name: /cargando/ })).toHaveLength(2);
+  expect(screen.queryByText('0')).toBeNull();
+  await screen.findByText('No se pudieron cargar algunos días');
+  expect(screen.getAllByRole('button', { name: /sin datos/ })).toHaveLength(2);
+  expect(screen.getAllByText('—')).toHaveLength(2);
+  expect(screen.getAllByRole('button', { name: 'Reintentar' })).toHaveLength(1);
+  const calls = fetchMock.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  await screen.findByText('No se pudieron cargar algunos días');
+  expect(fetchMock.mock.calls.length).toBe(calls + 2);
+  fetchMock.mockRestore();
+  client.clear();
+});

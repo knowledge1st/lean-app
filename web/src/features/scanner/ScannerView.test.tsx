@@ -144,3 +144,39 @@ it('enviar a mano libera la cámara y la mantiene pausada hasta escanear de nuev
   fireEvent.click(screen.getByText('Escanear de nuevo'));
   await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
 });
+
+it('reintenta una cámara fallida y conserva el ingreso manual', async () => {
+  getUserMedia.mockRejectedValueOnce(new Error('camera'));
+  render(<ScannerView onDetected={vi.fn()} onClose={vi.fn()} />);
+  await screen.findByText(/No se pudo iniciar el escáner/);
+  expect(screen.getByLabelText('Código de barras')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  await screen.findByText('Apuntá al código de barras');
+  expect(getUserMedia).toHaveBeenCalledTimes(2);
+});
+
+it.each(['close', 'escape'] as const)(
+  'devuelve el foco a Escanear al volver a búsqueda con %s',
+  async (mode) => {
+    function Search() {
+      const [open, setOpen] = useState(false);
+      return open ? (
+        <ScannerView onDetected={vi.fn()} onClose={() => setOpen(false)} />
+      ) : (
+        <button aria-label="Escanear código de barras" onClick={() => setOpen(true)}>
+          Escanear
+        </button>
+      );
+    }
+    render(<Search />);
+    fireEvent.click(screen.getByRole('button', { name: 'Escanear código de barras' }));
+    await screen.findByText('Apuntá al código de barras');
+    if (mode === 'close') fireEvent.click(screen.getByLabelText('Cerrar escáner'));
+    else fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Escanear código de barras' }),
+      ),
+    );
+  },
+);
