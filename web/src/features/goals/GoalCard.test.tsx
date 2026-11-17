@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import type { ActiveGoal } from '@lean/shared';
@@ -139,4 +139,26 @@ it('muestra carga, error y permite reintentar', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByText('Todavía no definiste tu objetivo')).toBeTruthy();
   expect(get).toHaveBeenCalledTimes(2);
+});
+
+it('edita las calorías objetivo con vista previa de macros y guarda la meta nueva', async () => {
+  setup(goal);
+  const put = vi.spyOn(api, 'put').mockResolvedValue({
+    ...goal,
+    target: { ...goal.target, kcal: 1800, carbs: 170.5 },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Editar calorías objetivo' }));
+  const dialog = screen.getByRole('dialog', { name: 'Calorías objetivo' });
+  const input = within(dialog).getByLabelText('Calorías diarias');
+  fireEvent.change(input, { target: { value: '400' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+  expect(within(dialog).getByText('Mínimo 500 kcal')).toBeTruthy();
+  expect(put).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: '1800' } });
+  // P 140 y G 62 se mantienen: C = (1800 − 560 − 558)/4 = 170,5.
+  expect(within(dialog).getByText('170,5 g')).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+  await waitFor(() => expect(put).toHaveBeenCalledWith('/api/goals/active/target', { kcal: 1800 }));
+  expect(await screen.findByText('1.800 kcal')).toBeTruthy();
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

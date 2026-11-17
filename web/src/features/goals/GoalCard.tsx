@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -6,6 +7,8 @@ import { Card } from '../../components/ui/Card';
 import { MACROS } from '../../lib/macros';
 import { todayLocal } from '../../lib/date';
 import { useActiveGoal } from './api';
+import { EditTargetKcalSheet } from './EditTargetKcalSheet';
+import { useToast } from '../../components/ui/Toast';
 import { clearDraft } from './draft';
 import { formatGoalDate, formatNumber } from './format';
 
@@ -14,6 +17,8 @@ const presetLabels = { cut: 'Definición', recomp: 'Recomposición', lean_bulk: 
 export function GoalCard() {
   const query = useActiveGoal();
   const navigate = useNavigate();
+  const toast = useToast();
+  const [editingKcal, setEditingKcal] = useState(false);
   const today = todayLocal();
   const goal = query.data;
   function startWizard() {
@@ -82,7 +87,16 @@ export function GoalCard() {
             )}
           </div>
           <div className="space-y-3">
-            <h3 className="font-semibold">Meta diaria vigente</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-semibold">Meta diaria vigente</h3>
+              <Button
+                variant="ghost"
+                aria-label="Editar calorías objetivo"
+                onClick={() => setEditingKcal(true)}
+              >
+                Editar calorías
+              </Button>
+            </div>
             <dl className="grid grid-cols-2 gap-3">
               {[
                 ['Calorías', `${formatNumber(goal.target.kcal)} kcal`],
@@ -115,6 +129,13 @@ export function GoalCard() {
           <Button variant="secondary" className="w-full" onClick={startWizard}>
             Cambiar objetivo
           </Button>
+          {editingKcal && (
+            <EditTargetKcalSheet
+              target={goal.target}
+              onClose={() => setEditingKcal(false)}
+              onSaved={() => toast('Calorías objetivo actualizadas')}
+            />
+          )}
         </>
       )}
     </Card>

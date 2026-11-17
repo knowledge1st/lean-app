@@ -367,6 +367,31 @@ describe.skipIf(!hasTestDatabase)('goals integration', { timeout: 30_000 }, () =
       activeGoalSchema.parse(await (await f.request('/goals/active')).json()).target.kcal,
     ).toBe(2000);
   });
+  it('overrides today target calories keeping protein and fat and the past intact', async () => {
+    const missing = await f.request('/goals/active/target', 'PUT', { kcal: 1800 });
+    expect(missing.status).toBe(404);
+    const saved = await f.create();
+    vi.setSystemTime(new Date('2026-11-17T12:00:00Z'));
+    const response = await f.request('/goals/active/target', 'PUT', { kcal: 1800 });
+    expect(response.status).toBe(200);
+    const goal = activeGoalSchema.parse(await response.json());
+    // Manual goal: P 150, F 66 → C = (1800 − 600 − 594)/4 = 151.5.
+    expect(goal.target).toMatchObject({ kcal: 1800, protein: 150, carbs: 151.5, fat: 66 });
+    const rows = await f.db.select().from(targetTable).where(eq(targetTable.goalId, saved.goal.id));
+    expect(rows.find((row) => row.reason === 'manual')).toMatchObject({
+      effectiveFrom: '2026-11-17',
+      kcal: 1800,
+      waterMl: saved.plan.daily.waterMl,
+    });
+    const yesterday = targetSchema.parse(
+      await (await f.request('/targets?date=2026-11-16')).json(),
+    );
+    expect(yesterday.kcal).toBe(2000);
+    const again = activeGoalSchema.parse(
+      await (await f.request('/goals/active/target', 'PUT', { kcal: 2100 })).json(),
+    );
+    expect(again.target.kcal).toBe(2100);
+  });
   it('uses the profile timezone to determine today and rejects dates beyond five years', async () => {
     vi.setSystemTime(new Date('2026-11-17T01:00:00Z'));
     const profile = await f.request('/profile', 'PUT', {
@@ -475,6 +500,22 @@ describe('goals validation without database', () => {
     expect(engine).toHaveBeenCalledOnce();
     expect(db.batch).not.toHaveBeenCalled();
   });
+  it.each([{ kcal: 499 }, { kcal: 10001 }, { kcal: 1800.5 }, { kcal: 1800, extra: 1 }, {}])(
+    'rejects an invalid target calories override %o',
+    async (body) => {
+      const response = await validationApp.request(
+        '/api/goals/active/target',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+        testEnv,
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { code: 'validation_error' } });
+    },
+  );
   it.each(['/goals', '/goals/preview'])('rejects an invalid goal at %s', async (path) => {
     const response = await validationApp.request(
       `/api${path}`,

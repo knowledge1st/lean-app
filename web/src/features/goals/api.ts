@@ -60,3 +60,17 @@ export function useCreateGoal() {
     },
   });
 }
+export const updateTargetKcal = (kcal: number) =>
+  api.put<ActiveGoal>('/api/goals/active/target', { kcal });
+export function useUpdateTargetKcal() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: updateTargetKcal,
+    onSuccess: async (goal) => {
+      client.setQueryData(activeGoalKey, goal);
+      await Promise.all(
+        [['summary'], ['targets']].map((queryKey) => client.invalidateQueries({ queryKey })),
+      );
+    },
+  });
+}

@@ -120,3 +120,14 @@ export const weekSummarySchema = z.object({
   expectedWeightKg: z.number().nullable(),
 });
 export type WeekSummary = z.infer<typeof weekSummarySchema>;
+export const updateTargetKcalSchema = z.strictObject(
+  {
+    kcal: z
+      .number({ error: 'Calorías inválidas' })
+      .int('Indicá calorías enteras')
+      .min(500, 'Mínimo 500 kcal')
+      .max(10000, 'Máximo 10000 kcal'),
+  },
+  { error: 'Campos inválidos' },
+);
+export type UpdateTargetKcalInput = z.infer<typeof updateTargetKcalSchema>;

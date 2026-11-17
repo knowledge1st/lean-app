@@ -95,3 +95,44 @@ it('permite repetir la comida con un botón accesible', () => {
   fireEvent.click(repeat);
   expect(onRepeat).toHaveBeenCalledOnce();
 });
+it('muestra el reparto de calorías por macro y resalta los alimentos que aportan el macro elegido', () => {
+  const water: Entry = {
+    ...entry,
+    id: 'water',
+    status: 'eaten',
+    kcal: 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+    food: { ...entry.food, id: 'water', name: 'Agua', brand: null },
+  };
+  const oil: Entry = {
+    ...entry,
+    id: 'oil',
+    status: 'eaten',
+    kcal: 90,
+    protein: 0,
+    carbs: 0,
+    fat: 10,
+    food: { ...entry.food, id: 'oil', name: 'Aceite', brand: null },
+  };
+  const props = { onAdd: vi.fn(), onEdit: vi.fn(), onEat: vi.fn() };
+  const section = { ...meal, entries: [entry, water, oil] };
+  const { rerender } = render(<MealSection meal={section} {...props} />);
+  // Pan: P 5·4 = 20, C 10·4 = 40, G 2,5·9 = 22,5 → 82,5 kcal.
+  expect(
+    screen.getByRole('img', {
+      name: 'Reparto de calorías: Proteína 24 %, Carbohidratos 48 %, Grasa 27 %',
+    }),
+  ).toBeTruthy();
+  expect(screen.getByRole('img', { name: 'Reparto de calorías: Grasa 100 %' })).toBeTruthy();
+  expect(screen.getAllByRole('img')).toHaveLength(2);
+  rerender(<MealSection meal={section} highlight="protein" {...props} />);
+  const row = (name: string) =>
+    screen.getByText(name).closest('[data-highlighted], div.min-w-0.border-t');
+  expect(row('Pan')?.getAttribute('data-highlighted')).toBe('true');
+  expect(screen.getByText('5 g de proteína')).toBeTruthy();
+  expect(row('Aceite')?.getAttribute('data-highlighted')).toBeNull();
+  expect(row('Aceite')?.className).toContain('opacity-45');
+  expect(row('Agua')?.className).toContain('opacity-45');
+});

@@ -36,20 +36,19 @@ export function FoodSearch({
   const items = normalized ? search.data?.items : list.data;
   return (
     <div className="space-y-4">
-      <div className="flex items-end gap-2">
-        <div className="min-w-0 flex-1">
-          <Input
-            autoFocus
-            label="Buscar alimento"
-            placeholder="Nombre o marca"
-            maxLength={80}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-          />
-        </div>
+      <Input
+        autoFocus
+        label="Buscar alimento"
+        placeholder="Nombre o marca"
+        maxLength={80}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+      />
+      <div className="flex gap-2">
         {onScan && (
           <Button
             variant="secondary"
+            className="min-w-0 flex-1"
             disabled={busy}
             onClick={onScan}
             aria-label="Escanear código de barras"
@@ -57,6 +56,9 @@ export function FoodSearch({
             Escanear
           </Button>
         )}
+        <Button variant="secondary" className="min-w-0 flex-1" disabled={busy} onClick={onCreate}>
+          Crear alimento
+        </Button>
       </div>
       {!normalized && (
         <div className="flex gap-2" role="group" aria-label="Alimentos habituales">
@@ -123,9 +125,6 @@ export function FoodSearch({
       {normalized && !waiting && search.data?.offAvailable === false && (
         <p className="text-sm text-muted">Open Food Facts no está disponible en este momento.</p>
       )}
-      <Button variant="secondary" disabled={busy} onClick={onCreate}>
-        Crear alimento
-      </Button>
     </div>
   );
 }

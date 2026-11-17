@@ -1,12 +1,13 @@
 import type { DaySummary, Entry } from '@lean/shared';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { formatNumber, MEAL_LABELS } from '../../lib/macros';
+import { formatNumber, MEAL_LABELS, type MacroKey } from '../../lib/macros';
 import { EntryRow } from './EntryRow';
 export function MealSection({
   meal,
   disabled,
   missed,
+  highlight = null,
   onAdd,
   onRepeat,
   onEdit,
@@ -15,6 +16,7 @@ export function MealSection({
   meal: DaySummary['meals'][number];
   missed?: boolean | undefined;
   disabled?: boolean | undefined;
+  highlight?: MacroKey | null;
   onAdd: () => void;
   onRepeat?: () => void;
   onEdit: (entry: Entry) => void;
@@ -27,7 +29,9 @@ export function MealSection({
         <span>{formatNumber(meal.eaten.kcal)} kcal</span>
       </div>
       {Object.values(meal.planned).some((value) => value > 0) && (
-        <p className="mb-2 text-sm text-muted">Planificado: {formatNumber(meal.planned.kcal)} kcal</p>
+        <p className="mb-2 text-sm text-muted">
+          Planificado: {formatNumber(meal.planned.kcal)} kcal
+        </p>
       )}
       {meal.entries.length ? (
         meal.entries.map((entry) => (
@@ -36,6 +40,7 @@ export function MealSection({
             entry={entry}
             disabled={disabled}
             missed={missed}
+            highlight={highlight}
             onEdit={onEdit}
             onEat={onEat}
           />

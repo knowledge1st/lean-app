@@ -92,3 +92,19 @@ it('muestra error completo sin datos', async () => {
   expect(screen.queryByText(/Todavía no hay/)).toBeNull();
   client.clear();
 });
+it('ubica Crear alimento en el mismo renglón que Escanear', () => {
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(jsonResponse([])));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const onCreate = vi.fn();
+  render(
+    <QueryClientProvider client={client}>
+      <FoodSearch onScan={vi.fn()} onSelect={vi.fn()} onCreate={onCreate} />
+    </QueryClientProvider>,
+  );
+  const scan = screen.getByRole('button', { name: 'Escanear código de barras' });
+  const create = screen.getByRole('button', { name: 'Crear alimento' });
+  expect(create.parentElement).toBe(scan.parentElement);
+  expect(screen.getAllByRole('button', { name: 'Crear alimento' })).toHaveLength(1);
+  fireEvent.click(create);
+  expect(onCreate).toHaveBeenCalledOnce();
+});

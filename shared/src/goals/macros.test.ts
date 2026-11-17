@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calcWaterMl, splitMacros } from './macros';
+import { calcWaterMl, rebalanceMacrosForKcal, splitMacros } from './macros';
 
 describe('splitMacros', () => {
   it('allocates protein and fat before carbohydrates', () => {
@@ -26,5 +26,30 @@ describe('calcWaterMl', () => {
     [75, 2750],
   ])('rounds water for %s kg to %s ml', (weight, water) => {
     expect(calcWaterMl(weight)).toBe(water);
+  });
+});
+describe('rebalanceMacrosForKcal', () => {
+  it('keeps protein and fat and moves the difference into carbs', () => {
+    // C = (2000 − 4·150 − 9·60)/4 = 215.
+    expect(rebalanceMacrosForKcal(2000, { proteinG: 150, fatG: 60 })).toEqual({
+      proteinG: 150,
+      carbsG: 215,
+      fatG: 60,
+    });
+  });
+  it('scales protein and fat when calories do not cover them', () => {
+    // base = 4·150 + 9·60 = 1140; scale 570/1140 = .5.
+    expect(rebalanceMacrosForKcal(570, { proteinG: 150, fatG: 60 })).toEqual({
+      proteinG: 75,
+      carbsG: 0,
+      fatG: 30,
+    });
+  });
+  it('puts every calorie into carbs without protein or fat', () => {
+    expect(rebalanceMacrosForKcal(1000, { proteinG: 0, fatG: 0 })).toEqual({
+      proteinG: 0,
+      carbsG: 250,
+      fatG: 0,
+    });
   });
 });
