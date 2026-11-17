@@ -257,6 +257,66 @@ it('confirma quitar comprados y conserva los pendientes', async () => {
   ).toBe(true);
   expect(client.getQueryData(key)).toEqual([items[0]]);
 });
+it.each([false, true])(
+  'quitar comprados usa la lista del servidor con fallo del GET posterior: %s',
+  async (failRead) => {
+    const cached = [item(1, { checked: true }), item(2)];
+    const server = [item(1), item(2)];
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        userId: 'user-1',
+        weeks: { [week]: { items: cached, savedAt: Date.now() } },
+      }),
+    );
+    const beforeClear = localStorage.getItem(storageKey);
+    const hydration = deferred();
+    const revalidation = deferred();
+    let reads = 0;
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((_input, init) => {
+      if (init?.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }));
+      reads++;
+      if (reads === 1) return hydration.promise;
+      if (reads === 2)
+        return failRead
+          ? Promise.reject(new Error('offline'))
+          : Promise.resolve(jsonResponse(server));
+      return revalidation.promise;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { client } = setup();
+    await waitFor(() => expect(reads).toBe(1));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar comprados' }));
+    const dialog = screen.getByRole('dialog', { name: '¿Quitar 1 ítems comprados?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Quitar comprados' }));
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(fetchMock.mock.calls[0]![1]?.signal?.aborted).toBe(true);
+    expect(fetchMock.mock.calls[1]![1]?.method).toBe('DELETE');
+    expect(String(fetchMock.mock.calls[2]![0])).toContain(`/api/shopping?week=${week}`);
+    if (failRead) {
+      await waitFor(() => expect(reads).toBe(3));
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: key });
+      expect(client.getQueryData(key)).toEqual([cached[1]]);
+      expect(screen.queryByRole('checkbox', { name: 'Alimento 1' })).toBeNull();
+      expect(localStorage.getItem(storageKey)).toBe(beforeClear);
+      await act(async () => revalidation.resolve(jsonResponse(server)));
+    } else {
+      expect(reads).toBe(2);
+      expect(invalidate).not.toHaveBeenCalled();
+    }
+    await screen.findByText('0 de 2');
+    expect((screen.getByRole('checkbox', { name: 'Alimento 1' }) as HTMLInputElement).checked).toBe(
+      false,
+    );
+    expect(client.getQueryData(key)).toEqual(server);
+    expect(savedWeek().items).toEqual(server);
+    await act(async () => hydration.resolve(jsonResponse(cached)));
+    expect(client.getQueryData(key)).toEqual(server);
+    expect(savedWeek().items).toEqual(server);
+  },
+);
 it('regenera reemplazando con manuales y marcados de la respuesta', async () => {
   const { setItems } = mockServer([item(1)]);
   setup();

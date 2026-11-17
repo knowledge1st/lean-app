@@ -253,28 +253,44 @@ export function useShoppingBulk(week: string) {
     networkMode: 'always',
     mutationFn: async (kind: 'generate' | 'clear') => {
       await client.cancelQueries({ queryKey: shoppingKey(week) });
-      if (kind === 'generate') return generateShopping(week);
+      if (kind === 'generate') return { items: await generateShopping(week), revalidate: false };
       await deleteChecked(week);
-      return (client.getQueryData<ShoppingItem[]>(shoppingKey(week)) ?? []).filter(
-        (item) => !item.checked,
-      );
+      try {
+        return { items: await getShoppingList(week), revalidate: false };
+      } catch {
+        return {
+          items: (client.getQueryData<ShoppingItem[]>(shoppingKey(week)) ?? []).filter(
+            (item) => !item.checked,
+          ),
+          revalidate: true,
+        };
+      }
     },
     onMutate: () => ({ session: sessionFor(client) }),
-    onSuccess: (items, kind, context) => {
+    onSuccess: ({ items, revalidate }, kind, context) => {
       if (sessionFor(client) !== context.session) return;
       client.setQueryData(shoppingKey(week), items);
-      if (user) persist(user.id, week, items, Date.now());
+      if (user && !revalidate) persist(user.id, week, items, Date.now());
       if (kind === 'generate') toast('Lista actualizada');
+    },
+    onSettled: (result, _error, _kind, context) => {
+      if (!result?.revalidate) return;
+      // The list query skips server reads while a bulk mutation is pending.
+      void waitForShoppingIdle(client).then(() => {
+        if (context && sessionFor(client) === context.session)
+          return client.invalidateQueries({ queryKey: shoppingKey(week) });
+      });
     },
     onError: (error) => toast(`No se pudo actualizar la lista. ${error.message}`),
   });
   return {
     ...mutation,
+    data: mutation.data?.items,
     run: async (kind: 'generate' | 'clear') => {
       const session = sessionFor(client);
       while (client.isMutating({ mutationKey: ['shopping'] })) await waitForShoppingIdle(client);
       if (sessionFor(client) !== session) throw new Error('La sesión cambió.');
-      return mutation.mutateAsync(kind);
+      return (await mutation.mutateAsync(kind)).items;
     },
   };
 }
