@@ -33,14 +33,19 @@ const plan: Plan = {
   warnings: [],
 };
 function mockApi(preview = plan) {
+  let created = false;
   const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (url, init) => {
     const path = new URL(String(url)).pathname;
     if (path === '/api/profile')
       return jsonResponse(init?.method === 'PUT' ? JSON.parse(String(init.body)) : profile);
+    if (path === '/api/goals/active' && created) return jsonResponse({ id: 'created-goal' });
     if (path === '/api/goals/active')
       return jsonResponse({ error: { code: 'goal_not_found', message: 'Sin objetivo' } }, 404);
     if (path === '/api/goals/preview') return jsonResponse(preview);
-    if (path === '/api/goals') return jsonResponse({ goal: {}, plan: preview }, 201);
+    if (path === '/api/goals') {
+      created = true;
+      return jsonResponse({ goal: { id: 'created-goal' }, plan: preview }, 201);
+    }
     throw new Error(`Unexpected ${path}`);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -239,6 +244,7 @@ it('serializa un PUT viejo y crea con el perfil del plan actual', async () => {
       creations.push(serverProfile.heightCm);
       return jsonResponse({ goal: {}, plan });
     }
+    if (path === '/api/goals/active') return jsonResponse({ id: 'created-goal' });
     throw new Error(`Unexpected ${path}`);
   });
   vi.stubGlobal('fetch', fetchMock);

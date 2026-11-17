@@ -78,3 +78,20 @@ it('impide editar o marcar entradas temporales', () => {
   expect(edit).not.toHaveBeenCalled();
   expect(eat).not.toHaveBeenCalled();
 });
+
+it('permite repetir la comida con un botón accesible', () => {
+  const onRepeat = vi.fn();
+  render(
+    <MealSection
+      meal={meal}
+      onAdd={vi.fn()}
+      onRepeat={onRepeat}
+      onEdit={vi.fn()}
+      onEat={vi.fn()}
+    />,
+  );
+  const repeat = screen.getByRole('button', { name: 'Repetir Desayuno de otro día' });
+  expect(repeat.className).toContain('min-h-11');
+  fireEvent.click(repeat);
+  expect(onRepeat).toHaveBeenCalledOnce();
+});

@@ -46,6 +46,7 @@ export async function selectEntries(
   from?: string,
   to?: string,
   id?: string,
+  meal?: Entry['meal'],
 ) {
   return (
     db
@@ -58,6 +59,7 @@ export async function selectEntries(
           from ? gte(table.date, from) : undefined,
           to ? lte(table.date, to) : undefined,
           id ? eq(table.id, id) : undefined,
+          meal ? eq(table.meal, meal) : undefined,
         ),
       )
       // PostgreSQL enum ordering matches MEALS.
@@ -128,7 +130,14 @@ entries.post('/copy', validate('json', copyEntriesSchema), async (c) => {
   const source =
     input.scope === 'week' ? isoWeekRange(input.from) : { from: input.from, to: input.from };
   const target = input.scope === 'week' ? isoWeekRange(input.to) : { from: input.to, to: input.to };
-  const rows = await selectEntries(db, userId, source.from, source.to);
+  const rows = await selectEntries(
+    db,
+    userId,
+    source.from,
+    source.to,
+    undefined,
+    input.scope === 'meal' ? input.meal : undefined,
+  );
   const values = rows.map(({ entry }) => ({
     id: crypto.randomUUID(),
     userId,
@@ -136,7 +145,7 @@ entries.post('/copy', validate('json', copyEntriesSchema), async (c) => {
     meal: entry.meal,
     foodId: entry.foodId,
     grams: entry.grams,
-    status: 'planned' as const,
+    status: input.scope === 'meal' ? input.status : ('planned' as const),
     kcal: entry.kcal,
     protein: entry.protein,
     carbs: entry.carbs,
@@ -153,7 +162,7 @@ entries.post('/copy', validate('json', copyEntriesSchema), async (c) => {
       ),
     );
   let created: (typeof table.$inferSelect)[] = [];
-  if (input.mode === 'replace') {
+  if (input.scope !== 'meal' && input.mode === 'replace') {
     // The DELETE needs a fresh snapshot after any competing replacement commits.
     const result = await db.batch([
       db.execute(sql`SELECT pg_advisory_xact_lock(5, hashtext(${userId}))`),

@@ -11,6 +11,8 @@ import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
 import { ErrorState } from '../components/ui/ErrorState';
 import { DaySummary } from '../features/diary/DaySummary';
+import { QuickLogPrompt } from '../features/diary/QuickLogPrompt';
+import { RepeatMealSheet } from '../features/diary/RepeatMealSheet';
 import { MealSection } from '../features/diary/MealSection';
 import { WaterCard } from '../features/diary/WaterCard';
 import { ExerciseCard } from '../features/diary/ExerciseCard';
@@ -24,6 +26,7 @@ export function Hoy() {
   const raw = params.get('fecha');
   const date = parseLocalDateParam(raw) ?? today;
   const [adding, setAdding] = useState<{ date: string; meal: Meal } | null>(null);
+  const [repeating, setRepeating] = useState<Meal | null>(null);
   const [editing, setEditing] = useState<Entry | null>(null);
   const goal = useActiveGoal();
   const wizardSkipped = wasWizardSkipped();
@@ -42,13 +45,15 @@ export function Hoy() {
     setParams(next, { replace: true });
     setAdding(null);
     setEditing(null);
+    setRepeating(null);
   }
   function mutate(action: DiaryAction) {
     mutation.mutate(action);
     setAdding(null);
     setEditing(null);
+    setRepeating(null);
   }
-  if (goal.isSuccess && goal.data === null && !wizardSkipped) {
+  if (goal.isSuccess && goal.data === null && !goal.isFetching && !wizardSkipped) {
     return <Navigate to="/objetivo/nuevo" replace />;
   }
   return (
@@ -137,6 +142,7 @@ export function Hoy() {
                   key={meal}
                   meal={section}
                   onAdd={() => setAdding({ date, meal })}
+                  onRepeat={() => setRepeating(meal)}
                   onEdit={setEditing}
                   onEat={(entry) => mutate({ kind: 'edit', entry, changes: { status: 'eaten' } })}
                 />
@@ -147,6 +153,26 @@ export function Hoy() {
       )}
       <WaterCard date={date} />
       <ExerciseCard date={date} />
+      <QuickLogPrompt
+        summary={query.data}
+        ready={
+          goal.isSuccess &&
+          !goal.isFetching &&
+          (goal.data !== null || wizardSkipped) &&
+          query.isSuccess &&
+          !query.isFetching &&
+          !adding &&
+          !editing &&
+          !repeating
+        }
+        onChoose={(meal) => {
+          navigate(todayLocal());
+          setAdding({ date: todayLocal(), meal });
+        }}
+      />
+      {repeating && (
+        <RepeatMealSheet date={date} meal={repeating} onClose={() => setRepeating(null)} />
+      )}
       {adding && adding.date === date && (
         <AddFoodSheet
           key={`${adding.date}-${adding.meal}`}

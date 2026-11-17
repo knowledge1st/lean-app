@@ -52,10 +52,11 @@ export function useCreateGoal() {
     mutationFn: createGoal,
     onSuccess: async () => {
       await Promise.all(
-        [profileKey, activeGoalKey, ['goals', 'wizard', 'initial'], ['summary'], ['targets']].map(
-          (queryKey) => client.invalidateQueries({ queryKey }),
+        [profileKey, ['goals', 'wizard', 'initial'], ['summary'], ['targets']].map((queryKey) =>
+          client.invalidateQueries({ queryKey }),
         ),
       );
+      await client.fetchQuery({ queryKey: activeGoalKey, queryFn: getActiveGoal, staleTime: 0 });
     },
   });
 }

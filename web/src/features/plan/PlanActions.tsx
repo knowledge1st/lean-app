@@ -10,11 +10,12 @@ import { getDaySummary, summaryKey, useDiaryMutation, waitForDiaryIdle } from '.
 import { validWeekOf } from './dates';
 import { CopyDaySheet } from './CopyDaySheet';
 import { useCopyEntries, useGenerateShopping, type CopyEntriesBody } from './api';
+type PlanCopyBody = Exclude<CopyEntriesBody, { scope: 'meal' }>;
 export function PlanActions({ week, summary }: { week: string; summary: DaySummary }) {
   const dates = Array.from({ length: 7 }, (_, i) => addDays(isoWeekRange(week).from, i));
   const previousWeek = validWeekOf(addDays(dates[0]!, -7));
   const [sheet, setSheet] = useState<'actions' | 'copy' | 'clear' | null>(null);
-  const [pendingCopy, setPendingCopy] = useState<Omit<CopyEntriesBody, 'mode'> | null>(null);
+  const [pendingCopy, setPendingCopy] = useState<Omit<PlanCopyBody, 'mode'> | null>(null);
   const [checking, setChecking] = useState(false);
   const client = useQueryClient();
   const copy = useCopyEntries();
@@ -34,7 +35,7 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
       toast(error instanceof Error ? error.message : 'No se pudo copiar.');
     }
   }
-  async function prepareCopy(body: Omit<CopyEntriesBody, 'mode'>) {
+  async function prepareCopy(body: Omit<PlanCopyBody, 'mode'>) {
     setChecking(true);
     try {
       await waitForDiaryIdle(client);

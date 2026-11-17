@@ -14,7 +14,8 @@ it.each(['profile', 'goal'])('mantiene coherente la caché al guardar %s', async
   const initialKey = ['goals', 'wizard', 'initial'];
   client.setQueryData(initialKey, { profile: { heightCm: 165 }, goal: null });
   client.setQueryData(profileKey, { heightCm: 165 });
-  client.setQueryData(activeGoalKey, { id: 'old' });
+  client.setQueryData(activeGoalKey, null);
+  vi.spyOn(api, 'get').mockResolvedValue({ id: 'new' });
   const profile = {
     sex: 'female' as const,
     birthDate: '1990-01-01',
@@ -38,7 +39,8 @@ it.each(['profile', 'goal'])('mantiene coherente la caché al guardar %s', async
       });
   });
   expect(client.getQueryState(initialKey)?.isInvalidated).toBe(true);
-  expect(client.getQueryState(activeGoalKey)?.isInvalidated).toBe(true);
+  if (kind === 'profile') expect(client.getQueryState(activeGoalKey)?.isInvalidated).toBe(true);
+  else expect(client.getQueryData(activeGoalKey)).toEqual({ id: 'new' });
   if (kind === 'profile') expect(client.getQueryData(profileKey)).toEqual(profile);
   else expect(client.getQueryState(profileKey)?.isInvalidated).toBe(true);
   client.clear();

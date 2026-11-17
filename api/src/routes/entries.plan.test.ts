@@ -19,6 +19,63 @@ describe.skipIf(!hasTestDatabase)('entry planning integration', { timeout: 30000
     expect(response.status).toBe(201);
     return (await response.json()) as Entry[];
   };
+  it.each(['eaten', 'planned'])(
+    'appends only the owned meal with %s status and frozen macros',
+    async (status) => {
+      const food = await f.food();
+      const source = await f.entry(food.id!, { meal: 'dinner', grams: 33.3 });
+      const plannedSource = await f.entry(food.id!, {
+        meal: 'dinner',
+        status: 'planned',
+        grams: 44.4,
+      });
+      await f.entry(food.id!, { meal: 'lunch' });
+      const existing = await f.entry(food.id!, { date: '2026-11-15', meal: 'dinner' });
+      const otherMeal = await f.entry(food.id!, {
+        date: '2026-11-15',
+        meal: 'lunch',
+        status: 'planned',
+      });
+      const body = { scope: 'meal', from: '2026-11-14', to: '2026-11-15', meal: 'dinner', status };
+      expect(await copy(body, 1)).toEqual([]);
+      const otherFood = await f.food(1);
+      await f.entry(otherFood.id!, { meal: 'dinner' }, 1);
+      const otherUserDestination = await f.entry(
+        otherFood.id!,
+        { date: '2026-11-15', meal: 'dinner' },
+        1,
+      );
+      const result = await copy(body);
+      expect(result).toHaveLength(2);
+      for (const entry of result) {
+        const original = entry.grams === source.grams ? source : plannedSource;
+        expect(entry.id).not.toBe(original.id);
+        expect(entry).toMatchObject({
+          date: body.to,
+          meal: 'dinner',
+          status,
+          foodId: food.id,
+          grams: original.grams,
+          kcal: original.kcal,
+          protein: original.protein,
+          carbs: original.carbs,
+          fat: original.fat,
+        });
+      }
+      const remaining = (await (
+        await f.request('/entries?from=2026-11-15&to=2026-11-15')
+      ).json()) as Entry[];
+      expect(remaining).toHaveLength(4);
+      expect(remaining).toContainEqual(existing);
+      expect(remaining).toContainEqual(otherMeal);
+      expect(await copy({ ...body, from: '2026-11-13' })).toEqual([]);
+      expect(
+        await (
+          await f.request('/entries?from=2026-11-15&to=2026-11-15', 'GET', undefined, 1)
+        ).json(),
+      ).toEqual([otherUserDestination]);
+    },
+  );
   it('copies four frozen snapshots even after editing the food', async () => {
     const food = await f.food();
     const source: Entry[] = [];

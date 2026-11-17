@@ -1,13 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Entry, ShoppingItem } from '@lean/shared';
+import type { CopyEntriesInput, Entry, ShoppingItem } from '@lean/shared';
 import { api } from '../../lib/api';
 
-export type CopyEntriesBody = {
-  scope: 'day' | 'week';
-  from: string;
-  to: string;
-  mode: 'append' | 'replace';
-};
+export type CopyEntriesBody = CopyEntriesInput;
 export const copyEntries = (body: CopyEntriesBody) => api.post<Entry[]>('/api/entries/copy', body);
 export const generateShopping = (week: string) =>
   api.post<ShoppingItem[]>('/api/shopping/generate', { week });

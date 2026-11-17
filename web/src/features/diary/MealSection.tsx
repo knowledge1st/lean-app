@@ -8,6 +8,7 @@ export function MealSection({
   disabled,
   missed,
   onAdd,
+  onRepeat,
   onEdit,
   onEat,
 }: {
@@ -15,6 +16,7 @@ export function MealSection({
   missed?: boolean | undefined;
   disabled?: boolean | undefined;
   onAdd: () => void;
+  onRepeat?: () => void;
   onEdit: (entry: Entry) => void;
   onEat: (entry: Entry) => void;
 }) {
@@ -41,14 +43,26 @@ export function MealSection({
       ) : (
         <p className="py-3 text-sm text-muted">Sin alimentos</p>
       )}
-      <Button
-        variant="ghost"
-        disabled={disabled}
-        aria-label={`Agregar a ${MEAL_LABELS[meal.meal]}`}
-        onClick={onAdd}
-      >
-        + Agregar
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="ghost"
+          disabled={disabled}
+          aria-label={`Agregar a ${MEAL_LABELS[meal.meal]}`}
+          onClick={onAdd}
+        >
+          + Agregar
+        </Button>
+        {onRepeat && (
+          <Button
+            variant="secondary"
+            disabled={disabled}
+            aria-label={`Repetir ${MEAL_LABELS[meal.meal]} de otro día`}
+            onClick={onRepeat}
+          >
+            Repetir
+          </Button>
+        )}
+      </div>
     </Card>
   );
 }
