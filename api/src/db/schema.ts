@@ -20,6 +20,8 @@ export const foodSource = pgEnum('food_source', ['off', 'seed', 'custom']);
 export const goalMode = pgEnum('goal_mode', ['target_weight', 'body_composition', 'manual']);
 export const compositionPreset = pgEnum('composition_preset', ['cut', 'recomp', 'lean_bulk']);
 export const goalStatus = pgEnum('goal_status', ['active', 'archived']);
+export const checkinStatus = pgEnum('checkin_status', ['insufficient_data', 'on_track', 'adjust']);
+export const checkinReason = pgEnum('checkin_reason', ['slower_than_plan', 'faster_than_plan']);
 export const targetReason = pgEnum('target_reason', ['initial', 'adjustment', 'manual']);
 export const activityLevel = pgEnum('activity_level', ['sedentary', 'light', 'moderate', 'active']);
 export const sex = pgEnum('sex', ['female', 'male']);
@@ -217,6 +219,21 @@ export const checkins = pgTable(
       .notNull()
       .references(() => goals.id, { onDelete: 'cascade' }),
     weekStart: date('week_start', { mode: 'string' }).notNull(),
+    status: checkinStatus('status').notNull(),
+    reason: checkinReason('reason'),
+    loggedDays: integer('logged_days').notNull(),
+    weighIns: integer('weigh_ins').notNull(),
+    actualWeeklyChangeKg: numeric('actual_weekly_change_kg', { precision: 5, scale: 2 }),
+    expectedWeeklyChangeKg: numeric('expected_weekly_change_kg', { precision: 5, scale: 2 }),
+    currentKcal: integer('current_kcal').notNull(),
+    currentProteinG: numeric('current_protein_g', { precision: 6, scale: 1 }).notNull(),
+    currentCarbsG: numeric('current_carbs_g', { precision: 6, scale: 1 }).notNull(),
+    currentFatG: numeric('current_fat_g', { precision: 6, scale: 1 }).notNull(),
+    proposedProteinG: numeric('proposed_protein_g', { precision: 6, scale: 1 }),
+    proposedCarbsG: numeric('proposed_carbs_g', { precision: 6, scale: 1 }),
+    proposedFatG: numeric('proposed_fat_g', { precision: 6, scale: 1 }),
+    deltaKcal: integer('delta_kcal'),
+    targetId: uuid('target_id').references(() => targets.id, { onDelete: 'set null' }),
     avgIntakeKcal: integer('avg_intake_kcal'),
     trendWeightKg: numeric('trend_weight_kg', { precision: 5, scale: 2 }),
     estimatedTdee: integer('estimated_tdee'),
@@ -225,7 +242,21 @@ export const checkins = pgTable(
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('checkins_goal_id_week_start_idx').on(t.goalId, t.weekStart)],
+  (t) => [
+    uniqueIndex('checkins_goal_id_week_start_idx').on(t.goalId, t.weekStart),
+    check(
+      'checkins_proposal_check',
+      sql`(
+      ${t.status} = 'adjust' AND ${t.proposedKcal} IS NOT NULL
+      AND ${t.proposedProteinG} IS NOT NULL AND ${t.proposedCarbsG} IS NOT NULL
+      AND ${t.proposedFatG} IS NOT NULL AND ${t.deltaKcal} IS NOT NULL AND ${t.reason} IS NOT NULL
+    ) OR (
+      ${t.status} <> 'adjust' AND ${t.proposedKcal} IS NULL
+      AND ${t.proposedProteinG} IS NULL AND ${t.proposedCarbsG} IS NULL
+      AND ${t.proposedFatG} IS NULL AND ${t.deltaKcal} IS NULL AND ${t.reason} IS NULL
+    )`,
+    ),
+  ],
 );
 
 export const bodyLogs = pgTable(

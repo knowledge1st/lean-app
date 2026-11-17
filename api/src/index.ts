@@ -11,6 +11,7 @@ import { foods } from './routes/foods';
 import { health } from './routes/health';
 import { profile } from './routes/profile';
 import { goals, targets } from './routes/goals';
+import { checkins } from './routes/checkins';
 
 import { bodyLogs } from './routes/bodyLogs';
 import { water } from './routes/water';
@@ -39,6 +40,7 @@ app.route('/api/shopping', shopping);
 app.route('/api/summary', summary);
 app.route('/api/profile', profile);
 app.route('/api/goals', goals);
+app.route('/api/checkins', checkins);
 app.route('/api/targets', targets);
 app.route('/api/body-logs', bodyLogs);
 app.route('/api/water', water);

@@ -15,3 +15,4 @@ export * from './progress/trend';
 export * from './week';
 export * from './schemas/plan';
 export * from './schemas/shopping';
+export * from './schemas/checkin';
