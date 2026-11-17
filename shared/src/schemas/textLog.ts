@@ -55,7 +55,11 @@ export const aiMealParseJsonSchema = {
             ],
           },
           said: { type: 'string', maxLength: 80 },
-          catalogIndex: { type: ['integer', 'null'], minimum: 0 },
+          catalogIndex: {
+            type: ['integer', 'null'],
+            minimum: 0,
+            maximum: Number.MAX_SAFE_INTEGER,
+          },
           searchQuery: { type: 'string', maxLength: 60 },
           grams: { type: 'number', exclusiveMinimum: 0, maximum: 5000 },
           gramsStated: { type: 'boolean' },
@@ -124,3 +128,4 @@ export type ProposedItem = z.infer<typeof proposedItemSchema>;
 export type ParseMealTextResponse = z.infer<typeof parseMealTextResponseSchema>;
 export type CreateEntriesBatch = z.infer<typeof createEntriesBatchSchema>;
 export type TextLogStatus = z.infer<typeof textLogStatusSchema>;
+export type MeFeatures = z.infer<typeof meFeaturesSchema>;

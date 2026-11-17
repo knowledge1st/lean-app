@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { mealSchema } from './entry';
 import {
   aiMealParseJsonSchema,
@@ -7,6 +8,8 @@ import {
   meFeaturesSchema,
   parseMealTextResponseSchema,
   parseMealTextSchema,
+  proposedItemSchema,
+  textLogStatusSchema,
   TEXT_LOG_DAILY_LIMIT,
   TEXT_LOG_MAX_CHARS,
   TEXT_LOG_MAX_ITEMS,
@@ -29,6 +32,39 @@ const batchItem = {
   grams: 150,
 };
 const batch = { date: request.date, status: 'eaten', items: [batchItem] };
+const food = {
+  id: batchItem.foodId,
+  source: 'seed',
+  createdByMe: false,
+  name: 'Arroz cocido',
+  brand: null,
+  barcode: null,
+  kcal: 130,
+  protein: 2.7,
+  carbs: 28,
+  fat: 0.3,
+  servingG: null,
+  servingLabel: null,
+};
+const proposedItem = {
+  key: 'rice',
+  meal: 'lunch',
+  mealSource: 'default',
+  said: 'arroz',
+  grams: 150,
+  gramsEstimated: true,
+  match: 'exact',
+  food,
+  alternatives: [],
+  searchQuery: 'arroz cocido',
+};
+const textLogStatus = {
+  available: true,
+  candidates: ['ai'],
+  degraded: [],
+  checkedAt: '2026-11-17T12:00:00Z',
+  freeRemainingToday: 20,
+};
 
 describe('text log schemas', () => {
   it('exports the agreed limits', () => {
@@ -96,8 +132,9 @@ describe('text log schemas', () => {
     );
   });
 
-  it('keeps JSON Schema properties and required lists aligned with Zod shapes', () => {
+  it('keeps JSON Schema properties, required lists and limits aligned with Zod', () => {
     const itemJson = aiMealParseJsonSchema.properties.items.items;
+    const itemZod = aiMealParseSchema.shape.items.element.shape;
     const rootKeys = Object.keys(aiMealParseSchema.shape).sort();
     const itemKeys = Object.keys(aiMealParseSchema.shape.items.element.shape).sort();
     expect(Object.keys(aiMealParseJsonSchema.properties).sort()).toEqual(rootKeys);
@@ -112,7 +149,86 @@ describe('text log schemas', () => {
     ]);
     expect(itemJson.properties.catalogIndex.type).toEqual(['integer', 'null']);
     expect(itemJson.properties.units.type).toEqual(['number', 'null']);
+    expect(aiMealParseJsonSchema.properties.items.maxItems).toBe(
+      z.toJSONSchema(aiMealParseSchema.shape.items).maxItems,
+    );
+    for (const field of ['said', 'searchQuery', 'grams'] as const) {
+      expect(z.toJSONSchema(itemZod[field])).toEqual({
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        ...itemJson.properties[field],
+      });
+    }
+    for (const [field, type] of [['catalogIndex', 'integer'], ['units', 'number']] as const) {
+      expect(z.toJSONSchema(itemZod[field])).toEqual({
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        anyOf: [{ ...itemJson.properties[field], type }, { type: 'null' }],
+      });
+    }
   });
+
+  it.each([
+    [0, true],
+    [Number.MAX_SAFE_INTEGER, true],
+    [-1, false],
+    [0.5, false],
+    [Number.MAX_SAFE_INTEGER + 1, false],
+  ])('validates catalog index %s with success %s', (catalogIndex, success) => {
+    expect(
+      aiMealParseSchema.safeParse({
+        items: [{ ...aiItem, catalogIndex }],
+        otherDayMentioned: false,
+      }).success,
+    ).toBe(success);
+  });
+
+  it.each([0, 3, 4])('checks the proposed item limit with %s alternatives', (count) => {
+    expect(
+      proposedItemSchema.safeParse({
+        ...proposedItem,
+        alternatives: Array.from({ length: count }, () => food),
+      }).success,
+    ).toBe(count <= 3);
+  });
+
+  it.each([0, -1, 5000.1, 1.23, NaN, Infinity, '150', null])(
+    'rejects invalid proposed item grams %j',
+    (grams) => {
+      expect(proposedItemSchema.safeParse({ ...proposedItem, grams }).success).toBe(false);
+    },
+  );
+
+  it.each([0.1, 150, 5000])('accepts valid proposed item grams %s', (grams) => {
+    expect(proposedItemSchema.safeParse({ ...proposedItem, grams }).success).toBe(true);
+  });
+
+  it('accepts a proposed item with null food', () => {
+    const item = { ...proposedItem, food: null, match: 'none' };
+    expect(proposedItemSchema.parse(item)).toEqual(item);
+  });
+
+  it('accepts concrete and null values for nullable status fields', () => {
+    expect(textLogStatusSchema.parse(textLogStatus)).toEqual(textLogStatus);
+    const status = { ...textLogStatus, checkedAt: null, freeRemainingToday: null };
+    expect(textLogStatusSchema.parse(status)).toEqual(status);
+  });
+
+  it.each(['available', 'candidates', 'degraded', 'checkedAt', 'freeRemainingToday'] as const)(
+    'requires status field %s',
+    (field) => {
+      const status: Partial<typeof textLogStatus> = { ...textLogStatus };
+      delete status[field];
+      expect(textLogStatusSchema.safeParse(status).success).toBe(false);
+    },
+  );
+
+  it.each(['available', 'candidates', 'degraded'] as const)(
+    'rejects null for status field %s',
+    (field) => {
+      expect(textLogStatusSchema.safeParse({ ...textLogStatus, [field]: null }).success).toBe(
+        false,
+      );
+    },
+  );
 
   it.each(['ai', 'rules'])('accepts interpreter %s', (interpreter) => {
     const response = { items: [], warnings: [], remainingToday: 0, interpreter };
