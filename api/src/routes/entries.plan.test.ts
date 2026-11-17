@@ -226,6 +226,27 @@ describe.skipIf(!hasTestDatabase)('entry planning integration', { timeout: 30000
         .sort(),
     ).toEqual([100, 200]);
   });
+  it('copies and replaces only the session user week, never another user planned entries', async () => {
+    const food = await f.food();
+    const own = await f.entry(food.id!, { date: '2026-11-17', status: 'planned' });
+    await f.entry(food.id!, { date: '2026-11-10' });
+    expect(
+      await copy({ scope: 'week', from: '2026-W46', to: '2026-W47', mode: 'replace' }, 1),
+    ).toEqual([]);
+    expect(
+      await copy(
+        { scope: 'meal', from: '2026-11-10', to: '2026-11-18', meal: 'lunch', status: 'planned' },
+        1,
+      ),
+    ).toEqual([]);
+    const remaining = (await (
+      await f.request('/entries?from=2026-11-16&to=2026-11-22')
+    ).json()) as Entry[];
+    expect(remaining.map((e) => e.id)).toEqual([own.id]);
+    expect(
+      await (await f.request('/entries?from=2026-11-16&to=2026-11-22', 'GET', undefined, 1)).json(),
+    ).toEqual([]);
+  });
   it('copies Monday and Sunday across ISO years and replaces the whole week', async () => {
     const food = await f.food();
     await f.entry(food.id!, { date: '2026-12-28' });

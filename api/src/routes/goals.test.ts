@@ -285,6 +285,16 @@ describe.skipIf(!hasTestDatabase)('goals integration', { timeout: 30_000 }, () =
     });
     expect(week.days.every((day) => day.targetKcal === null && day.eatenKcal === 0)).toBe(true);
   });
+  it('keeps the other user active goal, targets and body log when a user creates a goal', async () => {
+    const own = await f.create();
+    const before = await f.counts(0);
+    await f.create(manualGoal, 1);
+    await f.create(manualGoal, 1);
+    expect(await f.counts(0)).toEqual(before);
+    const active = await f.request('/goals/active');
+    expect(active.status).toBe(200);
+    expect(activeGoalSchema.parse(await active.json()).id).toBe(own.goal.id);
+  });
   it('scopes goal helpers to the session user even with another user goal id', async () => {
     await f.profile();
     const saved = await f.create(weightGoal);

@@ -36,7 +36,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
               `script-src 'self' 'wasm-unsafe-eval'${nonceSource}`,
               // Radix/react-remove-scroll injects <style> elements without a nonce.
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https:",
+              "img-src 'self' data:",
               `connect-src ${connections}`,
               "font-src 'self'",
               "object-src 'none'",
