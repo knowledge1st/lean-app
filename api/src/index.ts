@@ -18,6 +18,11 @@ import { checkins } from './routes/checkins';
 import { bodyLogs } from './routes/bodyLogs';
 import { water } from './routes/water';
 import { exercise } from './routes/exercise';
+import { push } from './routes/push';
+import { reminders } from './routes/reminders';
+import { getDb } from './db/client';
+import { runReminders } from './lib/reminders';
+import type { Env } from './env';
 
 export const app = new Hono<AppEnv>();
 
@@ -50,8 +55,22 @@ app.route('/api/targets', targets);
 app.route('/api/body-logs', bodyLogs);
 app.route('/api/water', water);
 app.route('/api/exercise', exercise);
+app.route('/api/push', push);
+app.route('/api/reminders', reminders);
 
 app.notFound(handleNotFound);
 app.onError(handleError);
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      runReminders(env, getDb(env), new Date(controller.scheduledTime)).then(
+        (result) => {
+          if (result.checkedDatabase) console.log('reminders', JSON.stringify(result));
+        },
+        (error: unknown) => console.error('reminders failed', error),
+      ),
+    );
+  },
+} satisfies ExportedHandler<Env>;

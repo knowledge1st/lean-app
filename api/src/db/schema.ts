@@ -26,6 +26,14 @@ export const checkinReason = pgEnum('checkin_reason', ['slower_than_plan', 'fast
 export const targetReason = pgEnum('target_reason', ['initial', 'adjustment', 'manual']);
 export const activityLevel = pgEnum('activity_level', ['sedentary', 'light', 'moderate', 'active']);
 export const sex = pgEnum('sex', ['female', 'male']);
+export const reminderSlot = pgEnum('reminder_slot', [
+  'breakfast',
+  'lunch',
+  'afternoon_snack',
+  'dinner',
+  'snack',
+  'day_close',
+]);
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -327,6 +335,61 @@ export const exerciseLogs = pgTable(
   ],
 );
 
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('push_subscriptions_endpoint_idx').on(t.endpoint),
+    index('push_subscriptions_user_id_idx').on(t.userId),
+  ],
+);
+
+/** Only reminders the user changed are stored; missing slots use the shared defaults. */
+export const reminders = pgTable(
+  'reminders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    slot: reminderSlot('slot').notNull(),
+    enabled: boolean('enabled').notNull(),
+    time: text('time').notNull(),
+    message: text('message'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('reminders_user_id_slot_idx').on(t.userId, t.slot),
+    check('reminders_time_check', sql`${t.time} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
+    check('reminders_message_check', sql`char_length(${t.message}) BETWEEN 1 AND 120`),
+  ],
+);
+
+/** One row per reminder sent, so a slot fires at most once per local day. */
+export const reminderDeliveries = pgTable(
+  'reminder_deliveries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    slot: reminderSlot('slot').notNull(),
+    date: date('date', { mode: 'string' }).notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('reminder_deliveries_user_id_slot_date_idx').on(t.userId, t.slot, t.date)],
+);
+
 export const shoppingItems = pgTable(
   'shopping_items',
   {
@@ -422,3 +485,5 @@ export const textLogModelHealth = pgTable('text_log_model_health', {
   lastFailureAt: timestamp('last_failure_at', { withTimezone: true }),
   degradedUntil: timestamp('degraded_until', { withTimezone: true }),
 });
+export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
+export type ReminderRow = typeof reminders.$inferSelect;

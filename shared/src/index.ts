@@ -17,3 +17,4 @@ export * from './schemas/plan';
 export * from './schemas/shopping';
 export * from './schemas/checkin';
 export * from './schemas/textLog';
+export * from './schemas/reminders';

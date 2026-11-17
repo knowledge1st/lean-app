@@ -10,7 +10,13 @@ export function diaryFixture() {
   const db = getTestDb();
   const accounts: Awaited<ReturnType<typeof createTestUser>>[] = [];
   const tokens: string[] = [];
-  const request = (path: string, method = 'GET', body?: unknown, user = 0) =>
+  const request = (
+    path: string,
+    method = 'GET',
+    body?: unknown,
+    user = 0,
+    env: Partial<typeof testEnv> = {},
+  ) =>
     app.request(
       `/api${path}`,
       {
@@ -18,7 +24,7 @@ export function diaryFixture() {
         headers: { Authorization: `Bearer ${tokens[user]}`, 'Content-Type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
-      { ...testEnv, DATABASE_URL: testDatabaseUrl()! },
+      { ...testEnv, ...env, DATABASE_URL: testDatabaseUrl()! },
     );
   return {
     db,

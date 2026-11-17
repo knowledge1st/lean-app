@@ -50,6 +50,13 @@
       "when": 1794935423182,
       "tag": "0006_text_log",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794954290551,
+      "tag": "0007_push_reminders",
+      "breakpoints": true
     }
   ]
 }

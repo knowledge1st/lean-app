@@ -4,3 +4,8 @@ ALLOWED_ORIGIN=
 
 # Opcional: key de OpenRouter para interpretar comidas con modelos gratuitos.
 OPENROUTER_API_KEY=
+
+# Opcional: notificaciones push. Generar con `node scripts/generate-vapid-keys.ts`.
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+APP_URL=http://localhost:5173/

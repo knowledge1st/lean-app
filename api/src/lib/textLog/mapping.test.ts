@@ -60,22 +60,40 @@ describe('text log mapping', () => {
     });
     expect(db.execute).toHaveBeenCalledTimes(1);
   });
-  it.each([0.29, 0.3])('checks indexed name coherence with trigram score %s', async (chosenScore) => {
-    const db = makeDb([{ itemIndex: 0, chosen: food, chosenScore, food: null, score: null }]);
-    const [result] = await mapItems(db, 'user', {
-      items: [{ ...item, searchQuery: 'arroz', catalogIndex: 0 }], otherDayMentioned: false,
-    }, catalog, 'lunch');
-    expect(result?.match).toBe(chosenScore < 0.3 ? 'approximate' : 'exact');
-    expect(db.execute).toHaveBeenCalledTimes(1);
-    const compiled = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]![0] as SQL);
-    expect(compiled.sql).toContain('chosen.score AS "chosenScore"');
-    expect(compiled.sql).toContain('similarity(n.query, n.name) AS score');
-  });
-  it.each([['50', 50], [null, 100]] as const)(
-    'uses the serving or 100 g for rules without a quantity (%s)', async (servingGrams, grams) => {
+  it.each([0.29, 0.3])(
+    'checks indexed name coherence with trigram score %s',
+    async (chosenScore) => {
+      const db = makeDb([{ itemIndex: 0, chosen: food, chosenScore, food: null, score: null }]);
+      const [result] = await mapItems(
+        db,
+        'user',
+        {
+          items: [{ ...item, searchQuery: 'arroz', catalogIndex: 0 }],
+          otherDayMentioned: false,
+        },
+        catalog,
+        'lunch',
+      );
+      expect(result?.match).toBe(chosenScore < 0.3 ? 'approximate' : 'exact');
+      expect(db.execute).toHaveBeenCalledTimes(1);
+      const compiled = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]![0] as SQL);
+      expect(compiled.sql).toContain('chosen.score AS "chosenScore"');
+      expect(compiled.sql).toContain('similarity(n.query, n.name) AS score');
+    },
+  );
+  it.each([
+    ['50', 50],
+    [null, 100],
+  ] as const)(
+    'uses the serving or 100 g for rules without a quantity (%s)',
+    async (servingGrams, grams) => {
       const [result] = await mapItems(
         makeDb([{ itemIndex: 0, chosen: null, food: { ...food, servingGrams }, score: 1 }]),
-        'user', { items: [item], otherDayMentioned: false }, catalog, 'lunch', 'rules',
+        'user',
+        { items: [item], otherDayMentioned: false },
+        catalog,
+        'lunch',
+        'rules',
       );
       expect(result).toMatchObject({ grams, gramsEstimated: true });
     },
