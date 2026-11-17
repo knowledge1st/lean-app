@@ -1,4 +1,9 @@
-import type { Food, FoodSearchResponse, LoginResponse } from '@lean/shared';
+import {
+  barcodeTakenErrorSchema,
+  type Food,
+  type FoodSearchResponse,
+  type LoginResponse,
+} from '@lean/shared';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -12,6 +17,7 @@ import type { Db } from '../db/client';
 import { foods, mealEntries } from '../db/schema';
 import { app } from '../index';
 import { testEnv } from '../test-env';
+import * as openFoodFacts from '../lib/openFoodFacts';
 
 const custom = { name: 'Personalizado exclusivo', kcal: 100, protein: 10, carbs: 10, fat: 2 };
 const rawProduct = (code: string) => ({
@@ -19,7 +25,7 @@ const rawProduct = (code: string) => ({
   product_name_es: 'Producto externo de prueba',
   nutriments: { 'energy-kcal_100g': 120, proteins_100g: 10, carbohydrates_100g: 10, fat_100g: 3 },
 });
-describe.skipIf(!hasTestDatabase)('foods integration', () => {
+describe.skipIf(!hasTestDatabase)('foods integration', { timeout: 30000 }, () => {
   let db: Db;
   let accounts: Awaited<ReturnType<typeof createTestUser>>[];
   let tokens: string[];
@@ -96,7 +102,12 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
     const response = await request('', tokens[0], 'POST', custom);
     expect(response.status).toBe(201);
     const food = (await response.json()) as Food;
-    expect(food).toMatchObject({ ...custom, id: expect.any(String), source: 'custom' });
+    expect(food).toMatchObject({
+      ...custom,
+      id: expect.any(String),
+      source: 'custom',
+      createdByMe: true,
+    });
     expect(await db.select().from(foods).where(eq(foods.id, food.id!))).toMatchObject([
       { id: food.id, name: custom.name, source: 'custom', ownerId: accounts[0]!.user.id },
     ]);
@@ -144,7 +155,12 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
     const response = await request('/import', tokens[0], 'POST', { barcode });
     expect(response.status).toBe(200);
     const imported = (await response.json()) as Food;
-    expect(imported).toMatchObject({ id: expect.any(String), source: 'off', barcode });
+    expect(imported).toMatchObject({
+      id: expect.any(String),
+      source: 'off',
+      barcode,
+      createdByMe: false,
+    });
     expect(imported.id).not.toBe(own.id);
     expect(await db.select().from(foods).where(eq(foods.id, own.id!))).toMatchObject([
       { id: own.id, source: 'custom', barcode, ownerId: accounts[0]!.user.id },
@@ -202,8 +218,8 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
       ]);
       expect(result.items[0]).toMatchObject({ source, name: included!.name, kcal: 100 });
       expect(result.items[2]).toMatchObject({ source, name: stored!.name, kcal: 100 });
-      expect(result.items[1]).toMatchObject({ id: null, source: 'off' });
-      expect(result.items[3]).toMatchObject({ id: null, source: 'off' });
+      expect(result.items[1]).toMatchObject({ id: null, source: 'off', createdByMe: false });
+      expect(result.items[3]).toMatchObject({ id: null, source: 'off', createdByMe: false });
       expect(
         await db
           .select()
@@ -230,20 +246,62 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
     expect((await request(`/barcode/${barcode}`)).status).toBe(404);
     expect(await db.select().from(foods).where(eq(foods.barcode, barcode))).toHaveLength(0);
   });
-  it('isolates custom foods and allows one identical barcode per owner and OFF', async () => {
-    const barcode = code(),
-      name = `zzqx${crypto.randomUUID()}`;
-    const a = await create(tokens[0], { barcode, name });
-    expect((await search(name, tokens[1])).items).toEqual([]);
-    expect((await request(`/barcode/${barcode}`, tokens[1])).status).toBe(404);
-    expect((await request(`/${a.id}`, tokens[1], 'PATCH', { name: 'Ajeno' })).status).toBe(404);
-    expect((await request(`/${a.id}`, tokens[1], 'DELETE')).status).toBe(404);
-    const b = await create(tokens[1], { barcode });
-    expect(((await (await request(`/barcode/${barcode}`, tokens[1])).json()) as Food).id).toBe(
-      b.id,
-    );
-    expect((await request('', tokens[0], 'POST', { ...custom, barcode })).status).toBe(409);
-    // Shared products can coexist with either user's custom barcode.
+  it('shares custom foods by text and tracks the author when another user edits', async () => {
+    const name = `zzqx${crypto.randomUUID()}`;
+    const food = await create(tokens[0], { name });
+    expect((await search(name)).items).toContainEqual(food);
+    expect((await search(name, tokens[1])).items).toContainEqual({ ...food, createdByMe: false });
+    const edited = await request(`/${food.id}`, tokens[1], 'PATCH', { name: `${name} editado` });
+    expect(edited.status).toBe(200);
+    expect(await edited.json()).toMatchObject({ id: food.id, createdByMe: false });
+    expect(await db.select().from(foods).where(eq(foods.id, food.id!))).toMatchObject([
+      { ownerId: accounts[0]!.user.id },
+    ]);
+    expect((await search(name)).items).toContainEqual({ ...food, name: `${name} editado` });
+  });
+  it('preserves name and brand changes made by different users', async () => {
+    const food = await create();
+    const renamed = await request(`/${food.id}`, tokens[0], 'PATCH', { name: '  Nombre nuevo  ' });
+    expect(renamed.status).toBe(200);
+    const branded = await request(`/${food.id}`, tokens[1], 'PATCH', { brand: '  Marca nueva  ' });
+    expect(branded.status).toBe(200);
+    expect(await branded.json()).toEqual({
+      ...food,
+      name: 'Nombre nuevo',
+      brand: 'Marca nueva',
+      createdByMe: false,
+    });
+    expect(await db.select().from(foods).where(eq(foods.id, food.id!))).toMatchObject([
+      { name: 'Nombre nuevo', brand: 'Marca nueva' },
+    ]);
+  });
+  it('updates only the brand while preserving every other field', async () => {
+    const food = await create(tokens[0], {
+      brand: 'Marca original',
+      barcode: code(),
+      kcal: 234,
+      protein: 12.34,
+      carbs: 23.45,
+      fat: 4.56,
+      servingG: 125.5,
+      servingLabel: 'Una porción',
+    });
+    const [before] = await db.select().from(foods).where(eq(foods.id, food.id!));
+    const response = await request(`/${food.id}`, tokens[1], 'PATCH', { brand: '  Otra marca  ' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ...food, brand: 'Otra marca', createdByMe: false });
+    const [after] = await db.select().from(foods).where(eq(foods.id, food.id!));
+    expect(after).toEqual({ ...before, brand: 'Otra marca', updatedAt: expect.any(Date) });
+  });
+  it('returns custom barcodes to both users without consulting OFF and prefers them over OFF', async () => {
+    const barcode = code();
+    const food = await create(tokens[0], { barcode });
+    const fetchProduct = vi.spyOn(openFoodFacts, 'fetchProduct');
+    for (const [index, token] of tokens.entries()) {
+      const response = await request(`/barcode/${barcode}`, token);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ...food, createdByMe: index === 0 });
+    }
     await db.insert(foods).values({
       source: 'off',
       barcode,
@@ -253,7 +311,69 @@ describe.skipIf(!hasTestDatabase)('foods integration', () => {
       carbsPer100g: '1',
       fatPer100g: '1',
     });
-    expect(((await (await request(`/barcode/${barcode}`)).json()) as Food).id).toBe(a.id);
+    for (const [index, token] of tokens.entries()) {
+      const response = await request(`/barcode/${barcode}`, token);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ...food, createdByMe: index === 0 });
+    }
+    expect(fetchProduct).not.toHaveBeenCalled();
+    expect(offFetch).not.toHaveBeenCalled();
+  });
+  it('returns the existing custom food for duplicate POST and PATCH codes for either user', async () => {
+    const barcode = code();
+    const existing = await create(tokens[0], { barcode });
+    const edited = await create(tokens[1], { barcode: code() });
+    for (const [index, token] of tokens.entries()) {
+      for (const response of [
+        await request('', token, 'POST', { ...custom, barcode }),
+        await request(`/${edited.id}`, token, 'PATCH', { barcode }),
+      ]) {
+        expect(response.status).toBe(409);
+        expect(barcodeTakenErrorSchema.parse(await response.json())).toEqual({
+          error: { code: 'barcode_taken', message: 'Ese código ya está cargado' },
+          food: { ...existing, createdByMe: index === 0 },
+        });
+      }
+    }
+    expect(await db.select().from(foods).where(eq(foods.id, edited.id!))).toMatchObject([
+      { barcode: edited.barcode, ownerId: accounts[1]!.user.id },
+    ]);
+  });
+  it('shares a custom food with another diary and restricts deletion to the author without usage', async () => {
+    const food = await create();
+    expect((await request(`/${food.id}`, tokens[1], 'DELETE')).status).toBe(404);
+    expect(await db.select().from(foods).where(eq(foods.id, food.id!))).toHaveLength(1);
+    for (const token of tokens)
+      for (const kind of ['recent', 'frequent'])
+        expect(await (await request(`/${kind}`, token)).json()).toEqual([]);
+    const [today] = await db
+      .select({ date: sql<string>`current_date::text` })
+      .from(foods)
+      .where(eq(foods.id, food.id!));
+    const response = await app.request(
+      '/api/entries',
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokens[1]}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ foodId: food.id, date: today!.date, meal: 'lunch', grams: 100 }),
+      },
+      { ...testEnv, DATABASE_URL: testDatabaseUrl()! },
+    );
+    expect(response.status).toBe(201);
+    for (const kind of ['recent', 'frequent']) {
+      expect(await (await request(`/${kind}`, tokens[1])).json()).toEqual([
+        { ...food, createdByMe: false },
+      ]);
+      expect(await (await request(`/${kind}`, tokens[0])).json()).toEqual([]);
+    }
+    const blocked = await request(`/${food.id}`, tokens[0], 'DELETE');
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toEqual({
+      error: { code: 'food_in_use', message: 'El alimento está en uso en un diario' },
+    });
+    await db.delete(mealEntries).where(eq(mealEntries.userId, accounts[1]!.user.id));
+    expect((await request(`/${food.id}`, tokens[0], 'DELETE')).status).toBe(204);
+    expect(await db.select().from(foods).where(eq(foods.id, food.id!))).toEqual([]);
   });
   it('never edits or deletes shared seed or OFF foods', async () => {
     const [seed] = await db.select().from(foods).where(eq(foods.source, 'seed')).limit(1);

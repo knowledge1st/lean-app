@@ -6,6 +6,7 @@ export const barcodeSchema = z
 export const foodSchema = z.object({
   id: z.uuid().nullable(),
   source: z.enum(['seed', 'off', 'custom']),
+  createdByMe: z.boolean(),
   name: z.string(),
   brand: z.string().nullable(),
   barcode: z.string().nullable(),
@@ -16,6 +17,12 @@ export const foodSchema = z.object({
   servingG: z.number().nullable(),
   servingLabel: z.string().nullable(),
 });
+export const barcodeTakenErrorSchema = z.object({
+  error: z.object({ code: z.literal('barcode_taken'), message: z.string() }),
+  food: foodSchema,
+});
+export type BarcodeTakenError = z.infer<typeof barcodeTakenErrorSchema>;
+
 export const foodSearchResponseSchema = z.object({
   items: z.array(foodSchema),
   offAvailable: z.boolean(),

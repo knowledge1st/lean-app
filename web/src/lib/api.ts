@@ -5,6 +5,7 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly body?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -112,7 +113,7 @@ export function createApiClient({
             window.location.hash = '#/login';
           }
         }
-        throw new ApiError(response.status, detail.code, detail.message);
+        throw new ApiError(response.status, detail.code, detail.message, payload);
       }
 
       if (response.status === 204) return undefined as T;

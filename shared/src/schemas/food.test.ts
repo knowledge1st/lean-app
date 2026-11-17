@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   barcodeSchema,
+  barcodeTakenErrorSchema,
+  foodSchema,
   createFoodSchema,
   foodListQuerySchema,
   foodSearchQuerySchema,
@@ -8,6 +10,30 @@ import {
 } from './food';
 const food = { name: ' Comida ', kcal: 150, protein: 10.25, carbs: 20, fat: 3 };
 describe('food schemas', () => {
+  it('requires authorship and the existing food in barcode conflicts', () => {
+    const existing = {
+      ...food,
+      id: crypto.randomUUID(),
+      source: 'custom',
+      createdByMe: false,
+      brand: null,
+      barcode: '12345678',
+      servingG: null,
+      servingLabel: null,
+    };
+    expect(foodSchema.parse(existing)).toEqual(existing);
+    expect(foodSchema.safeParse({ ...existing, createdByMe: undefined }).success).toBe(false);
+    const error = { code: 'barcode_taken', message: 'Ese código ya está cargado' };
+    expect(barcodeTakenErrorSchema.parse({ error, food: existing })).toEqual({
+      error,
+      food: existing,
+    });
+    expect(barcodeTakenErrorSchema.safeParse({ error }).success).toBe(false);
+    expect(
+      barcodeTakenErrorSchema.safeParse({ error: { ...error, code: 'conflict' }, food: existing })
+        .success,
+    ).toBe(false);
+  });
   it('trims fields and omits an empty brand', () => {
     expect(createFoodSchema.parse({ ...food, brand: ' ' })).toEqual({
       ...food,

@@ -165,7 +165,7 @@ Navegación inferior fija con cinco pestañas: **Hoy · Plan · Compras · Progr
 
 - **Envasados:** Open Food Facts por código de barras y por texto, vía el Worker.
 - **Genéricos (pollo, arroz, banana):** Open Food Facts los cubre mal. Se carga una semilla de unos 300 alimentos básicos en español (CSV en el repo, armado a partir de USDA FoodData Central, de dominio público).
-- **Personalizados:** cada usuario crea los suyos; son privados.
+- **Personalizados:** los carga cualquier usuario y los usan todos, por texto y por código de barras (cambio de T041; antes eran privados). Quien lo cargó queda como autor. Cualquier usuario puede corregirlo; solo el autor puede borrarlo, y solo si nadie lo usa en su diario. Hay un único personalizado por código de barras; si coincide con uno de Open Food Facts, gana el personalizado.
 - Si un código no existe, se ofrece crear el alimento con ese código ya completado.
 
 ## 10. Etapas de construcción

@@ -7,7 +7,7 @@ import {
   type Entry,
   type Macros,
 } from '@lean/shared';
-import { and, asc, eq, gte, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb, type Db } from '../db/client';
@@ -89,12 +89,7 @@ entries.post('/', validate('json', createEntrySchema), async (c) => {
   const input = c.req.valid('json'),
     db = getDb(c.env),
     userId = c.get('userId');
-  const [food] = await db
-    .select()
-    .from(foods)
-    .where(
-      and(eq(foods.id, input.foodId), or(ne(foods.source, 'custom'), eq(foods.ownerId, userId))),
-    );
+  const [food] = await db.select().from(foods).where(eq(foods.id, input.foodId));
   if (!food) throw new AppError(404, 'not_found', 'Alimento no encontrado');
   const macros = macrosForGrams(
     {

@@ -284,7 +284,15 @@ const actions = [
   {
     action: {
       kind: 'add',
-      food: { ...entry.food, barcode: null, kcal: 10, protein: 0, carbs: 0, fat: 0 },
+      food: {
+        ...entry.food,
+        createdByMe: false,
+        barcode: null,
+        kcal: 10,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+      },
       grams: 100,
       meal: entry.meal,
       date: entry.date,

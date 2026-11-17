@@ -10,6 +10,7 @@ import {
 const food: Food = {
   id: 'food',
   source: 'seed',
+  createdByMe: false,
   name: 'Pan',
   brand: null,
   barcode: null,
