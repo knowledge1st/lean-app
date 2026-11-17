@@ -10,6 +10,8 @@ import { activeGoalKey, useCreateGoal } from '../features/goals/api';
 import { markWizardSkipped } from '../features/goals/draft';
 import { todayLocal } from '../lib/date';
 import { useWater, useExercise } from '../features/diary/activityApi';
+import { api } from '../lib/api';
+import { checkin } from '../features/checkin/testFixtures';
 import { Hoy } from './Hoy';
 import { setToken, clearToken } from '../lib/session';
 import { recalculateSummary } from '../features/diary/optimistic';
@@ -25,6 +27,7 @@ vi.mock('../features/diary/activityApi', () => ({
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   clearToken();
   localStorage.clear();
 });
@@ -101,6 +104,12 @@ function setup(path = '/hoy?fecha=2026-11-14', seed = true, create = false) {
     client.setQueryDefaults(['summary', 'week'], { staleTime: Infinity });
     client.setQueryData(['summary', 'week', '2026-W46'], { budgetKcal: null });
   }
+  const originalGet = api.get;
+  vi.spyOn(api, 'get').mockImplementation((path, options) =>
+    path === '/api/checkins/pending'
+      ? (Promise.resolve({ checkin: null }) as ReturnType<typeof api.get>)
+      : originalGet(path, options),
+  );
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
@@ -542,5 +551,78 @@ it('renderiza agua y ejercicio y consulta la fecha seleccionada', async () => {
   fireEvent.click(screen.getByLabelText('Día siguiente'));
   expect(useWater).toHaveBeenCalledWith('2026-11-15');
   expect(useExercise).toHaveBeenCalledWith('2026-11-15');
+  client.clear();
+});
+
+it('muestra el check-in antes de los avisos y lo conserva al navegar de fecha', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(summary)));
+  const client = setup();
+  await screen.findByText('Pan');
+  act(() => {
+    client.setQueryData(['checkins', 'pending'], { checkin });
+  });
+  const card = await screen.findByRole('region', { name: 'Tu revisión semanal' });
+  expect(card.previousElementSibling?.tagName).toBe('HEADER');
+  fireEvent.click(screen.getByLabelText('Día anterior'));
+  expect(screen.getByRole('region', { name: 'Tu revisión semanal' })).toBe(card);
+  client.clear();
+});
+
+it('actualiza el anillo, macros y semana al aceptar un ajuste', async () => {
+  let accepted = false;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (init?.method === 'POST') {
+        accepted = true;
+        return Promise.resolve(
+          jsonResponse({ ...checkin, accepted: true, resolvedAt: checkin.createdAt }),
+        );
+      }
+      if (String(input).includes('/goals/')) return Promise.resolve(jsonResponse(activeGoal));
+      if (String(input).includes('/summary/week'))
+        return Promise.resolve(
+          jsonResponse({
+            budgetKcal: accepted ? 12950 : 14000,
+            eatenKcal: 0,
+            remainingKcal: accepted ? 12950 : 14000,
+          }),
+        );
+      return Promise.resolve(
+        jsonResponse({
+          ...summary,
+          target: accepted ? { ...target, kcal: 1850, carbs: 170 } : target,
+        }),
+      );
+    }),
+  );
+  const client = setup(undefined, false);
+  await screen.findByText('quedan 2.000 kcal');
+  act(() => {
+    client.setQueryData(['checkins', 'pending'], { checkin });
+  });
+  fireEvent.click(await screen.findByRole('button', { name: 'Aceptar' }));
+  expect(await screen.findByText('quedan 1.850 kcal')).toBeTruthy();
+  expect(await screen.findByText('Te quedan 12.950 kcal esta semana')).toBeTruthy();
+  expect(screen.getByText('0 / 170 g')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Tu revisión semanal' })).toBeNull();
+  client.clear();
+});
+
+it('un error del check-in no afecta el día', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(summary)));
+  const client = setup();
+  await screen.findByText('Pan');
+  vi.mocked(api.get).mockImplementation((path) =>
+    path === '/api/checkins/pending'
+      ? Promise.reject(new Error('offline'))
+      : Promise.resolve(summary),
+  );
+  await act(async () => {
+    await client.refetchQueries({ queryKey: ['checkins', 'pending'] });
+  });
+  expect(screen.getByText('Pan')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Tu revisión semanal' })).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
   client.clear();
 });

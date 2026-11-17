@@ -1,3 +1,5 @@
+import { CheckinHistory } from '../features/checkin/CheckinHistory';
+import { useCheckins } from '../features/checkin/api';
 import { lazy, Suspense, useState } from 'react';
 import { isoWeekRange } from '@lean/shared';
 import { Button } from '../components/ui/Button';
@@ -15,6 +17,12 @@ const WeightChart = lazy(() => import('../features/progress/WeightChart'));
 const WeekBars = lazy(() => import('../features/progress/WeekBars'));
 export function Progreso() {
   const today = todayLocal();
+  const checkins = useCheckins(52);
+  const goalChanges = checkins.isSuccess
+    ? checkins.data.checkins
+        .filter((c) => c.status === 'adjust' && c.accepted === true && c.resolvedAt)
+        .map((c) => todayLocal(new Date(c.resolvedAt!)))
+    : [];
   const logs = useBodyLogs(addDays(today, -365), today);
   const goal = useActiveGoal();
   const week = isoWeek(today);
@@ -43,7 +51,12 @@ export function Progreso() {
           {logs.data.logs.some((l) => l.weightKg !== null) ? (
             <Card className="min-w-0">
               <Suspense fallback={<Skeleton className="h-60!" />}>
-                <WeightChart logs={logs.data.logs} goal={goal.data} today={today} />
+                <WeightChart
+                  logs={logs.data.logs}
+                  goal={goal.data}
+                  today={today}
+                  goalChanges={goalChanges}
+                />
               </Suspense>
             </Card>
           ) : (
@@ -84,6 +97,9 @@ export function Progreso() {
             <WeekBars summary={summary.data} entries={entries.data} />
           </Suspense>
         )}
+      </Card>
+      <Card>
+        <CheckinHistory />
       </Card>
     </section>
   );

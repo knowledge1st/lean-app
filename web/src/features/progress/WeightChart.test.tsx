@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react';
+import { fireEvent } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import type { ActiveGoal } from '@lean/shared';
@@ -6,8 +8,27 @@ import WeightChart from './WeightChart';
 import { WeightSummary } from './WeightSummary';
 import { log } from './testFixtures';
 vi.mock('recharts', () => ({
-  ResponsiveContainer: () => null,
-  LineChart: () => null,
+  ResponsiveContainer: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  LineChart: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ReferenceLine: ({
+    x,
+    strokeDasharray,
+    label,
+  }: {
+    x: number;
+    strokeDasharray: string;
+    label: { value: string; position: string; fontSize: number; fill: string };
+  }) => (
+    <span
+      data-testid="reference"
+      data-x={x}
+      data-dash={strokeDasharray}
+      data-position={label.position}
+      style={{ fontSize: label.fontSize, color: label.fill }}
+    >
+      {label.value}
+    </span>
+  ),
   Line: () => null,
   XAxis: () => null,
   YAxis: () => null,
@@ -44,3 +65,41 @@ it('incluye el esperado de hoy y el objetivo cuando hay trayectoria', () => {
   expect(screen.getByText('┄ Esperado')).toBeTruthy();
   expect(screen.getByText(/Peso esperado hoy: 75 kg. Objetivo: 70 kg/)).toBeTruthy();
 });
+
+it('marca fechas en el dominio visible con timestamps y descripción accesible', () => {
+  render(
+    <WeightChart
+      logs={[log('2025-11-01', 80)]}
+      today="2026-01-15"
+      goalChanges={['2025-11-20', '2026-01-01', '2026-01-16']}
+    />,
+  );
+  expect(screen.getAllByTestId('reference')).toHaveLength(1);
+  expect(screen.getByTestId('reference').getAttribute('data-x')).toBe(
+    String(Date.parse('2026-01-01T12:00:00Z')),
+  );
+  expect(screen.getByTestId('reference').getAttribute('data-dash')).toBe('4 4');
+  expect(screen.getByRole('list', { name: 'Cambios de meta' }).textContent).toContain(
+    'Cambio de meta',
+  );
+  fireEvent.click(screen.getByRole('button', { name: '3 meses' }));
+  expect(screen.getAllByTestId('reference')).toHaveLength(2);
+});
+
+it.each([
+  ['2025-12-16', 'insideTopLeft', '16 dic'],
+  ['2026-01-15', 'insideTopRight', '15 ene'],
+])(
+  'ubica la etiqueta corta hacia el interior del rango para %s',
+  (date, position, formattedDate) => {
+    render(<WeightChart logs={[]} today="2026-01-15" goalChanges={[date]} />);
+    const reference = screen.getByTestId('reference');
+    expect(reference.textContent).toBe('Meta');
+    expect(reference.getAttribute('data-position')).toBe(position);
+    expect(reference.style.fontSize).toBe('11px');
+    expect(reference.style.color).toBe('var(--muted)');
+    expect(screen.getByRole('list', { name: 'Cambios de meta' }).textContent).toBe(
+      `Cambio de meta: ${formattedDate}`,
+    );
+  },
+);
