@@ -90,7 +90,10 @@ describe.skipIf(!hasTestDatabase)('auth integration', () => {
     expect(publicUser).toEqual(expected);
     const response = await request('/api/me', { headers: { Authorization: `bEaReR ${token}` } });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(expected);
+    expect(await response.json()).toEqual({
+      ...expected,
+      features: { textLog: true, textLogAi: false },
+    });
     const normalized = await login(password, `  ${currentUser().username.toUpperCase()}  `);
     expect(normalized.status).toBe(200);
     expect(

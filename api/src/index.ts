@@ -4,6 +4,7 @@ import { handleError, handleNotFound } from './lib/errors';
 import { cors } from './middleware/cors';
 import { requireAuth } from './middleware/requireAuth';
 import { bodyLimit, securityHeaders } from './middleware/security';
+import { textLog } from './routes/textLog';
 import { auth, me } from './routes/auth';
 import { shopping } from './routes/shopping';
 import { entries } from './routes/entries';
@@ -37,6 +38,7 @@ app.use('/api/*', (c, next) => {
 app.route('/api/health', health);
 app.route('/api/auth', auth);
 app.route('/api/me', me);
+app.route('/api/text-log', textLog);
 app.route('/api/foods', foods);
 app.route('/api/entries', entries);
 app.route('/api/shopping', shopping);

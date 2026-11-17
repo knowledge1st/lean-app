@@ -12,7 +12,8 @@
     "db:migrate": "drizzle-kit migrate",
     "seed:demo": "node scripts/seed-demo.ts",
     "seed:users": "node scripts/seed-users.ts",
-    "seed:foods": "node scripts/seed-foods.ts"
+    "seed:foods": "node scripts/seed-foods.ts",
+    "text-log:models": "node scripts/text-log-models.ts"
   },
   "dependencies": {
     "@lean/shared": "workspace:*",

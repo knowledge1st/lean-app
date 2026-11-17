@@ -7,3 +7,6 @@ compatibility_date = "2026-11-13"
 
 [vars]
 ALLOWED_ORIGIN = "https://knowledge1st.github.io"
+TEXT_LOG_PREFERRED_MODELS = "meta-llama/*,google/*,qwen/*,mistralai/*,deepseek/*"
+TEXT_LOG_MODEL_DENYLIST = ""
+TEXT_LOG_MAX_CANDIDATES = "3"
