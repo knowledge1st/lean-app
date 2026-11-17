@@ -100,7 +100,11 @@ function setup(
   path = '/hoy?fecha=2026-11-14',
   seed = true,
   create = false,
-  options: { lastShownAt?: number; cachedNullGoal?: boolean } = {},
+  options: {
+    lastShownAt?: number;
+    cachedNullGoal?: boolean;
+    features?: { textLog: boolean; textLogAi: boolean };
+  } = {},
 ) {
   localStorage.setItem(
     'lean.quickLog.v1',
@@ -117,10 +121,12 @@ function setup(
   }
   if (options.cachedNullGoal) client.setQueryData(activeGoalKey, null);
   const originalGet = api.get;
-  vi.spyOn(api, 'get').mockImplementation((path, options) =>
-    path === '/api/checkins/pending'
-      ? (Promise.resolve({ checkin: null }) as ReturnType<typeof api.get>)
-      : originalGet(path, options),
+  vi.spyOn(api, 'get').mockImplementation((path, requestOptions) =>
+    path === '/api/me'
+      ? (Promise.resolve({ features: options.features }) as ReturnType<typeof api.get>)
+      : path === '/api/checkins/pending'
+        ? (Promise.resolve({ checkin: null }) as ReturnType<typeof api.get>)
+        : originalGet(path, requestOptions),
   );
   render(
     <QueryClientProvider client={client}>
@@ -812,5 +818,47 @@ it.each([
   const heading = within(screen.getByRole('heading', { level: 1 }));
   expect(heading.getByText(title)).toBeTruthy();
   expect(heading.getAllByText(expected)).toHaveLength(1);
+  client.clear();
+});
+
+it.each([
+  undefined,
+  { textLog: false, textLogAi: false },
+  { textLog: true, textLogAi: false },
+  { textLog: true, textLogAi: true },
+])(
+  'muestra la entrada de texto según features=%j y conserva la fecha abierta',
+  async (features) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(summary)));
+    const client = setup(undefined, true, false, features ? { features } : {});
+    await screen.findByText('Pan');
+    await waitFor(() => expect(client.getQueryState(['me', 'features'])?.status).toBe('success'));
+    const button = screen.queryByRole('button', { name: 'Escribir lo que comí' });
+    if (features?.textLog) {
+      expect(button).toBeTruthy();
+      fireEvent.click(button!);
+      expect(await screen.findByRole('dialog', { name: 'Escribir lo que comí' })).toBeTruthy();
+      expect(Boolean(screen.queryByText(/El texto se envía/))).toBe(features.textLogAi);
+      expect(screen.getByLabelText('URL').textContent).toBe('?fecha=2026-11-14');
+    } else expect(button).toBeNull();
+    client.clear();
+  },
+);
+it('abre la carga por texto desde el aviso con la fecha del día abierto', async () => {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(jsonResponse(recalculateSummary({ ...summary, date: todayLocal() }, []))),
+  );
+  const client = setup(undefined, true, false, {
+    lastShownAt: 0,
+    features: { textLog: true, textLogAi: false },
+  });
+  const prompt = await screen.findByRole('dialog', { name: '¿Querés cargar alguna comida?' });
+  fireEvent.click(within(prompt).getByRole('button', { name: 'Escribir lo que comí' }));
+  expect(await screen.findByRole('dialog', { name: 'Escribir lo que comí' })).toBeTruthy();
+  expect(screen.getByLabelText('URL').textContent).toBe('?fecha=2026-11-14');
   client.clear();
 });

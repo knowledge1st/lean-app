@@ -1,3 +1,5 @@
+import { TextLogSheet } from '../features/textLog/TextLogSheet';
+import { useTextLogFeatures } from '../features/textLog/api';
 import { CheckinCard } from '../features/checkin/CheckinCard';
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router';
@@ -21,6 +23,8 @@ import { AddFoodSheet } from '../features/foods/AddFoodSheet';
 import { useDaySummary, useDiaryMutation } from '../features/diary/api';
 import type { DiaryAction } from '../features/diary/optimistic';
 export function Hoy() {
+  const features = useTextLogFeatures();
+  const [writing, setWriting] = useState(false);
   const [params, setParams] = useSearchParams();
   const today = todayLocal();
   const raw = params.get('fecha');
@@ -54,12 +58,14 @@ export function Hoy() {
     setAdding(null);
     setEditing(null);
     setRepeating(null);
+    setWriting(false);
   }
   function mutate(action: DiaryAction) {
     mutation.mutate(action);
     setAdding(null);
     setEditing(null);
     setRepeating(null);
+    setWriting(false);
   }
   if (goal.isSuccess && goal.data === null && !goal.isFetching && !wizardSkipped) {
     return <Navigate to="/objetivo/nuevo" replace />;
@@ -142,6 +148,11 @@ export function Hoy() {
           )}
           <DaySummary summary={query.data} />
           <WeekBudgetBar date={date} />
+          {features.data?.textLog && (
+            <Button variant="secondary" onClick={() => setWriting(true)}>
+              Escribir lo que comí
+            </Button>
+          )}
           {MEALS.map((meal) => {
             const section = query.data.meals.find((item) => item.meal === meal);
             return (
@@ -171,13 +182,23 @@ export function Hoy() {
           !query.isFetching &&
           !adding &&
           !editing &&
-          !repeating
+          !repeating &&
+          !writing
         }
+        onTextLog={features.data?.textLog ? () => setWriting(true) : undefined}
         onChoose={(meal) => {
           navigate(todayLocal());
           setAdding({ date: todayLocal(), meal });
         }}
       />
+      {writing && (
+        <TextLogSheet
+          key={date}
+          date={date}
+          textLogAi={features.data?.textLogAi ?? false}
+          onClose={() => setWriting(false)}
+        />
+      )}
       {repeating && (
         <RepeatMealSheet date={date} meal={repeating} onClose={() => setRepeating(null)} />
       )}

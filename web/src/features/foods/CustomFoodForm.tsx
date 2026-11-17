@@ -21,17 +21,19 @@ export function CustomFoodForm({
   onBack,
   onCreated,
   initialBarcode,
+  initialName = '',
   mode,
   onModeChange,
 }: {
   initialBarcode?: string | undefined;
+  initialName?: string;
   onBack: () => void;
   onCreated: (food: Food) => void;
   mode: 'serving' | 'per100g';
   onModeChange: (mode: 'serving' | 'per100g') => void;
 }) {
   const [fields, setFields] = useState({
-    name: '',
+    name: initialName,
     brand: '',
     kcal: '',
     protein: '',

@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ComponentProps, CSSProperties } from 'react';
+import type { ComponentProps, CSSProperties, ReactNode } from 'react';
 import { Button } from './Button';
 
 function restoreFocus(opener: HTMLElement | null, content: HTMLElement | null) {
@@ -21,6 +21,7 @@ export type SheetProps = Omit<ComponentProps<typeof Dialog.Content>, 'title'> & 
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: string;
+  footer?: ReactNode;
 };
 
 export function Sheet({
@@ -29,6 +30,7 @@ export function Sheet({
   title,
   description,
   children,
+  footer,
   className = '',
   style,
   onOpenAutoFocus,
@@ -126,6 +128,7 @@ export function Sheet({
           <div ref={contentRef} className="min-h-0 overflow-y-auto overscroll-contain">
             {children}
           </div>
+          {footer && <div className="shrink-0">{footer}</div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

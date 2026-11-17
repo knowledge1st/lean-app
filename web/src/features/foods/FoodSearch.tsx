@@ -12,15 +12,17 @@ export function FoodSearch({
   onScan,
   busy = false,
   error,
+  initialQuery = '',
 }: {
   onSelect: (food: Food) => void;
   onCreate: () => void;
-  onScan: () => void;
+  onScan?: () => void;
+  initialQuery?: string;
   busy?: boolean;
   error?: string | undefined;
 }) {
-  const [text, setText] = useState('');
-  const [q, setQ] = useState('');
+  const [text, setText] = useState(initialQuery);
+  const [q, setQ] = useState(initialQuery);
   const [tab, setTab] = useState<'recent' | 'frequent'>('recent');
   const normalized = text.trim().slice(0, 80);
   useEffect(() => {
@@ -45,14 +47,16 @@ export function FoodSearch({
             onChange={(event) => setText(event.target.value)}
           />
         </div>
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={onScan}
-          aria-label="Escanear código de barras"
-        >
-          Escanear
-        </Button>
+        {onScan && (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={onScan}
+            aria-label="Escanear código de barras"
+          >
+            Escanear
+          </Button>
+        )}
       </div>
       {!normalized && (
         <div className="flex gap-2" role="group" aria-label="Alimentos habituales">
