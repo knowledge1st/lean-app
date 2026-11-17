@@ -13,8 +13,8 @@
     "seed:demo": "node scripts/seed-demo.ts",
     "seed:users": "node scripts/seed-users.ts",
     "seed:foods": "node scripts/seed-foods.ts",
-    "text-log:models": "node scripts/text-log-models.ts",
-    "eval:text-log": "node scripts/eval-text-log.ts"
+    "text-log:models": "node scripts/run-text-log.mjs text-log-models",
+    "eval:text-log": "node scripts/run-text-log.mjs eval-text-log"
   },
   "dependencies": {
     "@lean/shared": "workspace:*",

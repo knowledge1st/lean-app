@@ -1,21 +1,8 @@
-import { existsSync } from 'node:fs';
-import { registerHooks } from 'node:module';
+import { test } from 'vitest';
+import { safeScriptError } from './text-log-diagnostics';
 import type { Env } from '../src/env';
-// Node's TS stripping needs explicit extensions; application imports use Vite's
-// extensionless convention. Resolve those imports for this manual Node script.
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier.startsWith('.') && context.parentURL) {
-      const file = new URL(`${specifier}.ts`, context.parentURL);
-      if (existsSync(file)) return nextResolve(file.href, context);
-    }
-    return nextResolve(specifier, context);
-  },
-});
 
 async function main() {
-  const envFile = new URL('../.dev.vars', import.meta.url);
-  if (existsSync(envFile)) process.loadEnvFile(envFile);
   if (!process.env.DATABASE_URL) throw new Error('missing_database');
   const env: Env = {
     DATABASE_URL: process.env.DATABASE_URL,
@@ -33,11 +20,11 @@ async function main() {
       ? { TEXT_LOG_MAX_CANDIDATES: process.env.TEXT_LOG_MAX_CANDIDATES }
       : {}),
   };
-  const { getDb } = (await import('../src/db/' + 'client.ts')) as typeof import('../src/db/client');
-  const { getFreeModels } = (await import(
-    '../src/lib/textLog/' + 'freeModels.ts'
-  )) as typeof import('../src/lib/textLog/freeModels');
-  const state = await getFreeModels({ db: getDb(env), env });
+  const { getDb } = await import('../src/db/client');
+  const { getFreeModels } = await import('../src/lib/textLog/freeModels');
+  const state = await getFreeModels({ db: getDb(env), env }).catch(() => {
+    throw new Error('database_unavailable');
+  });
   console.log(
     JSON.stringify(
       {
@@ -50,7 +37,10 @@ async function main() {
     ),
   );
 }
-main().catch(() => {
-  console.error('No se pudo consultar el diagnóstico. Revisá la configuración y la conexión.');
-  process.exitCode = 1;
+test('text-log-models', async () => {
+  try {
+    await main();
+  } catch (error) {
+    throw safeScriptError(error, 'models_failed');
+  }
 });
