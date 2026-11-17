@@ -45,7 +45,7 @@ export function parseWithRules(text: string): AiMealParse {
   const items: AiMealParse['items'] = [];
   const normalized = normalize(text);
   let currentMeal: Meal = null;
-  for (const originalSegment of text.split(/[,;\n]+/)) {
+  for (const originalSegment of text.split(/(?:(?<!\d),|,(?!\d)|[;\n])+/)) {
     const segment = normalize(originalSegment);
     const markers = [...segment.matchAll(mealPattern)];
     // A trailing meal applies to the entire comma-delimited span, including con/y.

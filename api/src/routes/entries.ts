@@ -21,7 +21,7 @@ import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb, type Db } from '../db/client';
-import { foods, profiles, mealEntries as table } from '../db/schema';
+import { foods, profiles, mealEntries as table, textLogUsage } from '../db/schema';
 import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
 import { validate } from '../lib/validate';
@@ -295,7 +295,11 @@ export function createTextLogEntryRoutes(network?: typeof fetch) {
         if (reservation.reserved) {
           catalog = await buildCatalog(db, userId);
           const result = await interpretWithAi(deps, { ...buildPrompt(catalog), user: input.text });
-          await finishAiUse(db, reservation.usageId, result);
+          if (result.attempts === 0) {
+            await db.delete(textLogUsage).where(eq(textLogUsage.id, reservation.usageId));
+          } else {
+            await finishAiUse(db, reservation.usageId, result);
+          }
           if (result.ok && result.parse.items.length) {
             parse = result.parse;
             interpreter = 'ai';

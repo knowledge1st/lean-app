@@ -41,8 +41,37 @@ describe('rules interpreter', () => {
       });
     },
   );
+  it.each(['200,5 g de arroz', '200,5g de arroz', '200,5 gramos de arroz'])(
+    'recognizes decimal-comma grams %s',
+    (text) => {
+      const result = parseWithRules(text);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        said: text,
+        searchQuery: 'arroz',
+        grams: 200.5,
+        gramsStated: true,
+        units: null,
+      });
+      expect(aiMealParseSchema.safeParse(result).success).toBe(true);
+    },
+  );
+  it('preserves decimal commas while splitting a list and propagating meals', () => {
+    const result = parseWithRules('almorcé 200,5 g de arroz,1,5 huevos; pollo\ntomate');
+    expect(result.items.map((item) => item.searchQuery)).toEqual([
+      'arroz',
+      'huevos',
+      'pollo',
+      'tomate',
+    ]);
+    expect(result.items.map((item) => item.meal)).toEqual(['lunch', 'lunch', 'lunch', 'lunch']);
+    expect(result.items[0]).toMatchObject({ grams: 200.5, gramsStated: true, units: null });
+    expect(result.items[1]).toMatchObject({ grams: 100, gramsStated: false, units: 1.5 });
+    expect(aiMealParseSchema.safeParse(result).success).toBe(true);
+  });
   it.each([
     ['2 huevos', 2],
+    ['1,5 huevos', 1.5],
     ['media pizza', 0.5],
     ['1/2 pizza', 0.5],
     ['medio tomate', 0.5],

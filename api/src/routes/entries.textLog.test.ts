@@ -1,9 +1,9 @@
 import type { AiMealParse } from '@lean/shared';
-import { getTableName } from 'drizzle-orm';
+import { eq, getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDb, type Db } from '../db/client';
-import { mealEntries, type Food } from '../db/schema';
+import { mealEntries, textLogUsage, type Food } from '../db/schema';
 import type { AppEnv } from '../env';
 import { handleError } from '../lib/errors';
 import { getFreeModels, savedModels, refreshFreeRemaining } from '../lib/textLog/freeModels';
@@ -62,6 +62,8 @@ const parse: AiMealParse = {
 };
 const network = vi.fn<typeof fetch>();
 const insert = vi.fn();
+const deleteUsage = vi.fn();
+const deleteWhere = vi.fn();
 let db: Db;
 let app: Hono<AppEnv>;
 const request = (path: string, body: unknown, withKey = true) =>
@@ -86,6 +88,8 @@ beforeEach(() => {
   vi.mocked(reserveAiUse).mockResolvedValue({ reserved: true, usageId: 'usage', usedToday: 1 });
   vi.mocked(remainingToday).mockResolvedValue(9);
   network.mockImplementation(async () => reply());
+  deleteUsage.mockReturnValue({ where: deleteWhere });
+  deleteWhere.mockResolvedValue(undefined);
   insert.mockImplementation((table) => ({
     values: (values: Record<string, unknown>[]) => ({
       returning: async () =>
@@ -112,6 +116,7 @@ beforeEach(() => {
     }),
     execute: vi.fn().mockResolvedValue({ rows: [{ itemIndex: 0, chosen: food, food, score: 1 }] }),
     insert,
+    delete: deleteUsage,
   } as unknown as Db;
   vi.mocked(getDb).mockReturnValue(db);
   app = new Hono<AppEnv>();
@@ -214,6 +219,30 @@ describe('parse-text with injected fetch', () => {
     expect(network).not.toHaveBeenCalled();
     expect(finishAiUse).not.toHaveBeenCalled();
   });
+  it.each([
+    { ...state, candidates: [] },
+    { ...state, freeRemaining: 0 },
+  ])(
+    'releases personal quota when AI becomes unavailable after reservation %j',
+    async (unavailable) => {
+      vi.mocked(getFreeModels).mockResolvedValueOnce(state).mockResolvedValueOnce(unavailable);
+      const response = await request('parse-text', input);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        interpreter: 'rules',
+        warnings: ['Interpretación simple: revisá con más cuidado.'],
+      });
+      expect(reserveAiUse).toHaveBeenCalledExactlyOnceWith(
+        db,
+        'session-user',
+        'America/Argentina/Buenos_Aires',
+      );
+      expect(network).not.toHaveBeenCalled();
+      expect(deleteUsage).toHaveBeenCalledExactlyOnceWith(textLogUsage);
+      expect(deleteWhere).toHaveBeenCalledExactlyOnceWith(eq(textLogUsage.id, 'usage'));
+      expect(finishAiUse).not.toHaveBeenCalled();
+    },
+  );
   it.each(['429', '500', 'invalid', 'paid', 'empty', 'timeout'])(
     'falls back after AI failure %s',
     async (mode) => {
@@ -231,6 +260,7 @@ describe('parse-text with injected fetch', () => {
         warnings: ['Interpretación simple: revisá con más cuidado.'],
       });
       expect(finishAiUse).toHaveBeenCalledTimes(1);
+      expect(deleteUsage).not.toHaveBeenCalled();
       expect(insert).not.toHaveBeenCalled();
     },
   );
