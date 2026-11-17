@@ -26,20 +26,24 @@ const resolved = () =>
 checkins.get('/pending', async (c) => {
   const db = getDb(c.env),
     userId = c.get('userId');
-  const [goal] = await db
-    .select()
-    .from(goals)
-    .where(and(eq(goals.userId, userId), eq(goals.status, 'active')));
+  const [[goal], profile] = await Promise.all([
+    db
+      .select()
+      .from(goals)
+      .where(and(eq(goals.userId, userId), eq(goals.status, 'active'))),
+    selectProfile(db, userId),
+  ]);
   if (!goal) return c.json({ checkin: null });
-  const profile = await selectProfile(db, userId);
   const date = today(profile?.timeZone);
   const { weekStart, weekEnd, from } = checkinWindow(date);
-  const initial = await firstTarget(db, userId, goal.id);
-  if (initial.effectiveFrom > weekEnd) return c.json({ checkin: null });
   const condition = and(eq(table.goalId, goal.id), eq(table.weekStart, weekStart));
-  const [existing] = await db.select().from(table).where(condition);
+  const [initial, [existing], current] = await Promise.all([
+    firstTarget(db, userId, goal.id),
+    db.select().from(table).where(condition),
+    selectTargetForDate(db, userId, date),
+  ]);
+  if (initial.effectiveFrom > weekEnd) return c.json({ checkin: null });
   if (existing) return c.json({ checkin: existing.resolvedAt ? null : serializeCheckin(existing) });
-  const current = await selectTargetForDate(db, userId, date);
   if (!current) return c.json({ checkin: null });
   const [weights, intake, points] = await Promise.all([
     db
