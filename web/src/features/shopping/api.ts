@@ -163,11 +163,11 @@ export function useShoppingList(week: string) {
     },
   });
 }
-export function waitForShoppingIdle(client: QueryClient): Promise<void> {
-  if (!client.isMutating({ mutationKey: ['shopping'] })) return Promise.resolve();
+export function waitForShoppingIdle(client: QueryClient, week: string): Promise<void> {
+  if (!client.isMutating({ mutationKey: shoppingKey(week) })) return Promise.resolve();
   return new Promise((resolve) => {
     const stop = client.getMutationCache().subscribe(() => {
-      if (!client.isMutating({ mutationKey: ['shopping'] })) {
+      if (!client.isMutating({ mutationKey: shoppingKey(week) })) {
         stop();
         resolve();
       }
@@ -276,7 +276,7 @@ export function useShoppingBulk(week: string) {
     onSettled: (result, error, _kind, context) => {
       if (!error && !result?.revalidate) return;
       // The list query skips server reads while a bulk mutation is pending.
-      void waitForShoppingIdle(client).then(() => {
+      void waitForShoppingIdle(client, week).then(() => {
         if (context && sessionFor(client) === context.session)
           return client.invalidateQueries({ queryKey: shoppingKey(week) });
       });
@@ -288,7 +288,8 @@ export function useShoppingBulk(week: string) {
     data: mutation.data?.items,
     run: async (kind: 'generate' | 'clear') => {
       const session = sessionFor(client);
-      while (client.isMutating({ mutationKey: ['shopping'] })) await waitForShoppingIdle(client);
+      while (client.isMutating({ mutationKey: shoppingKey(week) }))
+        await waitForShoppingIdle(client, week);
       if (sessionFor(client) !== session) throw new Error('La sesión cambió.');
       return (await mutation.mutateAsync(kind)).items;
     },
