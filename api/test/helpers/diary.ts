@@ -1,7 +1,7 @@
 import type { Entry, Food, LoginResponse } from '@lean/shared';
 import { eq } from 'drizzle-orm';
 import { expect } from 'vitest';
-import { foods, mealEntries } from '../../src/db/schema';
+import { foods, mealEntries, shoppingItems } from '../../src/db/schema';
 import { app } from '../../src/index';
 import { testEnv } from '../../src/test-env';
 import { createTestUser, deleteTestUser, getTestDb, testDatabaseUrl } from './db';
@@ -46,6 +46,8 @@ export function diaryFixture() {
     },
     async cleanup() {
       // Remove RESTRICT references before deleting custom foods and users.
+      for (const { user } of accounts)
+        await db.delete(shoppingItems).where(eq(shoppingItems.userId, user.id));
       for (const { user } of accounts)
         await db.delete(mealEntries).where(eq(mealEntries.userId, user.id));
       for (const { user } of accounts) await db.delete(foods).where(eq(foods.ownerId, user.id));
