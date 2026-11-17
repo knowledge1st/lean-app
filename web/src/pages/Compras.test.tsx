@@ -375,10 +375,73 @@ it('revalida otra semana guardada mientras una regeneración sigue pendiente', a
     false,
   );
   expect(client.getQueryData(shoppingKey(nextWeek))).toEqual([server]);
-  expect(client.isMutating({ mutationKey: ['shopping', 'bulk', week] })).toBe(1);
+  expect(client.isMutating({ mutationKey: ['shopping', week, 'bulk'] })).toBe(1);
   await act(async () => generate.resolve(jsonResponse([item(1)])));
   await waitFor(() => expect(client.isMutating()).toBe(0));
   expect(client.getQueryData(shoppingKey(nextWeek))).toEqual([server]);
+});
+it('revalida B al terminar su marcado aunque A siga con un PATCH pendiente', async () => {
+  const nextWeek = '2026-W48';
+  const original = item(1);
+  const cached = item(2);
+  const updated = { ...cached, checked: true };
+  const server = [updated, item(3, { label: 'Desde el servidor' })];
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      userId: 'user-1',
+      weeks: { [nextWeek]: { items: [cached], savedAt: Date.now() - 60000 } },
+    }),
+  );
+  const patchA = deferred();
+  const patchB = deferred();
+  const hydration = deferred();
+  const revalidation = deferred();
+  let readsB = 0;
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+    if (init?.method === 'PATCH')
+      return String(input).endsWith(original.id) ? patchA.promise : patchB.promise;
+    if (String(input).endsWith(`week=${nextWeek}`)) {
+      readsB++;
+      return readsB === 1 ? hydration.promise : revalidation.promise;
+    }
+    return Promise.resolve(jsonResponse([original]));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const { client } = setup();
+  fireEvent.click(await screen.findByRole('checkbox', { name: original.label }));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) => String(url).endsWith(original.id) && init?.method === 'PATCH',
+      ),
+    ).toBe(true),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }));
+  await waitFor(() => expect(readsB).toBe(1));
+  const hydrationSignal = fetchMock.mock.calls.find(([url]) =>
+    String(url).endsWith(`week=${nextWeek}`),
+  )![1]?.signal;
+  fireEvent.click(screen.getByRole('checkbox', { name: cached.label }));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) => String(url).endsWith(cached.id) && init?.method === 'PATCH',
+      ),
+    ).toBe(true),
+  );
+  expect(hydrationSignal?.aborted).toBe(true);
+  await act(async () => patchB.resolve(jsonResponse(updated)));
+  await waitFor(() => expect(readsB).toBe(2));
+  await act(async () => revalidation.resolve(jsonResponse(server)));
+  await screen.findByRole('checkbox', { name: 'Desde el servidor' });
+  expect(client.getQueryData(shoppingKey(nextWeek))).toEqual(server);
+  expect(client.isMutating({ mutationKey: ['shopping', week] })).toBe(1);
+  expect(client.isMutating({ mutationKey: ['shopping', nextWeek] })).toBe(0);
+  await act(async () => hydration.resolve(jsonResponse([cached])));
+  expect(client.getQueryData(shoppingKey(nextWeek))).toEqual(server);
+  await act(async () => patchA.resolve(jsonResponse({ ...original, checked: true })));
+  await waitFor(() => expect(client.isMutating()).toBe(0));
 });
 it('revalida la semana si generar falla después de cancelar la hidratación', async () => {
   const cached = item(1, { label: 'Guardado' });

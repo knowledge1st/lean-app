@@ -43,7 +43,7 @@ function ShoppingWeek({ week, onSelect }: { week: string; onSelect: (week: strin
   const bulk = useShoppingBulk(week);
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const bulkCount = useIsMutating({ mutationKey: ['shopping', 'bulk', week] });
+  const bulkCount = useIsMutating({ mutationKey: ['shopping', week, 'bulk'] });
   const blocked = busy || bulkCount > 0;
   const [noPlanned, setNoPlanned] = useState(false);
   const items = query.data ?? [];

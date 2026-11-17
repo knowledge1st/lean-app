@@ -152,7 +152,7 @@ export function useShoppingList(week: string) {
       const current = () => client.getQueryData<ShoppingItem[]>(shoppingKey(week));
       const pending = () =>
         sessionFor(client).weeks.has(week) ||
-        client.isMutating({ mutationKey: ['shopping', 'bulk', week] }) > 0;
+        client.isMutating({ mutationKey: ['shopping', week, 'bulk'] }) > 0;
       if (pending() && current()) return current()!;
       const token = getToken();
       const items = await getShoppingList(week, signal);
@@ -179,7 +179,7 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
   const client = useQueryClient();
   const toast = useToast();
   return useMutation({
-    mutationKey: ['shopping', kind],
+    mutationKey: ['shopping', week, kind],
     networkMode: 'always',
     mutationFn: async (action: Action) => {
       if (action.kind === 'add')
@@ -239,7 +239,7 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
       );
       publish(client, week, context.state);
       if (!context.state.pending.length) context.session.weeks.delete(week);
-      if (client.isMutating({ mutationKey: ['shopping'] }) === 1)
+      if (client.isMutating({ mutationKey: ['shopping', week] }) === 1)
         await client.invalidateQueries({ queryKey: shoppingKey(week) });
     },
   });
@@ -249,7 +249,7 @@ export function useShoppingBulk(week: string) {
   const client = useQueryClient();
   const toast = useToast();
   const mutation = useMutation({
-    mutationKey: ['shopping', 'bulk', week],
+    mutationKey: ['shopping', week, 'bulk'],
     networkMode: 'always',
     mutationFn: async (kind: 'generate' | 'clear') => {
       await client.cancelQueries({ queryKey: shoppingKey(week) });
