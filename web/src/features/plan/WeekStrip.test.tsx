@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MEALS, ZERO_MACROS, type DaySummary } from '@lean/shared';
 import { WeekStrip } from './WeekStrip';
@@ -139,8 +139,8 @@ it('muestra carga sin ceros y reúne los errores con un único reintento', async
   expect(screen.getAllByRole('button', { name: 'Reintentar' })).toHaveLength(1);
   const calls = fetchMock.mock.calls.length;
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  await waitFor(() => expect(fetchMock.mock.calls.length).toBe(calls + 2));
   await screen.findByText('No se pudieron cargar algunos días');
-  expect(fetchMock.mock.calls.length).toBe(calls + 2);
   fetchMock.mockRestore();
   client.clear();
 });
