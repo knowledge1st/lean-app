@@ -40,17 +40,18 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function setup() {
+function setup(listWeek = weekA, items = [item]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   clients.push(client);
-  client.setQueryData(shoppingKey(weekB), [item]);
+  client.setQueryData(shoppingKey(weekB), items);
   const hook = renderHook(
     () => ({
-      list: useShoppingList(weekA),
-      bulk: useShoppingBulk(weekA),
+      list: useShoppingList(listWeek),
+      bulk: useShoppingBulk(listWeek),
       patch: useShoppingMutation(weekB, 'toggle'),
+      add: useShoppingMutation(weekB, 'add'),
     }),
     {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -60,6 +61,106 @@ function setup() {
   );
   return { client, ...hook };
 }
+
+it.each(['rechazados', 'exitosos'] as const)(
+  'revalida una sola vez tras dos PATCH %s en el mismo turno',
+  async (outcome) => {
+    const items = [item, { ...item, id: '00000000-0000-4000-8000-000000000002' }];
+    const requests = items.map(() => deferred<ShoppingItem>());
+    const get = vi.spyOn(api, 'get').mockResolvedValue(items);
+    const update = vi
+      .spyOn(api, 'patch')
+      .mockReturnValueOnce(requests[0]!.promise)
+      .mockReturnValueOnce(requests[1]!.promise);
+    const { client, result } = setup(weekB, items);
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+    get.mockClear();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    act(() => {
+      items.forEach(({ id }) =>
+        result.current.patch.mutate({ kind: 'toggle', id, changes: { checked: true } }),
+      );
+    });
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(client.getQueryData(shoppingKey(weekB))).toEqual(
+      items.map((entry) => ({ ...entry, checked: true })),
+    );
+    const expected = items.map((entry) => ({ ...entry, checked: outcome === 'exitosos' }));
+    get.mockResolvedValue(expected);
+    await act(async () => {
+      requests.forEach((request, index) => {
+        if (outcome === 'rechazados') request.reject(new Error('offline'));
+        else request.resolve(expected[index]!);
+      });
+    });
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(client.getQueryData(shoppingKey(weekB))).toEqual(expected);
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: shoppingKey(weekB) });
+    expect(get).toHaveBeenCalledExactlyOnceWith(`/api/shopping?week=${weekB}`, {
+      signal: expect.any(AbortSignal),
+    });
+  },
+);
+
+it('espera al alta pendiente antes de revalidar la semana', async () => {
+  const patch = deferred<ShoppingItem>();
+  const add = deferred<ShoppingItem>();
+  const added = { ...item, id: '00000000-0000-4000-8000-000000000002', label: 'Leche' };
+  const get = vi.spyOn(api, 'get').mockResolvedValue([item]);
+  const update = vi.spyOn(api, 'patch').mockReturnValue(patch.promise);
+  const post = vi.spyOn(api, 'post').mockReturnValue(add.promise);
+  const { client, result } = setup(weekB);
+  await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+  get.mockClear();
+  const invalidate = vi.spyOn(client, 'invalidateQueries');
+  act(() => {
+    result.current.patch.mutate({ kind: 'toggle', id: item.id, changes: { checked: true } });
+    result.current.add.mutate({ kind: 'add', item: added });
+  });
+  await waitFor(() => {
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+  await act(async () => patch.resolve({ ...item, checked: true }));
+  await waitFor(() => expect(client.isMutating()).toBe(1));
+  expect(invalidate).not.toHaveBeenCalled();
+  expect(get).not.toHaveBeenCalled();
+  const expected = [{ ...item, checked: true }, added];
+  get.mockResolvedValue(expected);
+  await act(async () => add.resolve(added));
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+  expect(client.getQueryData(shoppingKey(weekB))).toEqual(expected);
+  expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: shoppingKey(weekB) });
+  expect(get).toHaveBeenCalledTimes(1);
+});
+
+it('omite la invalidación si una acción masiva de la misma semana sigue pendiente', async () => {
+  const patch = deferred<ShoppingItem>();
+  const generate = deferred<ShoppingItem[]>();
+  const get = vi.spyOn(api, 'get').mockResolvedValue([item]);
+  const update = vi.spyOn(api, 'patch').mockReturnValue(patch.promise);
+  const post = vi.spyOn(api, 'post').mockReturnValue(generate.promise);
+  const { client, result } = setup(weekB);
+  await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+  get.mockClear();
+  const invalidate = vi.spyOn(client, 'invalidateQueries');
+  act(() => {
+    result.current.patch.mutate({ kind: 'toggle', id: item.id, changes: { checked: true } });
+  });
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  act(() => result.current.bulk.mutate('generate'));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  await act(async () => patch.resolve({ ...item, checked: true }));
+  await waitFor(() => expect(client.isMutating()).toBe(1));
+  expect(invalidate).not.toHaveBeenCalled();
+  expect(get).not.toHaveBeenCalled();
+  const generated = [{ ...item, label: 'Lista generada' }];
+  await act(async () => generate.resolve(generated));
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+  expect(client.getQueryData(shoppingKey(weekB))).toEqual(generated);
+  expect(invalidate).not.toHaveBeenCalled();
+  expect(get).not.toHaveBeenCalled();
+});
 
 it('revalida A tras una regeneración fallida sin esperar al PATCH pendiente en B', async () => {
   const generate = deferred<ShoppingItem[]>();

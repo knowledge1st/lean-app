@@ -238,9 +238,11 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
         (pending) => pending !== context.pending,
       );
       publish(client, week, context.state);
-      if (!context.state.pending.length) context.session.weeks.delete(week);
-      if (client.isMutating({ mutationKey: ['shopping', week] }) === 1)
-        await client.invalidateQueries({ queryKey: shoppingKey(week) });
+      if (context.state.pending.length === 0) {
+        context.session.weeks.delete(week);
+        if (!client.isMutating({ mutationKey: ['shopping', week, 'bulk'] }))
+          await client.invalidateQueries({ queryKey: shoppingKey(week) });
+      }
     },
   });
 }
