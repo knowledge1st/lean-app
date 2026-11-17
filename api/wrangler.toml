@@ -7,3 +7,7 @@ compatibility_date = "2026-11-13"
 
 [vars]
 ALLOWED_ORIGIN = "https://knowledge1st.github.io"
+# Orden según la evaluación de T100 del 2026-11-17 (Nemotron 26/29 comidas; particle-1 respondió bien la prueba manual; ling-3.2-flash falló por 429 y timeouts).
+TEXT_LOG_PREFERRED_MODELS = "nvidia/nemotron-*,particle-ai/*,meta-llama/*,google/*,qwen/*,mistralai/*,deepseek/*"
+TEXT_LOG_MODEL_DENYLIST = ""
+TEXT_LOG_MAX_CANDIDATES = "3"

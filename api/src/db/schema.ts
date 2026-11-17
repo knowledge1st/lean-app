@@ -5,6 +5,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -379,3 +380,45 @@ export type ExerciseLog = typeof exerciseLogs.$inferSelect;
 export type NewExerciseLog = typeof exerciseLogs.$inferInsert;
 export type ShoppingItem = typeof shoppingItems.$inferSelect;
 export type NewShoppingItem = typeof shoppingItems.$inferInsert;
+
+export const textLogUsage = pgTable(
+  'text_log_usage',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    model: text('model'),
+    promptTokens: integer('prompt_tokens'),
+    completionTokens: integer('completion_tokens'),
+    attempts: integer('attempts').notNull().default(0),
+    outcome: text('outcome').notNull(),
+  },
+  (t) => [
+    index('text_log_usage_user_id_created_at_idx').on(t.userId, t.createdAt),
+    check(
+      'text_log_usage_outcome_check',
+      sql`${t.outcome} IN ('ok', 'invalid_output', 'timeout', 'provider_error', 'rate_limited', 'non_free_model', 'no_models')`,
+    ),
+  ],
+);
+
+export const textLogModels = pgTable(
+  'text_log_models',
+  {
+    id: integer('id').primaryKey().default(1),
+    checkedAt: timestamp('checked_at', { withTimezone: true }),
+    candidates: jsonb('candidates').$type<string[]>().notNull().default([]),
+    freeRemaining: integer('free_remaining'),
+    freeCheckedAt: timestamp('free_checked_at', { withTimezone: true }),
+  },
+  (t) => [check('text_log_models_singleton_check', sql`${t.id} = 1`)],
+);
+
+export const textLogModelHealth = pgTable('text_log_model_health', {
+  model: text('model').primaryKey(),
+  failures: integer('failures').notNull().default(0),
+  lastFailureAt: timestamp('last_failure_at', { withTimezone: true }),
+  degradedUntil: timestamp('degraded_until', { withTimezone: true }),
+});

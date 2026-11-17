@@ -1,3 +1,6 @@
 # Copy to .dev.vars and fill in. In local dev ALLOWED_ORIGIN is http://localhost:5173.
 DATABASE_URL=
 ALLOWED_ORIGIN=
+
+# Opcional: key de OpenRouter para interpretar comidas con modelos gratuitos.
+OPENROUTER_API_KEY=

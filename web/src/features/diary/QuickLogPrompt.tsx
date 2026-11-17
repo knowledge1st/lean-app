@@ -18,10 +18,12 @@ export function QuickLogPrompt({
   ready,
   summary,
   onChoose,
+  onTextLog,
 }: {
   ready: boolean;
   summary: DaySummary | undefined;
   onChoose: (meal: Meal) => void;
+  onTextLog?: (() => void) | undefined;
 }) {
   const [candidate, setCandidate] = useState(false);
   const mounted = useRef(false);
@@ -101,6 +103,7 @@ export function QuickLogPrompt({
   return summary.date === todayLocal() ? (
     <QuickLogSheet
       summary={summary}
+      onTextLog={onTextLog}
       onChoose={onChoose}
       onClose={close}
       onShown={recordShown}
@@ -108,6 +111,7 @@ export function QuickLogPrompt({
     />
   ) : (
     <QuickLogTodaySheet
+      onTextLog={onTextLog}
       onChoose={onChoose}
       onClose={close}
       onShown={recordShown}
@@ -117,11 +121,13 @@ export function QuickLogPrompt({
 }
 function QuickLogTodaySheet({
   onChoose,
+  onTextLog,
   onClose,
   onShown,
   onSuppress,
 }: {
   onChoose: (meal: Meal) => void;
+  onTextLog?: (() => void) | undefined;
   onClose: () => void;
   onShown: () => void;
   onSuppress: () => void;
@@ -130,6 +136,7 @@ function QuickLogTodaySheet({
   return query.isSuccess && !query.isFetching ? (
     <QuickLogSheet
       summary={query.data}
+      onTextLog={onTextLog}
       onChoose={onChoose}
       onClose={onClose}
       onShown={onShown}
@@ -140,12 +147,14 @@ function QuickLogTodaySheet({
 function QuickLogSheet({
   summary,
   onChoose,
+  onTextLog,
   onClose,
   onShown,
   onSuppress,
 }: {
   summary: DaySummary;
   onChoose: (meal: Meal) => void;
+  onTextLog?: (() => void) | undefined;
   onClose: () => void;
   onShown: () => void;
   onSuppress: () => void;
@@ -200,6 +209,18 @@ function QuickLogSheet({
           </Button>
         ))}
       </div>
+      {onTextLog && (
+        <Button
+          variant="secondary"
+          className="mt-4 w-full"
+          onClick={() => {
+            onClose();
+            onTextLog();
+          }}
+        >
+          Escribir lo que comí
+        </Button>
+      )}
       <Button variant="ghost" className="mt-4 w-full" onClick={onClose}>
         Ahora no
       </Button>

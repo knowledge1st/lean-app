@@ -8,7 +8,7 @@ Una web mobile-first, en español, donde dos personas (cada una con su usuario) 
 
 | Tema | Decisión |
 |---|---|
-| Carga de comidas | Buscador de alimentos + escáner de código de barras. Sin IA. |
+| Carga de comidas | Buscador de alimentos + escáner de código de barras. Además, carga por texto libre (T100): la persona escribe lo que comió, modelos **gratuitos** de OpenRouter lo interpretan (con un parser de reglas como respaldo) y la app propone las entradas para revisar y confirmar. Opcional: sin key ni modelos gratuitos sigue funcionando con el parser. |
 | Objetivos | Tres modos: peso objetivo con fecha, composición corporal, macros manuales. |
 | Datos entre usuarios | Totalmente privados. Solo se comparte el catálogo de alimentos. |
 | Login | Usuario y contraseña, dos cuentas creadas de antemano, sin registro público. |
@@ -30,7 +30,8 @@ Celular ──HTTPS──> GitHub Pages (estáticos: React)
    │
    └──HTTPS/JSON──> Cloudflare Worker (Hono, API REST)
                         ├──> Neon Postgres (driver HTTP)
-                        └──> Open Food Facts (búsqueda y código de barras)
+                        ├──> Open Food Facts (búsqueda y código de barras)
+                        └──> OpenRouter (solo modelos :free, carga por texto; opcional)
 ```
 
 **Monorepo con pnpm workspaces**
@@ -56,6 +57,7 @@ Celular ──HTTPS──> GitHub Pages (estáticos: React)
 3. **Neon se suspende tras 5 minutos sin uso.** El primer request tarda cerca de un segundo. La UI muestra esqueletos de carga y no bloquea.
 4. **Open Food Facts limita la búsqueda (unas 10 por minuto por IP).** El Worker hace de proxy, busca primero en la base propia y guarda en caché todo producto que alguien elige.
 5. **Workers: 100.000 requests por día.** Sobra para dos personas; no requiere diseño especial.
+6. **OpenRouter, modelos `:free`: 20 pedidos por minuto y 50 por día para toda la cuenta (sin créditos comprados).** Tope propio de 20 interpretaciones con IA por usuario y día; el parser de reglas no consume cupo. Ningún pedido puede generar costo: solo IDs `:free` con precio `"0"`, fallback solo entre gratuitos, `provider.max_price` en 0 y cuenta sin saldo. El catálogo de modelos se descubre en vivo, se guarda 6 h y los modelos que fallan 3 veces en 24 h quedan fuera 24 h.
 
 ## 4. Seguridad (la web está expuesta a internet)
 
@@ -132,7 +134,8 @@ Todo el motor son funciones puras con tests unitarios (Vitest): casos normales, 
 | Auth | `POST /auth/login`, `POST /auth/logout`, `POST /auth/password`, `GET /me` |
 | Perfil | `GET/PUT /profile` |
 | Alimentos | `GET /foods/search?q=`, `GET /foods/barcode/:code`, `POST /foods` (personalizado), `GET /foods/recent` |
-| Diario y plan | `GET /entries?from=&to=`, `POST /entries`, `PATCH /entries/:id`, `DELETE /entries/:id`, `POST /entries/copy` (día o semana) |
+| Diario y plan | `GET /entries?from=&to=`, `POST /entries`, `PATCH /entries/:id`, `DELETE /entries/:id`, `POST /entries/copy` (día, comida o semana), `POST /entries/parse-text` (interpreta texto libre, no guarda), `POST /entries/batch` (crea N entradas, todo o nada) |
+| Carga por texto | `GET /text-log/status` (diagnóstico de modelos gratuitos y cupo, sin datos de usuarios); `GET /me` suma `features.textLog` y `features.textLogAi` |
 | Objetivos | `POST /goals/preview` (calcula sin guardar), `POST /goals`, `GET /goals/active`, `GET /targets?date=` |
 | Check-in | `GET /checkins/pending`, `POST /checkins/:id/resolve` |
 | Cuerpo | `GET/PUT /body-logs/:date`, `GET /body-logs?from=&to=` |
@@ -148,6 +151,7 @@ Navegación inferior fija con cinco pestañas: **Hoy · Plan · Compras · Progr
 - **Asistente inicial (4 pasos).** Datos personales → tipo de objetivo → detalle del objetivo → resumen con las metas diarias, semanales y la fecha estimada, antes de confirmar.
 - **Hoy.** Anillo de calorías restantes, tres barras de macros, comidas del día agrupadas, agua con botones +250 ml, ejercicio, y la tarjeta de check-in cuando corresponde. Lo planificado aparece atenuado con un botón "Ya lo comí". Selector de fecha para ver o corregir otros días.
 - **Agregar alimento.** Hoja inferior con buscador, pestañas Recientes y Frecuentes, botón de escáner y "Crear alimento". Al elegir: cantidad en gramos o porciones, con los macros actualizándose en vivo.
+- **Escribir lo que comí.** Desde Hoy (aviso de carga rápida y arriba de las comidas): texto libre de hasta 1000 caracteres → revisión agrupada por comida con alimento (≈ si es aproximado), gramos editables y kcal en vivo, cambiar alimento, comida, quitar o excluir → "Guardar N alimentos" con Deshacer. Nada se guarda sin confirmar.
 - **Plan.** Tira de siete días con el total de cada uno coloreado según se acerque a la meta. Detalle del día igual al de Hoy. Acciones: copiar día, copiar semana anterior, generar lista de compras.
 - **Compras.** Ítems sumados por alimento para la semana, con casillas y posibilidad de agregar ítems a mano.
 - **Progreso.** Gráfico de peso (real, tendencia y trayectoria esperada), medidas, cumplimiento semanal, historial de check-ins.
@@ -184,6 +188,7 @@ Cada etapa termina en algo usable y desplegado.
 | 7 | Plan y compras | Plan semanal, copiar día y semana, lista de compras |
 | 8 | Ajuste automático | Check-in semanal con propuesta |
 | 9 | Pulido | Estados vacíos y de error, modo oscuro, accesibilidad, revisión de seguridad |
+| 10 | Carga por texto | Frase libre → propuesta por comida con alimentos de la semilla, revisión y guardado; costo US$ 0 |
 
 Las etapas 0 a 3 dan una versión mínima utilizable. La 5 es la de mayor valor y la 8 depende de tener al menos dos semanas de datos reales.
 
@@ -203,3 +208,5 @@ Las etapas 0 a 3 dan una versión mínima utilizable. La 5 es la de mayor valor 
 | Token en `localStorage` expuesto ante XSS | CSP estricta, sin HTML inyectado, dependencias mínimas; migrar a cookie con dominio propio |
 | Objetivos poco saludables | Pisos de calorías y tope de ritmo en el motor, con aviso explícito en el asistente |
 | Límites del free tier cambian | Ninguna pieza depende de un servicio pago; el Worker y Neon son reemplazables sin tocar el frontend |
+| Modelos gratuitos de OpenRouter que cambian, se saturan o desaparecen | Descubrimiento en vivo, degradación automática, parser de reglas como respaldo; la función es opcional |
+| El texto de comidas sale hacia un tercero | Se envía solo el texto (sin usuario ni cuenta), con aviso en la hoja; la app no lo guarda ni lo loguea. Los proveedores gratuitos pueden registrarlo (decisión del usuario) |

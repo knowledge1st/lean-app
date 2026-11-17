@@ -91,5 +91,11 @@ me.get('/', async (c) => {
     .from(users)
     .where(eq(users.id, c.get('userId')));
   if (!user) throw new AppError(401, 'unauthorized', 'Sesión inválida o vencida');
-  return c.json(user);
+  return c.json({
+    ...user,
+    features: {
+      textLog: true,
+      textLogAi: Boolean(c.env.OPENROUTER_API_KEY),
+    },
+  });
 });

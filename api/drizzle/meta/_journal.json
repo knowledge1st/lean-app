@@ -43,6 +43,13 @@
       "when": 1794916953154,
       "tag": "0005_checkins_result",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794935423182,
+      "tag": "0006_text_log",
+      "breakpoints": true
     }
   ]
 }
