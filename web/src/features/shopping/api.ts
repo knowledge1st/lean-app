@@ -151,8 +151,8 @@ export function useShoppingList(week: string) {
     queryFn: async ({ signal }) => {
       const current = () => client.getQueryData<ShoppingItem[]>(shoppingKey(week));
       const pending = () =>
-        sessionFor(client).weeks.size > 0 ||
-        client.isMutating({ mutationKey: ['shopping', 'bulk'] }) > 0;
+        sessionFor(client).weeks.has(week) ||
+        client.isMutating({ mutationKey: ['shopping', 'bulk', week] }) > 0;
       if (pending() && current()) return current()!;
       const token = getToken();
       const items = await getShoppingList(week, signal);
@@ -240,7 +240,7 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
       publish(client, week, context.state);
       if (!context.state.pending.length) context.session.weeks.delete(week);
       if (client.isMutating({ mutationKey: ['shopping'] }) === 1)
-        await client.invalidateQueries({ queryKey: ['shopping'] });
+        await client.invalidateQueries({ queryKey: shoppingKey(week) });
     },
   });
 }
@@ -249,7 +249,7 @@ export function useShoppingBulk(week: string) {
   const client = useQueryClient();
   const toast = useToast();
   const mutation = useMutation({
-    mutationKey: ['shopping', 'bulk'],
+    mutationKey: ['shopping', 'bulk', week],
     networkMode: 'always',
     mutationFn: async (kind: 'generate' | 'clear') => {
       await client.cancelQueries({ queryKey: shoppingKey(week) });
@@ -273,8 +273,8 @@ export function useShoppingBulk(week: string) {
       if (user && !revalidate) persist(user.id, week, items, Date.now());
       if (kind === 'generate') toast('Lista actualizada');
     },
-    onSettled: (result, _error, _kind, context) => {
-      if (!result?.revalidate) return;
+    onSettled: (result, error, _kind, context) => {
+      if (!error && !result?.revalidate) return;
       // The list query skips server reads while a bulk mutation is pending.
       void waitForShoppingIdle(client).then(() => {
         if (context && sessionFor(client) === context.session)

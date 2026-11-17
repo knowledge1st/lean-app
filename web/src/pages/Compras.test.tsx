@@ -159,6 +159,7 @@ it('marca diez filas rápido, conserva optimismo durante refetch y acepta respue
     if (index !== 3) expect(invalidate).not.toHaveBeenCalled();
   }
   await waitFor(() => expect(client.isMutating()).toBe(0));
+  expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: key });
   expect(client.getQueryData(key)).toEqual(server);
   expect(
     fetchMock.mock.calls
@@ -333,6 +334,93 @@ it('regenera reemplazando con manuales y marcados de la respuesta', async () => 
     true,
   );
   expect(screen.getByRole('checkbox', { name: 'Servilletas' })).toBeTruthy();
+});
+it('revalida otra semana guardada mientras una regeneración sigue pendiente', async () => {
+  const nextWeek = '2026-W48';
+  const cached = item(2, { label: 'Guardado' });
+  const server = item(3, { label: 'Desde el servidor' });
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      userId: 'user-1',
+      weeks: { [nextWeek]: { items: [cached], savedAt: Date.now() } },
+    }),
+  );
+  const generate = deferred();
+  const hydration = deferred();
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation((input) => {
+    if (String(input).includes('/generate')) return generate.promise;
+    if (String(input).endsWith(`week=${nextWeek}`)) return hydration.promise;
+    return Promise.resolve(jsonResponse([item(1)]));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const { client } = setup();
+  await screen.findByRole('checkbox', { name: 'Alimento 1' });
+  fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/generate'))).toBe(true),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Semana siguiente' }));
+  expect(screen.getByRole('checkbox', { name: cached.label })).toBeTruthy();
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`week=${nextWeek}`))).toBe(
+      true,
+    ),
+  );
+  await act(async () => hydration.resolve(jsonResponse([server])));
+  await screen.findByRole('checkbox', { name: server.label });
+  expect(screen.queryByRole('checkbox', { name: cached.label })).toBeNull();
+  expect((screen.getByRole('checkbox', { name: server.label }) as HTMLInputElement).disabled).toBe(
+    false,
+  );
+  expect(client.getQueryData(shoppingKey(nextWeek))).toEqual([server]);
+  expect(client.isMutating({ mutationKey: ['shopping', 'bulk', week] })).toBe(1);
+  await act(async () => generate.resolve(jsonResponse([item(1)])));
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+  expect(client.getQueryData(shoppingKey(nextWeek))).toEqual([server]);
+});
+it('revalida la semana si generar falla después de cancelar la hidratación', async () => {
+  const cached = item(1, { label: 'Guardado' });
+  const server = item(2, { label: 'Desde el servidor' });
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      userId: 'user-1',
+      weeks: { [week]: { items: [cached], savedAt: Date.now() } },
+    }),
+  );
+  const hydration = deferred();
+  const generate = deferred();
+  const revalidation = deferred();
+  let reads = 0;
+  const fetchMock = vi.fn<typeof fetch>().mockImplementation((input) => {
+    if (String(input).includes('/generate')) return generate.promise;
+    reads++;
+    return reads === 1 ? hydration.promise : revalidation.promise;
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const { client } = setup();
+  await waitFor(() => expect(reads).toBe(1));
+  const invalidate = vi.spyOn(client, 'invalidateQueries');
+  fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(fetchMock.mock.calls[0]![1]?.signal?.aborted).toBe(true);
+  await act(async () => generate.reject(new Error('offline')));
+  await screen.findByText('No se pudo actualizar la lista. No se pudo conectar con el servidor.');
+  await waitFor(() => expect(reads).toBe(2));
+  expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: key });
+  expect(String(fetchMock.mock.calls[2]![0])).toContain(`/api/shopping?week=${week}`);
+  expect(client.isMutating()).toBe(0);
+  await act(async () => revalidation.resolve(jsonResponse([server])));
+  await screen.findByRole('checkbox', { name: server.label });
+  expect(screen.queryByRole('checkbox', { name: cached.label })).toBeNull();
+  expect(client.getQueryData(key)).toEqual([server]);
+  expect(savedWeek().items).toEqual([server]);
+  await act(async () => hydration.resolve(jsonResponse([cached])));
+  expect(client.getQueryData(key)).toEqual([server]);
+  expect(savedWeek().items).toEqual([server]);
 });
 it('en vacío oculta el avance y las acciones', async () => {
   mockServer([]);
