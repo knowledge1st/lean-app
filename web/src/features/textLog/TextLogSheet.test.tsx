@@ -204,7 +204,7 @@ it('updates totals on decimal grams, exclusion, meal changes, removal and food c
   );
   expect(screen.getByText('Total: 101 kcal')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Gramos de arroz'), { target: { value: '' } });
-  expect(screen.getByRole('button', { name: 'Guardar 1 alimentos' }).hasAttribute('disabled')).toBe(
+  expect(screen.getByRole('button', { name: 'Guardar 1 alimento' }).hasAttribute('disabled')).toBe(
     true,
   );
 });
@@ -409,9 +409,10 @@ it('disables edits while saving and waits for the refreshed summary before closi
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => resolveBatch(json([{ id: 'created-1' }], 201)));
   expect(onClose).not.toHaveBeenCalled();
-  expect(screen.queryByText('Se cargaron 1 alimentos')).toBeNull();
+  expect(screen.queryByText('Se cargó 1 alimento')).toBeNull();
   await act(async () => finishRefresh());
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(screen.getByText('Se cargó 1 alimento')).toBeTruthy();
 });
 it('chooses search results from Open Food Facts only after importing them', async () => {
   const off = { ...food, id: null, name: 'Arroz OFF', barcode: '7791234567890' };
@@ -449,4 +450,18 @@ it('keeps the previous proposal when reinterpretation fails', async () => {
   await screen.findByText('No entendí.');
   fireEvent.click(screen.getByRole('button', { name: 'Volver a la revisión' }));
   expect(screen.getByText('Total: 115 kcal')).toBeTruthy();
+});
+
+it('uses singular labels when saving one food', async () => {
+  const fetchMock = mockFetch();
+  fetchMock.mockImplementation(async (input) =>
+    String(input).endsWith('/parse-text')
+      ? json({ ...response, items: [item('arroz', 'lunch', 200)] })
+      : json([{ id: 'created-1' }], 201),
+  );
+  const { onClose } = setup();
+  await interpret();
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar 1 alimento' }));
+  expect(await screen.findByText('Se cargó 1 alimento')).toBeTruthy();
+  expect(onClose).toHaveBeenCalledOnce();
 });

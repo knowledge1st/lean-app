@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import { safeScriptError } from './text-log-diagnostics';
-import { createTextLogReport } from './text-log-report';
-import type { AiMealParse, ProposedItem } from '@lean/shared';
+import { createTextLogReport, describeProposals } from './text-log-report';
+import type { AiMealParse } from '@lean/shared';
 import type { Env } from '../src/env';
 
 async function main() {
@@ -83,27 +83,11 @@ async function main() {
   ) => {
     const items = await mapItems(db, testing.id, parse, catalog, 'lunch');
     const expected = fixture.expected;
-    // Count matching occurrences independently of item order, without reusing a prediction.
-    const count = (matches: (item: ProposedItem, target: (typeof expected)[number]) => boolean) => {
-      const available = [...items];
-      return expected.filter((target) => {
-        const index = available.findIndex((item) => matches(item, target));
-        if (index < 0) return false;
-        available.splice(index, 1);
-        return true;
-      }).length;
-    };
     output.phrase({
       interpreter: label,
       text: fixture.text,
-      mealsCorrect: count((item, target) =>
-        target.meal === null
-          ? item.mealSource === 'default'
-          : item.mealSource === 'text' && item.meal === target.meal,
-      ),
-      foodsCorrect: count((item, target) => (item.food?.name ?? 'ninguno') === target.food),
       expected: expected.length,
-      proposed: items.length,
+      ...describeProposals(items, expected),
       milliseconds: Math.round(elapsed),
       promptTokens,
       completionTokens,
@@ -138,6 +122,7 @@ async function main() {
             interpreter: model.id,
             text: fixture.text,
             expected: fixture.expected.length,
+            ...describeProposals([], fixture.expected),
             outcome: result.outcome,
             milliseconds: Math.round(elapsed),
             promptTokens: result.promptTokens,

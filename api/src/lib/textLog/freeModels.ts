@@ -150,8 +150,26 @@ function modelState(state: SavedModelState): ModelState {
   };
 }
 
-export async function savedModels(db: Db): Promise<ModelState> {
-  return modelState(await loadSavedModels(db));
+function effectiveState(
+  state: SavedModelState,
+  options: ModelOptions,
+  degraded: readonly string[],
+): ModelState {
+  return modelState({
+    ...state,
+    candidates: filterAndRankModels(state.candidates, options, degraded),
+  });
+}
+
+export async function savedModels(
+  db: Db,
+  options?: ModelOptions,
+  now = new Date(),
+): Promise<ModelState> {
+  const state = await loadSavedModels(db);
+  return options
+    ? effectiveState(state, options, await degradedModels(db, now))
+    : modelState(state);
 }
 
 class CatalogueHttpError extends Error {
@@ -228,7 +246,8 @@ async function fetchFreeRemaining(deps: TextLogDeps): Promise<number | null> {
 }
 
 export async function getFreeModels(deps: TextLogDeps): Promise<ModelState> {
-  if (!deps.env.OPENROUTER_API_KEY) return savedModels(deps.db);
+  if (!deps.env.OPENROUTER_API_KEY)
+    return savedModels(deps.db, deps.env, (deps.now ?? (() => new Date()))());
   const key = cacheKey(deps);
   let entry = cache.get(key);
   if (!entry) {
@@ -251,10 +270,7 @@ export async function getFreeModels(deps: TextLogDeps): Promise<ModelState> {
   if (entry.pending) return entry.pending;
   const degraded = await degradedModels(deps.db, now);
   if (entry.pending) return entry.pending;
-  const usable = (state: SavedModelState): ModelState => modelState({
-    ...state,
-    candidates: filterAndRankModels(state.candidates, deps.env, degraded),
-  });
+  const usable = (state: SavedModelState): ModelState => effectiveState(state, deps.env, degraded);
   const checked = entry.state.freeCheckedAt;
   if (
     entry.state.freeRemaining === 0 &&

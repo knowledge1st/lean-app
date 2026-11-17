@@ -41,18 +41,21 @@ export function useCreateEntriesBatch(date: string, onClose: () => void) {
     onSuccess: async (created) => {
       await invalidate();
       onClose();
-      toast(`Se cargaron ${created.length} alimentos`, {
-        label: 'Deshacer',
-        onAction: () => {
-          void Promise.allSettled(created.map((entry) => deleteEntry(entry.id))).then(
-            async (results) => {
-              await invalidate();
-              if (results.some((result) => result.status === 'rejected'))
-                toast('No se pudieron borrar todos los alimentos. Revisá la comida.');
-            },
-          );
+      toast(
+        created.length === 1 ? 'Se cargó 1 alimento' : `Se cargaron ${created.length} alimentos`,
+        {
+          label: 'Deshacer',
+          onAction: () => {
+            void Promise.allSettled(created.map((entry) => deleteEntry(entry.id))).then(
+              async (results) => {
+                await invalidate();
+                if (results.some((result) => result.status === 'rejected'))
+                  toast('No se pudieron borrar todos los alimentos. Revisá la comida.');
+              },
+            );
+          },
         },
-      });
+      );
     },
   });
 }

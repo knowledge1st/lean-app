@@ -10,7 +10,7 @@ textLog.get('/status', async (c) => {
   const db = getDb(c.env);
   const state = await getFreeModels({ db, env: c.env });
   const degraded = await degradedModels(db, new Date());
-  const candidates = state.candidates.filter((id) => !degraded.includes(id));
+  const candidates = state.candidates;
   return c.json(
     textLogStatusSchema.parse({
       available: Boolean(

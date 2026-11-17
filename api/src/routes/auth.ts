@@ -92,12 +92,14 @@ me.get('/', async (c) => {
     .from(users)
     .where(eq(users.id, c.get('userId')));
   if (!user) throw new AppError(401, 'unauthorized', 'Sesión inválida o vencida');
-  const models = await savedModels(getDb(c.env));
+  const models = await savedModels(getDb(c.env), c.env);
   return c.json({
     ...user,
     features: {
       textLog: true,
-      textLogAi: Boolean(c.env.OPENROUTER_API_KEY && models.candidates.length),
+      textLogAi: Boolean(
+        c.env.OPENROUTER_API_KEY && models.candidates.length && models.freeRemaining !== 0,
+      ),
     },
   });
 });

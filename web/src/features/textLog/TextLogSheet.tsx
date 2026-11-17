@@ -147,7 +147,9 @@ export function TextLogSheet({
                 });
               }}
             >
-              {save.isPending ? 'Guardando…' : `Guardar ${included.length} alimentos`}
+              {save.isPending
+                ? 'Guardando…'
+                : `Guardar ${included.length} ${included.length === 1 ? 'alimento' : 'alimentos'}`}
             </Button>
             <Button variant="ghost" disabled={save.isPending} onClick={() => setReviewing(false)}>
               Editar texto
