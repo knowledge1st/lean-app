@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import { MEALS, gramsSchema, macrosForGrams, type ProposedItem } from '@lean/shared';
 import { Button } from '../../components/ui/Button';
 import { NumberInput } from '../../components/ui/NumberInput';
@@ -13,12 +14,14 @@ export function itemKcal(item: ReviewItemState) {
 }
 export function ReviewItem({
   item,
+  mealSelectRef,
   onChange,
   onRemove,
   onSearch,
   onCreate,
 }: {
   item: ReviewItemState;
+  mealSelectRef?: Ref<HTMLSelectElement>;
   onChange: (changes: Partial<ReviewItemState>) => void;
   onRemove: () => void;
   onSearch: () => void;
@@ -72,6 +75,7 @@ export function ReviewItem({
       <label className="block">
         Comida de {item.said}
         <select
+          ref={mealSelectRef}
           className="mt-1 min-h-11 w-full rounded-xl border border-border bg-surface px-3"
           value={item.meal}
           onChange={(event) => onChange({ meal: event.target.value as ProposedItem['meal'] })}

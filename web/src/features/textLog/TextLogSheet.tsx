@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { MEALS, TEXT_LOG_MAX_CHARS, type Meal, type ParseMealTextResponse } from '@lean/shared';
 import { Sheet } from '../../components/ui/Sheet';
 import { Button } from '../../components/ui/Button';
@@ -32,6 +32,8 @@ export function TextLogSheet({
   const request = useRef<AbortController | undefined>(undefined);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const reviewTitle = useRef<HTMLHeadingElement>(null);
+  const mealSelectors = useRef(new Map<string, HTMLSelectElement>());
+  const pendingFocus = useRef<string | null | undefined>(undefined);
   const keepButton = useRef<HTMLButtonElement>(null);
   const textId = useId();
   const parse = useParseMealText();
@@ -44,6 +46,15 @@ export function TextLogSheet({
       else textarea.current?.focus();
     }
   }, [reviewing, picker, confirming, busy]);
+  useLayoutEffect(() => {
+    if (pendingFocus.current === undefined) return;
+    const target =
+      pendingFocus.current === null
+        ? reviewTitle.current
+        : mealSelectors.current.get(pendingFocus.current);
+    pendingFocus.current = undefined;
+    target?.focus();
+  }, [items]);
   function cancel() {
     request.current?.abort();
     request.current = undefined;
@@ -91,9 +102,18 @@ export function TextLogSheet({
     }
   }
   function update(key: string, changes: Partial<ReviewItemState>) {
+    if (changes.meal && items.find((item) => item.key === key)?.meal !== changes.meal) {
+      pendingFocus.current = key;
+    }
     setItems((current) =>
       current.map((item) => (item.key === key ? { ...item, ...changes } : item)),
     );
+  }
+  function remove(key: string) {
+    const displayedItems = MEALS.flatMap((meal) => items.filter((item) => item.meal === meal));
+    const index = displayedItems.findIndex((item) => item.key === key);
+    pendingFocus.current = displayedItems[index + 1]?.key ?? displayedItems[index - 1]?.key ?? null;
+    setItems((current) => current.filter((item) => item.key !== key));
   }
   const included = items.filter((item) => item.included);
   const valid =
@@ -189,10 +209,12 @@ export function TextLogSheet({
                       <ReviewItem
                         key={item.key}
                         item={item}
+                        mealSelectRef={(element) => {
+                          if (element) mealSelectors.current.set(item.key, element);
+                          else mealSelectors.current.delete(item.key);
+                        }}
                         onChange={(changes) => update(item.key, changes)}
-                        onRemove={() =>
-                          setItems((current) => current.filter((row) => row.key !== item.key))
-                        }
+                        onRemove={() => remove(item.key)}
                         onSearch={() => setPicker({ key: item.key, create: false })}
                         onCreate={() => setPicker({ key: item.key, create: true })}
                       />

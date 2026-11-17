@@ -208,6 +208,84 @@ it('updates totals on decimal grams, exclusion, meal changes, removal and food c
     true,
   );
 });
+it('keeps focus on the relocated meal selector across existing and newly created groups', async () => {
+  mockFetch();
+  setup();
+  await interpret();
+  for (const [meal, label] of [
+    ['breakfast', 'Desayuno'],
+    ['dinner', 'Cena'],
+    ['snack', 'Snack'],
+  ] as const) {
+    const selector = screen.getByLabelText('Comida de arroz');
+    selector.focus();
+    fireEvent.change(selector, { target: { value: meal } });
+    const relocated = within(screen.getByRole('region', { name: label })).getByLabelText(
+      'Comida de arroz',
+    );
+    expect(relocated).not.toBe(selector);
+    await waitFor(() => expect(document.activeElement).toBe(relocated));
+  }
+});
+it.each([
+  ['pan', 'medialuna'],
+  ['medialuna', 'arroz'],
+  ['arroz', 'queso'],
+  ['queso', 'arroz'],
+])('focuses the neighboring row in display order when removing %s', async (removed, neighbor) => {
+  mockFetch();
+  setup();
+  await interpret();
+  const remove = screen.getByRole('button', { name: `Quitar ${removed}` });
+  remove.focus();
+  fireEvent.click(remove);
+  expect(screen.queryByRole('button', { name: `Quitar ${removed}` })).toBeNull();
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByLabelText(`Comida de ${neighbor}`)),
+  );
+});
+it('uses the updated display order after moving a row and focuses the heading after the last removal', async () => {
+  mockFetch();
+  setup();
+  await interpret();
+  const selector = screen.getByLabelText('Comida de arroz');
+  selector.focus();
+  fireEvent.change(selector, { target: { value: 'breakfast' } });
+  for (const [removed, neighbor] of [
+    ['arroz', 'pan'],
+    ['pan', 'medialuna'],
+    ['queso', 'medialuna'],
+  ] as const) {
+    const remove = screen.getByRole('button', { name: `Quitar ${removed}` });
+    remove.focus();
+    fireEvent.click(remove);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByLabelText(`Comida de ${neighbor}`)),
+    );
+  }
+  const remove = screen.getByRole('button', { name: 'Quitar medialuna' });
+  remove.focus();
+  fireEvent.click(remove);
+  expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole('heading', { name: 'Revisá los alimentos' }),
+    ),
+  );
+});
+it('preserves focus while editing grams and inclusion', async () => {
+  mockFetch();
+  setup();
+  await interpret();
+  const grams = screen.getByLabelText('Gramos de arroz');
+  grams.focus();
+  fireEvent.change(grams, { target: { value: '42' } });
+  expect(document.activeElement).toBe(grams);
+  const checkbox = screen.getByRole('checkbox', { name: 'Incluir pan' });
+  checkbox.focus();
+  fireEvent.click(checkbox);
+  expect(document.activeElement).toBe(checkbox);
+});
 it('requires food for all included items and disables saving with none included', async () => {
   mockFetch();
   setup();
