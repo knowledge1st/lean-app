@@ -587,8 +587,9 @@ it('alta manual, edición y borrado de cantidad, y borrado de la fila', async ()
   expect(screen.queryByText('250,5 g')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Opciones de Pan integral' }));
   fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
-  await screen.findByText('Tu lista está vacía', {}, { timeout: 8000 });
-}, 10000);
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
+  await screen.findByText('Tu lista está vacía');
+});
 it.each(['same', 'recent', 'other', 'corrupt', 'invalid', 'temporary'])(
   'hidrata únicamente caché válida del usuario: %s',
   async (kind) => {
@@ -753,9 +754,9 @@ it('borrado optimista fallido restaura solo su fila', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Opciones de Alimento 1' }));
   expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
   await waitFor(() => expect(client.getQueryData<ShoppingItem[]>(key)).toEqual([items[1]]));
   await waitFor(() => expect(client.isMutating()).toBe(1));
-  await new Promise((resolve) => setTimeout(resolve, 6600));
   await act(async () => request.reject(new Error('offline')));
   await screen.findByRole('checkbox', { name: 'Alimento 1' });
   expect(client.getQueryData(key)).toEqual(items);
@@ -807,18 +808,25 @@ it('muestra error sin datos y permite reintentar', async () => {
   await screen.findByText('Tu lista está vacía');
 });
 
-it('permite deshacer el borrado y conserva la fila original sin enviar DELETE', async () => {
+it('confirma el borrado inline, restaura el foco al cancelar y envía DELETE inmediato', async () => {
   const original = item(1);
   const { fetchMock } = mockServer([original]);
-  const { client } = setup();
+  setup();
   await screen.findByRole('checkbox', { name: original.label });
   fireEvent.click(screen.getByRole('button', { name: `Opciones de ${original.label}` }));
   fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
-  await waitFor(() => expect(client.getQueryData(key)).toEqual([]));
-  fireEvent.click(screen.getByRole('button', { name: 'Deshacer' }));
-  await screen.findByRole('checkbox', { name: original.label });
-  expect(client.getQueryData(key)).toEqual([original]);
+  expect(screen.getByText(`¿Borrar ${original.label}?`)).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancelar' }));
   expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Borrar' }));
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true),
+  );
+  await waitFor(() => expect(screen.queryByRole('checkbox', { name: original.label })).toBeNull());
 });
 
 it('conserva el borrador del alta cuando falla y permite reintentar', async () => {
@@ -861,6 +869,17 @@ it('ubica el alta sobre el teclado mientras tiene foco y restaura el fallback', 
     viewport.dispatchEvent(new Event('resize'));
   });
   expect(form.style.bottom).toBe('280px');
+  act(() => {
+    Object.assign(viewport, { height: 700 });
+    viewport.dispatchEvent(new Event('resize'));
+  });
+  expect(form.style.bottom).toBe('');
+  act(() => {
+    Object.assign(viewport, { height: 800, offsetTop: 0 });
+    viewport.dispatchEvent(new Event('resize'));
+  });
+  expect(form.style.bottom).toBe('');
+  expect(form.className).toContain('bottom-[calc(4.5rem+env(safe-area-inset-bottom))]');
   fireEvent.blur(name, { relatedTarget: document.body });
   expect(form.style.bottom).toBe('');
 });

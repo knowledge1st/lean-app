@@ -46,10 +46,14 @@ it.each(['eaten', 'planned'] as const)('confirma y permite cancelar el borrado d
   expect(screen.getByText(entry.food.servingLabel!)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
   expect(onDelete).not.toHaveBeenCalled();
-  expect(screen.getByText('¿Borrar Pan integral?')).toBeTruthy();
+  const confirmation = screen.getByRole('group', { name: '¿Borrar Pan integral?' });
+  expect(confirmation.contains(screen.getByRole('button', { name: 'Cancelar' }))).toBe(true);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancelar' }));
   fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
   expect(screen.queryByText('¿Borrar Pan integral?')).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Borrar' }));
   fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancelar' }));
   fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
   expect(onDelete).toHaveBeenCalledOnce();
   expect(onSave).not.toHaveBeenCalled();

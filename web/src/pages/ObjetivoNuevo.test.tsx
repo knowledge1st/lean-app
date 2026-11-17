@@ -431,3 +431,10 @@ it('precarga altura y peso con coma decimal', async () => {
   expect((screen.getByLabelText('Altura') as HTMLInputElement).value).toBe('165,5');
   expect((screen.getByLabelText('Peso actual') as HTMLInputElement).value).toBe('72,5');
 });
+
+it('muestra el error de carga con la redacción común', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+  const { client } = setup();
+  expect(await screen.findByText('No se pudo cargar tus datos.')).toBeTruthy();
+  client.clear();
+});

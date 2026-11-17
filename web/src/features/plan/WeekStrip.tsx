@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query';
-import { getDaySummary, summaryKey, useDaySummary } from '../diary/api';
+import { daySummaryQueryFn, summaryKey, useDaySummary } from '../diary/api';
 import { todayLocal } from '../../lib/date';
 import { formatNumber } from '../../lib/macros';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -81,7 +81,7 @@ export function WeekStrip({
   const queries = useQueries({
     queries: dates.map((date) => ({
       queryKey: summaryKey(date),
-      queryFn: ({ signal }: { signal: AbortSignal }) => getDaySummary(date, signal),
+      queryFn: daySummaryQueryFn,
       enabled: false,
     })),
   });

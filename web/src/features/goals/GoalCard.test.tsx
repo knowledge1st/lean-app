@@ -135,7 +135,7 @@ it('muestra carga, error y permite reintentar', async () => {
     </QueryClientProvider>,
   );
   expect(screen.getByRole('status', { name: 'Cargando tu objetivo' })).toBeTruthy();
-  expect(await screen.findByRole('alert')).toBeTruthy();
+  expect(await screen.findByText('No se pudo cargar tu objetivo.')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByText('Todavía no definiste tu objetivo')).toBeTruthy();
   expect(get).toHaveBeenCalledTimes(2);

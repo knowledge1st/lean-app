@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useRef } from 'react';
 import { Outlet, useLocation } from 'react-router';
+import { ConnectionBanner } from '../components/ui/ConnectionBanner';
 import { BottomNav } from './BottomNav';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { ScreenSkeleton } from '../components/ui/ScreenSkeleton';
@@ -33,6 +34,7 @@ export function AppLayout() {
         tabIndex={-1}
         className="outline-none mx-auto w-full max-w-3xl px-4 pt-8 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6"
       >
+        <ConnectionBanner />
         <ErrorBoundary key={pathname}>
           <Suspense fallback={<ScreenSkeleton />}>
             <Outlet />

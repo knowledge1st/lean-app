@@ -76,6 +76,36 @@ describe.skipIf(!hasTestDatabase)('entry planning integration', { timeout: 30000
       ).toEqual([otherUserDestination]);
     },
   );
+  it.each(['meal', 'day', 'week'] as const)(
+    'preserves source order when copying a %s',
+    async (scope) => {
+      const food = await f.food();
+      for (const [index, grams] of [300, 100, 200].entries()) {
+        const entry = await f.entry(food.id!, { meal: 'dinner', grams });
+        await f.db
+          .update(mealEntries)
+          .set({ createdAt: new Date(1700000000000 + index) })
+          .where(eq(mealEntries.id, entry.id));
+      }
+      const result = await copy(
+        scope === 'week'
+          ? { scope, from: '2026-W46', to: '2026-W47', mode: 'append' }
+          : scope === 'day'
+            ? { scope, from: '2026-11-14', to: '2026-11-21', mode: 'append' }
+            : { scope, from: '2026-11-14', to: '2026-11-21', meal: 'dinner', status: 'eaten' },
+      );
+      expect(result.map((entry) => entry.grams)).toEqual([300, 100, 200]);
+      expect(result.map((entry) => Date.parse(entry.createdAt))).toEqual([
+        Date.parse(result[0]!.createdAt),
+        Date.parse(result[0]!.createdAt) + 1,
+        Date.parse(result[0]!.createdAt) + 2,
+      ]);
+      const persisted = (await (
+        await f.request('/entries?from=2026-11-21&to=2026-11-21')
+      ).json()) as Entry[];
+      expect(persisted.map((entry) => entry.grams)).toEqual([300, 100, 200]);
+    },
+  );
   it('copies four frozen snapshots even after editing the food', async () => {
     const food = await f.food();
     const source: Entry[] = [];

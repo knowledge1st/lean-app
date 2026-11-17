@@ -57,3 +57,48 @@ it('keeps an accessible action for six seconds and invokes it once', () => {
   });
   expect(screen.queryByText('Deshacer')).toBeNull();
 });
+
+it('encola avisos del mismo turno, conserva acciones y temporizadores independientes', () => {
+  vi.useFakeTimers();
+  const onAction = vi.fn();
+  function Triggers() {
+    const toast = useToast();
+    return (
+      <>
+        <button onClick={() => toast('Primero', { label: 'Deshacer primero', onAction })}>
+          Primero
+        </button>
+        <button onClick={() => toast('Segundo')}>Segundo</button>
+        <button onClick={() => toast('Tercero', { label: 'Deshacer tercero', onAction })}>
+          Tercero
+        </button>
+        <button onClick={() => toast('Cuarto')}>Cuarto</button>
+      </>
+    );
+  }
+  render(
+    <ToastProvider>
+      <Triggers />
+    </ToastProvider>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Primero' }));
+  act(() => vi.advanceTimersByTime(1000));
+  fireEvent.click(screen.getByRole('button', { name: 'Segundo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tercero' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cuarto' }));
+  const status = screen.getByRole('status');
+  expect(status.querySelectorAll('p')).toHaveLength(3);
+  expect(status.textContent).not.toContain('Cuarto');
+  act(() => vi.advanceTimersByTime(4000));
+  expect(status.textContent).not.toContain('Segundo');
+  expect(screen.getByRole('button', { name: 'Deshacer primero' })).toBeTruthy();
+  expect(status.textContent).toContain('Cuarto');
+  act(() => vi.advanceTimersByTime(1000));
+  expect(screen.queryByRole('button', { name: 'Deshacer primero' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Deshacer tercero' }));
+  expect(onAction).toHaveBeenCalledTimes(1);
+  act(() => vi.advanceTimersByTime(2999));
+  expect(status.textContent).toContain('Cuarto');
+  act(() => vi.advanceTimersByTime(1));
+  expect(status.textContent).toBe('');
+});

@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+  type QueryFunctionContext,
+} from '@tanstack/react-query';
 import type { DaySummary, Entry } from '@lean/shared';
 import { api, ApiError } from '../../lib/api';
 import { getToken } from '../../lib/session';
@@ -33,15 +39,19 @@ export const createEntry = (body: {
 export const updateEntry = (id: string, changes: EntryChanges) =>
   api.patch<Entry>(`/api/entries/${id}`, changes);
 export const deleteEntry = (id: string) => api.delete<void>(`/api/entries/${id}`);
+export function daySummaryQueryFn({
+  client,
+  queryKey: [, , date],
+  signal,
+}: QueryFunctionContext<ReturnType<typeof summaryKey>>) {
+  const current = client.getQueryData<DaySummary>(summaryKey(date));
+  if (diarySession(client).days.get(date)?.pending.length && current) return current;
+  return getDaySummary(date, signal);
+}
 export function useDaySummary(date: string) {
-  const client = useQueryClient();
   return useQuery({
     queryKey: summaryKey(date),
-    queryFn: ({ signal }) => {
-      const current = client.getQueryData<DaySummary>(summaryKey(date));
-      if (diarySession(client).days.get(date)?.pending.length && current) return current;
-      return getDaySummary(date, signal);
-    },
+    queryFn: daySummaryQueryFn,
   });
 }
 type PendingAction = { action: DiaryAction };

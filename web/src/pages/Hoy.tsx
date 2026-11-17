@@ -75,7 +75,15 @@ export function Hoy() {
           >
             <span>
               <span className="block text-2xl font-bold">{formatDayLabel(date, today)}</span>
-              <span className="text-xs text-muted">{date}</span>
+              <span className="text-xs text-muted">
+                {new Intl.DateTimeFormat('es-AR', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                  ...(date.slice(0, 4) !== todayLocal().slice(0, 4) ? { year: 'numeric' } : {}),
+                  timeZone: 'UTC',
+                }).format(new Date(`${date}T12:00:00Z`))}
+              </span>
             </span>
           </Button>
         </h1>

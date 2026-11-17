@@ -7,7 +7,7 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { useToast } from '../../components/ui/Toast';
 import { addDays, formatDayLabel, parseLocalDateParam, todayLocal } from '../../lib/date';
-import { MEAL_LABELS } from '../../lib/macros';
+import { formatNumber, MEAL_LABELS } from '../../lib/macros';
 import { copyEntries } from '../plan/api';
 import { deleteEntry, summaryKey, useDaySummary } from './api';
 
@@ -29,7 +29,8 @@ export function RepeatMealSheet({
   const toast = useToast();
   const invalidate = () =>
     Promise.all([
-      client.invalidateQueries({ queryKey: summaryKey(date) }),
+      client.refetchQueries({ queryKey: summaryKey(date) }),
+      client.invalidateQueries({ queryKey: ['progress', 'entries'] }),
       client.invalidateQueries({ queryKey: ['summary', 'week'] }),
       client.invalidateQueries({ queryKey: ['foods', 'recent'] }),
       client.invalidateQueries({ queryKey: ['foods', 'frequent'] }),
@@ -43,21 +44,24 @@ export function RepeatMealSheet({
         meal,
         status: date <= todayLocal() ? 'eaten' : 'planned',
       }),
-    onSuccess: (created) => {
-      void invalidate();
+    onSuccess: async (created) => {
+      await invalidate();
       onClose();
-      toast(`Copiaste ${created.length} alimentos a ${MEAL_LABELS[meal]}`, {
-        label: 'Deshacer',
-        onAction: () => {
-          void Promise.allSettled(created.map((entry) => deleteEntry(entry.id))).then(
-            async (results) => {
-              await invalidate();
-              if (results.some((result) => result.status === 'rejected'))
-                toast('No se pudieron borrar todos los alimentos. Revisá la comida.');
-            },
-          );
+      toast(
+        `Copiaste ${created.length} ${created.length === 1 ? 'alimento' : 'alimentos'} a ${MEAL_LABELS[meal]}`,
+        {
+          label: 'Deshacer',
+          onAction: () => {
+            void Promise.allSettled(created.map((entry) => deleteEntry(entry.id))).then(
+              async (results) => {
+                await invalidate();
+                if (results.some((result) => result.status === 'rejected'))
+                  toast('No se pudieron borrar todos los alimentos. Revisá la comida.');
+              },
+            );
+          },
         },
-      });
+      );
     },
   });
   function adjacent(direction: number) {
@@ -85,7 +89,14 @@ export function RepeatMealSheet({
           ←
         </Button>
         <span aria-live="polite">
-          {formatDayLabel(from, todayLocal())} · {from}
+          {formatDayLabel(from, todayLocal())} ·{' '}
+          {new Intl.DateTimeFormat('es-AR', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            ...(from.slice(0, 4) !== todayLocal().slice(0, 4) ? { year: 'numeric' } : {}),
+            timeZone: 'UTC',
+          }).format(new Date(`${from}T12:00:00Z`))}
         </span>
         <Button
           variant="ghost"
@@ -114,7 +125,7 @@ export function RepeatMealSheet({
             <li key={entry.id} className="py-3">
               <span>{entry.food.name}</span>
               <span className="block text-sm text-muted">
-                {entry.grams} g · {entry.kcal} kcal
+                {formatNumber(entry.grams)} g · {formatNumber(entry.kcal)} kcal
               </span>
             </li>
           ))}
@@ -132,7 +143,9 @@ export function RepeatMealSheet({
       >
         {mutation.isPending
           ? 'Copiando…'
-          : `Copiar ${entries.length} alimentos a ${formatDayLabel(date, todayLocal())}`}
+          : entries.length === 0
+            ? 'Copiar'
+            : `Copiar ${entries.length} ${entries.length === 1 ? 'alimento' : 'alimentos'} a ${formatDayLabel(date, todayLocal())}`}
       </Button>
     </Sheet>
   );

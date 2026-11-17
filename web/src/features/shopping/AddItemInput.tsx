@@ -38,7 +38,11 @@ export function AddItemInput({
   }, [add.isSuccess, inputRef]);
   return (
     <form
-      style={focused && keyboardBottom !== undefined ? { bottom: keyboardBottom } : undefined}
+      style={
+        focused && keyboardBottom !== undefined && keyboardBottom > 80
+          ? { bottom: keyboardBottom }
+          : undefined
+      }
       onFocus={() => setFocused(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);

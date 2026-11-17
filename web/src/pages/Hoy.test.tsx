@@ -191,7 +191,10 @@ it.each(['eat', 'delete', 'edit', 'add'] as const)(
       if (kind === 'edit') {
         fireEvent.change(screen.getByLabelText('Gramos'), { target: { value: '150' } });
         fireEvent.click(screen.getByText('Guardar'));
-      } else fireEvent.click(screen.getByText('Borrar'));
+      } else {
+        fireEvent.click(screen.getByText('Borrar'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
+      }
     }
     const key = ['summary', 'day', summary.date];
     await waitFor(() => {
@@ -781,5 +784,22 @@ it('mantiene el aviso cerrado cuando falla el storage', async () => {
   const client = setup('/hoy', true, false, { lastShownAt: 0 });
   await screen.findByRole('button', { name: 'Agregar a Cena' });
   expect(screen.queryByRole('dialog')).toBeNull();
+  client.clear();
+});
+
+it('muestra la fecha seleccionada en formato local legible', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(summary)));
+  const client = setup();
+  await screen.findByText('Pan');
+  const expected = new Intl.DateTimeFormat('es-AR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+    ...(summary.date.slice(0, 4) !== todayLocal().slice(0, 4) ? { year: 'numeric' } : {}),
+  }).format(new Date(`${summary.date}T12:00:00Z`));
+  expect(
+    within(screen.getByRole('heading', { level: 1 })).getByText(expected, { selector: '.text-xs' }),
+  ).toBeTruthy();
   client.clear();
 });

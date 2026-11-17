@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ShoppingItem } from '@lean/shared';
-import { useToast } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { NumberInput } from '../../components/ui/NumberInput';
@@ -17,13 +16,14 @@ export function ShoppingItemRow({
   week: string;
   disabled?: boolean;
 }) {
-  const toast = useToast();
   const client = useQueryClient();
   const toggle = useShoppingMutation(week, 'toggle');
   const edit = useShoppingMutation(week, 'edit');
   const remove = useShoppingMutation(week, 'delete');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const restoreDeleteFocus = useRef(false);
   const [label, setLabel] = useState(item.label);
   const [quantity, setQuantity] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +67,7 @@ export function ShoppingItemRow({
         disabled={unavailable}
         onClick={() => {
           setEditing(false);
+          setConfirming(false);
           setOpen(true);
         }}
       >
@@ -111,6 +112,29 @@ export function ShoppingItemRow({
               Guardar
             </Button>
           </form>
+        ) : confirming ? (
+          <div className="flex flex-col gap-3">
+            <p>¿Borrar {item.label}?</p>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setOpen(false);
+                remove.mutate({ kind: 'delete', id: item.id });
+              }}
+            >
+              Sí, borrar
+            </Button>
+            <Button
+              ref={(element) => element?.focus()}
+              variant="secondary"
+              onClick={() => {
+                restoreDeleteFocus.current = true;
+                setConfirming(false);
+              }}
+            >
+              Cancelar
+            </Button>
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
             {item.manual && (
@@ -134,16 +158,14 @@ export function ShoppingItemRow({
               </Button>
             )}
             <Button
-              variant="danger"
-              onClick={() => {
-                setOpen(false);
-                const undo = new AbortController();
-                remove.mutate({ kind: 'delete', id: item.id, undo: undo.signal });
-                toast(`Borraste ${item.label}`, {
-                  label: 'Deshacer',
-                  onAction: () => undo.abort(),
-                });
+              ref={(element) => {
+                if (element && restoreDeleteFocus.current) {
+                  restoreDeleteFocus.current = false;
+                  element.focus();
+                }
               }}
+              variant="danger"
+              onClick={() => setConfirming(true)}
             >
               Borrar
             </Button>

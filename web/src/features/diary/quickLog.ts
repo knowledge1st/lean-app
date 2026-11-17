@@ -55,17 +55,11 @@ export function shouldShowQuickLog(
 ): boolean {
   if (reason === 'visible')
     return state.lastHiddenAt > 0 && now - state.lastHiddenAt >= QUICK_LOG_IDLE_MS;
-  const lastUsedAt = Math.max(state.lastShownAt, state.lastHiddenAt);
-  return lastUsedAt === 0 || now - lastUsedAt >= QUICK_LOG_IDLE_MS;
+  return state.lastShownAt === 0 || now - state.lastShownAt >= QUICK_LOG_IDLE_MS;
 }
-export function hasRecentEatenEntry(entries: Entry[], today: string, now: number): boolean {
+export function hasRecentEatenEntry(entries: Entry[], now: number): boolean {
   return entries.some((entry) => {
     const createdAt = Date.parse(entry.createdAt);
-    return (
-      entry.date === today &&
-      entry.status === 'eaten' &&
-      createdAt <= now &&
-      now - createdAt < 60 * 60 * 1000
-    );
+    return entry.status === 'eaten' && createdAt <= now && now - createdAt < 60 * 60 * 1000;
   });
 }

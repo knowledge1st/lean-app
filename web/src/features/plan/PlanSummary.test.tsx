@@ -34,6 +34,7 @@ it('suma eaten y planned y calcula faltantes y sobrantes para cada macro', () =>
     </MemoryRouter>,
   );
   expect(screen.getByText('1.100 / 1.000 kcal')).toBeTruthy();
+  expect(screen.getByText('Calorías')).toBeTruthy();
   expect(screen.getByText('Sobran 100 kcal')).toBeTruthy();
   expect(screen.getByText('90 / 100 g')).toBeTruthy();
   expect(screen.getAllByText('Faltan 10 g')).toHaveLength(2);

@@ -138,7 +138,9 @@ entries.post('/copy', validate('json', copyEntriesSchema), async (c) => {
     undefined,
     input.scope === 'meal' ? input.meal : undefined,
   );
-  const values = rows.map(({ entry }) => ({
+  const baseCreatedAt = Date.now();
+  const values = rows.map(({ entry }, index) => ({
+    createdAt: new Date(baseCreatedAt + index),
     id: crypto.randomUUID(),
     userId,
     date: input.scope === 'week' ? addDays(target.from, weekdayIndex(entry.date)) : target.from,

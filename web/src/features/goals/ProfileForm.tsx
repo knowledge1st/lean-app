@@ -34,7 +34,7 @@ export function ProfileCard() {
         </div>
       ) : query.isError ? (
         <ErrorState
-          message="No pudimos cargar tus datos personales."
+          message="No se pudo cargar tus datos personales."
           onRetry={() => void query.refetch()}
         />
       ) : (

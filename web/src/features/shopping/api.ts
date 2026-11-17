@@ -98,7 +98,7 @@ export function validateItem(label: string, quantity: string): string | null {
 type Action =
   | { kind: 'add'; item: ShoppingItem }
   | { kind: 'toggle' | 'edit'; id: string; changes: ItemChanges }
-  | { kind: 'delete'; id: string; undo?: AbortSignal };
+  | { kind: 'delete'; id: string };
 type Pending = { action: Action };
 type WeekState = { base: ShoppingItem[]; pending: Pending[] };
 type Session = {
@@ -184,21 +184,6 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
     mutationFn: async (action: Action) => {
       if (action.kind === 'add')
         return createShoppingItem(week, action.item.label, action.item.totalGrams ?? undefined);
-      if (action.kind === 'delete' && action.undo) {
-        const signal = action.undo;
-        await new Promise<void>((resolve) => {
-          const finish = () => {
-            clearTimeout(timer);
-            signal.removeEventListener('abort', finish);
-            resolve();
-          };
-          // Send the deletion after the toast's six-second undo window.
-          const timer = setTimeout(finish, 6500);
-          signal.addEventListener('abort', finish, { once: true });
-          if (signal.aborted) finish();
-        });
-        if (signal.aborted) return;
-      }
       const session = sessionFor(client);
       const request = (session.requests.get(action.id) ?? Promise.resolve())
         .catch(() => {})
@@ -232,7 +217,7 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
       if (sessionFor(client) !== context.session) return;
       const state = context.state;
       if (action.kind === 'delete') {
-        if (!action.undo?.aborted) state.base = apply(state.base, action);
+        state.base = apply(state.base, action);
       } else if (item)
         state.base =
           action.kind === 'add'

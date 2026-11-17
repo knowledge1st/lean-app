@@ -35,7 +35,7 @@ export function GoalCard() {
           ))}
         </div>
       ) : query.isError ? (
-        <ErrorState message="No pudimos cargar tu objetivo." onRetry={() => void query.refetch()} />
+        <ErrorState message="No se pudo cargar tu objetivo." onRetry={() => void query.refetch()} />
       ) : !goal ? (
         <>
           <p>Todavía no definiste tu objetivo</p>

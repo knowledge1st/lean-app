@@ -51,7 +51,7 @@ it('muestra carga y error de lectura con reintento', async () => {
   vi.spyOn(api, 'get').mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(null);
   setup();
   expect(screen.getByRole('status', { name: 'Cargando tus datos' })).toBeTruthy();
-  expect(await screen.findByRole('alert')).toBeTruthy();
+  expect(await screen.findByText('No se pudo cargar tus datos personales.')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByRole('button', { name: 'Completar mis datos' })).toBeTruthy();
 });

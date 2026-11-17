@@ -32,7 +32,7 @@ it('requires three hours on mount and on return', () => {
   expect(
     shouldShowQuickLog({ lastShownAt: now - QUICK_LOG_IDLE_MS, lastHiddenAt: 0 }, now, 'mount'),
   ).toBe(true);
-  expect(shouldShowQuickLog({ lastShownAt: 0, lastHiddenAt: now - 1 }, now, 'mount')).toBe(false);
+  expect(shouldShowQuickLog({ lastShownAt: 0, lastHiddenAt: now - 1 }, now, 'mount')).toBe(true);
   expect(
     shouldShowQuickLog({ lastShownAt: 0, lastHiddenAt: now - QUICK_LOG_IDLE_MS }, now, 'visible'),
   ).toBe(true);
@@ -73,11 +73,11 @@ it('handles missing, corrupt and unavailable storage', () => {
     lastHiddenAt: 0,
   });
 });
-it('suppresses only recent eaten entries for today', () => {
+it('suppresses recent eaten entries regardless of their diary date', () => {
   const now = Date.parse('2026-11-17T15:00:00Z');
   const entry = { date: '2026-11-17', status: 'eaten', createdAt: '2026-11-17T14:30:00Z' } as Entry;
-  expect(hasRecentEatenEntry([entry], entry.date, now)).toBe(true);
-  expect(hasRecentEatenEntry([{ ...entry, status: 'planned' }], entry.date, now)).toBe(false);
-  expect(hasRecentEatenEntry([entry], '2026-11-16', now)).toBe(false);
-  expect(hasRecentEatenEntry([entry], entry.date, now + 60 * 60 * 1000)).toBe(false);
+  expect(hasRecentEatenEntry([entry], now)).toBe(true);
+  expect(hasRecentEatenEntry([{ ...entry, status: 'planned' }], now)).toBe(false);
+  expect(hasRecentEatenEntry([{ ...entry, date: '2026-11-16' }], now)).toBe(true);
+  expect(hasRecentEatenEntry([entry], now + 60 * 60 * 1000)).toBe(false);
 });

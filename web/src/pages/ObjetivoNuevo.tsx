@@ -212,7 +212,7 @@ export function ObjetivoNuevo() {
       {!ready ? (
         initial.isError ? (
           <ErrorState
-            message="No pudimos cargar tus datos."
+            message="No se pudo cargar tus datos."
             onRetry={() => void initial.refetch()}
           />
         ) : (

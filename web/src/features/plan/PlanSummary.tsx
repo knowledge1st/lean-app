@@ -10,7 +10,7 @@ export function PlanSummary({ summary }: { summary: DaySummary }) {
   return (
     <Card className="space-y-3">
       <h2 className="text-lg font-semibold">Total del día</h2>
-      {[{ key: 'kcal' as const, label: 'Energía' }, ...MACROS].map(({ key, label }) => {
+      {[{ key: 'kcal' as const, label: 'Calorías' }, ...MACROS].map(({ key, label }) => {
         const total = summary.eaten[key] + summary.planned[key];
         const target = summary.target?.[key];
         const unit = key === 'kcal' ? 'kcal' : 'g';

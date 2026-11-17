@@ -9,6 +9,7 @@ import { jsonResponse } from '../../auth/testUtils';
 import { clearToken, setToken } from '../../lib/session';
 import { summaryKey, useDaySummary, useDiaryMutation, waitForDiaryIdle } from './api';
 import { WeekBudgetBar } from '../goals/WeekBudgetBar';
+import { WeekStrip } from '../plan/WeekStrip';
 import { useWeekSummary } from '../goals/api';
 import { incorporateDiaryResult, type DiaryAction } from './optimistic';
 vi.mock('../../lib/api', async (importOriginal) => {
@@ -85,6 +86,59 @@ function setup() {
   );
   return { client, wrapper };
 }
+it.each(['success', 'error'])(
+  'WeekStrip conserva un alta optimista al invalidar y sincroniza tras %s',
+  async (outcome) => {
+    const request = deferred();
+    const original = base();
+    const action = actions[0]!.action;
+    const saved = { ...entry, id: 'saved' };
+    let server = original;
+    let reads = 0;
+    let writes = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockImplementation((_input, init) => {
+        if (init?.method === 'POST') {
+          writes++;
+          return request.promise;
+        }
+        reads++;
+        return Promise.resolve(jsonResponse(server));
+      }),
+    );
+    const { client, wrapper: Wrapper } = setup();
+    const { result, rerender } = renderHook(() => useDiaryMutation(), {
+      wrapper: ({ children }: PropsWithChildren) => (
+        <Wrapper>
+          {children}
+          <WeekStrip dates={[entry.date]} selected={entry.date} onSelect={() => {}} />
+        </Wrapper>
+      ),
+    });
+    await waitFor(() => expect(client.getQueryData(summaryKey(entry.date))).toEqual(original));
+    act(() => result.current.mutate(action));
+    await waitFor(() => expect(writes).toBe(1));
+    const optimistic = client.getQueryData<DaySummary>(summaryKey(entry.date))!;
+    expect(optimistic.meals[0]!.entries.some((item) => item.id === 'temp')).toBe(true);
+    rerender();
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: summaryKey(entry.date) });
+    });
+    expect(reads).toBe(1);
+    expect(client.getQueryData(summaryKey(entry.date))).toEqual(optimistic);
+    await act(async () => {
+      if (outcome === 'success') {
+        server = incorporateDiaryResult(original, action, saved);
+        request.resolve(jsonResponse(saved));
+      } else request.reject(new Error('offline'));
+    });
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(reads).toBe(2);
+    expect(client.getQueryData(summaryKey(entry.date))).toEqual(server);
+    client.clear();
+  },
+);
 it('restaura base exacta tras fallar gramos y comida en cola', async () => {
   const requests = [deferred(), deferred()];
   let writes = 0;

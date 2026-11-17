@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { localDateSchema, putBodyLogSchema } from '@lean/shared';
+import { useToast } from '../../components/ui/Toast';
 import { Sheet } from '../../components/ui/Sheet';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -25,11 +26,19 @@ export function LogWeightSheet({
   const [error, setError] = useState('');
   const formRef = useRef<HTMLFormElement>(null);
   const detailsRef = useRef<HTMLDetailsElement>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   function focusField(key: string) {
     if (key !== 'date' && key !== 'weightKg' && detailsRef.current) detailsRef.current.open = true;
     formRef.current?.querySelector<HTMLInputElement>(`[name="${key}"]`)?.focus();
   }
   const mutation = useLogWeight();
+  const toast = useToast();
   const field = (f: (typeof bodyFields)[number]) => (
     <NumberInput
       key={f.key}
@@ -49,7 +58,7 @@ export function LogWeightSheet({
   return (
     <Sheet
       open={open}
-      onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}
+      onOpenChange={onOpenChange}
       title="Registrar peso"
       description="Cargá tu peso o las medidas que quieras seguir."
     >
@@ -87,12 +96,15 @@ export function LogWeightSheet({
             );
             return;
           }
-          mutation.mutate(
-            { date, values: parsed.data },
-            {
-              onSuccess: () => onOpenChange(false),
-              onError: () =>
-                setError('No se pudo guardar. Revisá tu conexión y volvé a intentarlo.'),
+          if (mutation.isPending) return;
+          void mutation.mutateAsync({ date, values: parsed.data }).then(
+            () => {
+              toast('Guardaste tu registro');
+              if (mounted.current) onOpenChange(false);
+            },
+            () => {
+              if (mounted.current)
+                setError('No se pudo guardar. Revisá tu conexión y volvé a intentarlo.');
             },
           );
         }}

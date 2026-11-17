@@ -1,5 +1,5 @@
 import { formatDecimalInput } from '../foods/decimalInput';
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { MEALS, gramsSchema, type Entry } from '@lean/shared';
 import { Sheet } from '../../components/ui/Sheet';
 import { Button } from '../../components/ui/Button';
@@ -19,6 +19,15 @@ export function EntrySheet({
 }) {
   const [grams, setGrams] = useState(formatDecimalInput(entry.grams));
   const [confirming, setConfirming] = useState(false);
+  const confirmationId = useId();
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const wasConfirmingRef = useRef(false);
+  useEffect(() => {
+    if (confirming) cancelButtonRef.current?.focus();
+    else if (wasConfirmingRef.current) deleteButtonRef.current?.focus();
+    wasConfirmingRef.current = confirming;
+  }, [confirming]);
   const [meal, setMeal] = useState(entry.meal);
   const result = gramsSchema.safeParse(decimalValue(grams));
   const changed = result.success && (result.data !== entry.grams || meal !== entry.meal);
@@ -74,19 +83,25 @@ export function EntrySheet({
         </fieldset>
         <div className="flex justify-between gap-3">
           {confirming ? (
-            <div className="min-w-0 space-y-2">
-              <p className="break-words">¿Borrar {entry.food.name}?</p>
+            <div role="group" aria-labelledby={confirmationId} className="min-w-0 space-y-2">
+              <p id={confirmationId} className="break-words">
+                ¿Borrar {entry.food.name}?
+              </p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="danger" onClick={onDelete}>
                   Sí, borrar
                 </Button>
-                <Button variant="secondary" onClick={() => setConfirming(false)}>
+                <Button
+                  ref={cancelButtonRef}
+                  variant="secondary"
+                  onClick={() => setConfirming(false)}
+                >
                   Cancelar
                 </Button>
               </div>
             </div>
           ) : (
-            <Button variant="danger" onClick={() => setConfirming(true)}>
+            <Button ref={deleteButtonRef} variant="danger" onClick={() => setConfirming(true)}>
               Borrar
             </Button>
           )}

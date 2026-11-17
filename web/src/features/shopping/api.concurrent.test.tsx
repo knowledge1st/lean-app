@@ -52,6 +52,7 @@ function setup(listWeek = weekA, items = [item]) {
       bulk: useShoppingBulk(listWeek),
       patch: useShoppingMutation(weekB, 'toggle'),
       add: useShoppingMutation(weekB, 'add'),
+      remove: useShoppingMutation(weekB, 'delete'),
     }),
     {
       wrapper: ({ children }: { children: ReactNode }) => (
@@ -223,3 +224,27 @@ it.each(['generate', 'clear'] as const)(
     await waitFor(() => expect(client.isMutating()).toBe(0));
   },
 );
+
+it('envía DELETE inmediatamente para otro ítem y respeta el PATCH previo del mismo ítem', async () => {
+  const other = { ...item, id: '00000000-0000-4000-8000-000000000002' };
+  const patch = deferred<ShoppingItem>();
+  vi.spyOn(api, 'get').mockResolvedValue([item, other]);
+  const update = vi.spyOn(api, 'patch').mockReturnValue(patch.promise);
+  const remove = vi.spyOn(api, 'delete').mockResolvedValue(undefined);
+  const { result, client } = setup(weekB, [item, other]);
+  await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+  act(() =>
+    result.current.patch.mutate({ kind: 'toggle', id: item.id, changes: { checked: true } }),
+  );
+  await waitFor(() => expect(update).toHaveBeenCalled());
+  act(() => {
+    result.current.remove.mutate({ kind: 'delete', id: item.id });
+    result.current.remove.mutate({ kind: 'delete', id: other.id });
+  });
+  await waitFor(() => expect(remove).toHaveBeenCalledExactlyOnceWith(`/api/shopping/${other.id}`));
+  expect(client.getQueryData(shoppingKey(weekB))).toEqual([]);
+  await act(async () => patch.resolve({ ...item, checked: true }));
+  await waitFor(() => expect(remove).toHaveBeenCalledTimes(2));
+  expect(remove).toHaveBeenLastCalledWith(`/api/shopping/${item.id}`);
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+});
