@@ -30,8 +30,9 @@ import { buildPrompt } from '../lib/textLog/prompt';
 import { parseWithRules } from '../lib/textLog/rules';
 import { mapItems } from '../lib/textLog/mapping';
 import { interpretWithAi } from '../lib/textLog/openRouter';
-import { savedModels } from '../lib/textLog/freeModels';
+import { savedModels, type TextLogDeps } from '../lib/textLog/freeModels';
 import { reserveAiUse, finishAiUse, remainingToday } from '../lib/textLog/quota';
+import { completeTask } from '../lib/textLog/tasks';
 
 export const entries = new Hono<AppEnv>();
 // Correct binary floating-point noise at decimal ties before persisting four places.
@@ -283,7 +284,19 @@ export function createTextLogEntryRoutes(network?: typeof fetch) {
       .select({ timeZone: profiles.timeZone })
       .from(profiles)
       .where(eq(profiles.userId, userId));
-    const deps = { db, env: c.env, ...(network ? { fetch: network } : {}) };
+    let waitUntil: TextLogDeps['waitUntil'];
+    try {
+      const executionCtx = c.executionCtx;
+      waitUntil = (task) => executionCtx.waitUntil(task);
+    } catch {
+      // Hono tests and local callers may have no Worker execution context.
+    }
+    const deps = {
+      db,
+      env: c.env,
+      ...(waitUntil ? { waitUntil } : {}),
+      ...(network ? { fetch: network } : {}),
+    };
     let parse: AiMealParse | undefined;
     let interpreter: ParseMealTextResponse['interpreter'] = 'rules';
     let catalog: Awaited<ReturnType<typeof buildCatalog>> = [];
@@ -304,9 +317,9 @@ export function createTextLogEntryRoutes(network?: typeof fetch) {
       });
       if (usageId) {
         if (result.attempts === 0) {
-          await db.delete(textLogUsage).where(eq(textLogUsage.id, usageId));
+          await completeTask(deps, db.delete(textLogUsage).where(eq(textLogUsage.id, usageId)));
         } else {
-          await finishAiUse(db, usageId, result);
+          await completeTask(deps, finishAiUse(db, usageId, result));
         }
       }
       if (result.ok && result.parse.items.length) {

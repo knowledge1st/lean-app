@@ -66,11 +66,17 @@ const deleteUsage = vi.fn();
 const deleteWhere = vi.fn();
 let db: Db;
 let app: Hono<AppEnv>;
-const request = (path: string, body: unknown, withKey = true) =>
+const request = (
+  path: string,
+  body: unknown,
+  withKey = true,
+  executionCtx?: Parameters<typeof app.request>[3],
+) =>
   app.request(
     `/entries/${path}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
     withKey ? { ...testEnv, OPENROUTER_API_KEY: 'fake' } : testEnv,
+    executionCtx,
   );
 const input = { text: 'arroz', date: '2026-11-17', defaultMeal: 'lunch' };
 const reply = (content = parse, model = 'qwen/a:free') =>
@@ -266,20 +272,95 @@ describe('parse-text with injected fetch', () => {
     expect(deleteWhere).toHaveBeenCalledExactlyOnceWith(eq(textLogUsage.id, 'usage'));
     expect(finishAiUse).not.toHaveBeenCalled();
   });
-  it('releases a reservation completed after the deadline without calling the model', async () => {
+  it('keeps late reservation cleanup alive through waitUntil after responding', async () => {
     vi.useFakeTimers();
-    vi.mocked(reserveAiUse).mockImplementationOnce(() => new Promise((resolve) => {
-      setTimeout(() => resolve({ reserved: true, usageId: 'usage', usedToday: 1 }), 31_000);
-    }));
-    const response = request('parse-text', input);
+    let reserve!: (value: Awaited<ReturnType<typeof reserveAiUse>>) => void;
+    vi.mocked(reserveAiUse).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          reserve = resolve;
+        }),
+    );
+    let release!: () => void;
+    deleteWhere.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const tasks: Promise<unknown>[] = [];
+    const waitUntil = vi.fn((task: Promise<unknown>) => {
+      tasks.push(task);
+    });
+    const response = request('parse-text', input, true, {
+      waitUntil,
+      passThroughOnException() {},
+      props: {},
+    });
     await vi.advanceTimersByTimeAsync(30_000);
     expect(await (await response).json()).toMatchObject({ interpreter: 'rules' });
-    await vi.advanceTimersByTimeAsync(1_000);
+    expect(waitUntil).toHaveBeenCalled();
+    let drained = false;
+    const drain = Promise.all(tasks).then(() => {
+      drained = true;
+    });
+    reserve({ reserved: true, usageId: 'usage', usedToday: 1 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(drained).toBe(false);
     expect(network).not.toHaveBeenCalled();
     expect(deleteUsage).toHaveBeenCalledExactlyOnceWith(textLogUsage);
     expect(deleteWhere).toHaveBeenCalledExactlyOnceWith(eq(textLogUsage.id, 'usage'));
     expect(finishAiUse).not.toHaveBeenCalled();
+    release();
+    await drain;
+    expect(drained).toBe(true);
   });
+  it.each(['release', 'finish'])(
+    'registers slow quota %s without delaying the response',
+    async (kind) => {
+      vi.useFakeTimers();
+      if (kind === 'release') {
+        vi.mocked(getFreeModels).mockImplementationOnce(async () => state);
+        const select = db.select.bind(db);
+        vi.spyOn(db, 'select').mockImplementation(((...args: Parameters<typeof db.select>) => {
+          const query = select(...args);
+          return {
+            from: (table: Parameters<typeof getTableName>[0]) =>
+              getTableName(table) === 'foods'
+                ? { where: () => ({ orderBy: () => new Promise(() => {}) }) }
+                : query.from(table),
+          };
+        }) as typeof db.select);
+        deleteWhere.mockImplementationOnce(
+          () => new Promise((resolve) => setTimeout(resolve, 80_000)),
+        );
+      } else {
+        vi.mocked(finishAiUse).mockImplementationOnce(
+          () => new Promise((resolve) => setTimeout(resolve, 80_000)),
+        );
+      }
+      const tasks: Promise<unknown>[] = [];
+      const response = request('parse-text', input, true, {
+        waitUntil(task) {
+          tasks.push(task);
+        },
+        passThroughOnException() {},
+        props: {},
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect((await response).status).toBe(200);
+      expect(tasks.length).toBeGreaterThan(0);
+      // The catalogue preparation may never finish; drain the registered quota task.
+      let drained = false;
+      const drain = tasks.at(-1)!.then(() => {
+        drained = true;
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(drained).toBe(false);
+      await vi.advanceTimersByTimeAsync(80_000);
+      await drain;
+    },
+  );
   it.each(['429', '500', 'invalid', 'paid', 'empty', 'timeout'])(
     'falls back after AI failure %s',
     async (mode) => {

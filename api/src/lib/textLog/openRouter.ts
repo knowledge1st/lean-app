@@ -7,6 +7,7 @@ import {
   type TextLogDeps,
 } from './freeModels';
 import { recordFailure, recordSuccess, degradedModels } from './health';
+import { completeTask } from './tasks';
 
 export type AiOutcome =
   'invalid_output' | 'timeout' | 'provider_error' | 'rate_limited' | 'non_free_model' | 'no_models';
@@ -22,8 +23,9 @@ export type AiResult =
 
 export async function interpretWithAi(
   deps: TextLogDeps,
-  input: { system: string; user: string } |
-    ((signal: AbortSignal) => Promise<{ system: string; user: string } | null>),
+  input:
+    | { system: string; user: string }
+    | ((signal: AbortSignal) => Promise<{ system: string; user: string } | null>),
   evaluationModels?: readonly FreeModel[],
 ): Promise<AiResult> {
   const metrics: AiMetrics = { model: null, promptTokens: 0, completionTokens: 0, attempts: 0 };
@@ -60,15 +62,14 @@ export async function interpretWithAi(
         ]);
   const boundedDeps = { ...deps, fetch: network };
   let sent: string[] = [];
-  // Drain health writes before returning so the Worker can finish them. The timer
-  // stays active during that drain and an expired request always returns timeout.
+  // Preserve health-write ordering when a timeout follows an in-flight success.
   const healthWrites: Promise<void>[] = [];
   const writeHealth = (write: Promise<void>) => {
     const pending = Promise.resolve(write).catch(() => {
       /* Health storage failures do not blame a model. */
     });
     healthWrites.push(pending);
-    return pending;
+    return completeTask(deps, pending);
   };
   const failedModels = new Set<string>();
   const failModel = (id: string) => {
@@ -92,16 +93,23 @@ export async function interpretWithAi(
       if (timedOut) return failure('timeout');
       if (!discovered.length) return failure('no_models');
       if (state.freeRemaining === 0) return failure('rate_limited', 'quota');
-      const reasoningSupported = evaluationModels === undefined
-        ? state.reasoningSupported ?? {}
-        : Object.fromEntries(evaluationModels.map((model) => [
-            model.id, model.supported_parameters?.includes('reasoning') ?? false,
-          ]));
+      const reasoningSupported =
+        evaluationModels === undefined
+          ? (state.reasoningSupported ?? {})
+          : Object.fromEntries(
+              evaluationModels.map((model) => [
+                model.id,
+                model.supported_parameters?.includes('reasoning') ?? false,
+              ]),
+            );
       let candidates = discovered.filter((id) => id.endsWith(':free') && id !== 'openrouter/auto');
       // Route preparation (personal quota and food catalogue) shares this deadline.
-      const prompt = typeof input === 'function'
-        ? await Promise.race([input(controller.signal), deadline])
-        : input;
+      const preparation =
+        typeof input === 'function' ? input(controller.signal) : Promise.resolve(input);
+      // Preparation can finish after the response and must release any late quota
+      // reservation while the Worker is still alive.
+      if (deps.waitUntil) void completeTask(deps, preparation);
+      const prompt = await Promise.race([preparation, deadline]);
       if (timedOut) return failure('timeout');
       if (!prompt) return failure('no_models');
       while (candidates.length && metrics.attempts < 2) {
@@ -185,10 +193,16 @@ export async function interpretWithAi(
       }
       return failure('no_models');
     } finally {
-      // Refresh after any model request, including failures. Share the total deadline.
+      // Refresh after any model request, including failures. In Workers this has
+      // its own network timeout and can persist quota after the response.
       if (metrics.attempts) {
         try {
-          await Promise.race([refreshFreeRemaining(boundedDeps), deadline]);
+          await completeTask(
+            deps,
+            deps.waitUntil
+              ? refreshFreeRemaining(deps)
+              : Promise.race([refreshFreeRemaining(boundedDeps), deadline]),
+          );
         } catch {
           /* Last saved quota remains valid. */
         }
@@ -200,11 +214,16 @@ export async function interpretWithAi(
     result = await Promise.race([run(), deadline]);
   } catch {
     // Serialize timeout failures after any success write already in flight.
-    await Promise.all(healthWrites);
-    if (sent.length) await failSent();
+    await completeTask(
+      deps,
+      (async () => {
+        await Promise.all(healthWrites);
+        if (sent.length) await failSent();
+      })(),
+    );
     result = failure(timedOut ? 'timeout' : 'provider_error');
   } finally {
-    await Promise.all(healthWrites);
+    if (!deps.waitUntil) await Promise.all(healthWrites);
     clearTimeout(timer);
   }
   return timedOut ? failure('timeout') : result;

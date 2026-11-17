@@ -14,6 +14,7 @@ export interface TextLogDeps {
   env: Env;
   fetch?: typeof fetch;
   now?: () => Date;
+  waitUntil?: (p: Promise<unknown>) => void;
 }
 export interface ModelState {
   candidates: string[];

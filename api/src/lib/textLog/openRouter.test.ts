@@ -235,15 +235,133 @@ describe('interpretWithAi', () => {
     },
   );
   it.each(['success', 'invalid', 'http'])(
+    'registers a slow %s health write without delaying the response in Workers',
+    async (kind) => {
+      vi.useFakeTimers();
+      let written = false;
+      const slowWrite = () =>
+        new Promise<void>((resolve) =>
+          setTimeout(() => {
+            written = true;
+            resolve();
+          }, 80_000),
+        );
+      if (kind === 'success') vi.mocked(recordSuccess).mockImplementationOnce(slowWrite);
+      else vi.mocked(recordFailure).mockImplementationOnce(slowWrite);
+      const response =
+        kind === 'http'
+          ? new Response('', { status: 429 })
+          : reply(candidates[0], kind === 'success' ? JSON.stringify(parse) : '{}');
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response);
+      const tasks: Promise<unknown>[] = [];
+      const waitUntil = vi.fn((task: Promise<unknown>) => {
+        tasks.push(task);
+      });
+      const result = interpretWithAi({ ...deps(fetch), waitUntil }, input);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await result).toMatchObject({ attempts: kind === 'invalid' ? 2 : 1 });
+      expect(written).toBe(false);
+      expect(waitUntil).toHaveBeenCalled();
+      let drained = false;
+      const drain = Promise.all(tasks).then(() => {
+        drained = true;
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(drained).toBe(false);
+      await vi.advanceTimersByTimeAsync(50_000);
+      await drain;
+      expect(written).toBe(true);
+    },
+  );
+  it('returns at the deadline while timeout health writes run in waitUntil', async () => {
+    vi.useFakeTimers();
+    vi.mocked(recordFailure).mockImplementationOnce(
+      () => new Promise((resolve) => setTimeout(resolve, 80_000)),
+    );
+    const tasks: Promise<unknown>[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => new Promise(() => {}));
+    const result = interpretWithAi(
+      {
+        ...deps(fetch),
+        waitUntil: (task) => {
+          tasks.push(task);
+        },
+      },
+      input,
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await result).toMatchObject({ outcome: 'timeout', attempts: 1 });
+    let drained = false;
+    const drain = Promise.all(tasks).then(() => {
+      drained = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(drained).toBe(false);
+    await vi.advanceTimersByTimeAsync(80_000);
+    await drain;
+    expect(drained).toBe(true);
+  });
+  it('registers quota refresh with waitUntil without blocking the result', async () => {
+    let finish!: (remaining: number) => void;
+    vi.mocked(refreshFreeRemaining).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const tasks: Promise<unknown>[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(reply());
+    expect(
+      await interpretWithAi(
+        {
+          ...deps(fetch),
+          waitUntil: (task) => {
+            tasks.push(task);
+          },
+        },
+        input,
+      ),
+    ).toMatchObject({ ok: true });
+    let drained = false;
+    const drain = Promise.all(tasks).then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    finish(9);
+    await drain;
+  });
+  it('captures background health and quota errors without logging private data', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(recordSuccess).mockRejectedValueOnce(new Error(input.user));
+    vi.mocked(refreshFreeRemaining).mockRejectedValueOnce(new Error(input.user));
+    const tasks: Promise<unknown>[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(reply());
+    expect(
+      await interpretWithAi(
+        {
+          ...deps(fetch),
+          waitUntil: (task) => {
+            tasks.push(task);
+          },
+        },
+        input,
+      ),
+    ).toMatchObject({ ok: true });
+    await expect(Promise.all(tasks)).resolves.toBeDefined();
+    expect(log).not.toHaveBeenCalled();
+  });
+  it.each(['success', 'invalid', 'http'])(
     'returns timeout after draining a slow %s health write',
     async (kind) => {
       vi.useFakeTimers();
       const slowWrite = () => new Promise<void>((resolve) => setTimeout(resolve, 80_000));
       if (kind === 'success') vi.mocked(recordSuccess).mockImplementationOnce(slowWrite);
       else vi.mocked(recordFailure).mockImplementationOnce(slowWrite);
-      const response = kind === 'http'
-        ? new Response('', { status: 429 })
-        : reply(candidates[0], kind === 'success' ? JSON.stringify(parse) : '{}');
+      const response =
+        kind === 'http'
+          ? new Response('', { status: 429 })
+          : reply(candidates[0], kind === 'success' ? JSON.stringify(parse) : '{}');
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response);
       let settled = false;
       const result = interpretWithAi(deps(fetch), input).then((value) => {
