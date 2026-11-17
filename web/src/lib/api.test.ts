@@ -49,6 +49,21 @@ describe('api', () => {
       status: 422,
       code: 'validation_error',
       message: 'Datos inválidos',
+      body: { error: { code: 'validation_error', message: 'Datos inválidos' } },
+    });
+  });
+
+  it('conserva el cuerpo JSON completo de un conflicto de código de barras', async () => {
+    const body = {
+      error: { code: 'barcode_taken', message: 'El código ya existe.' },
+      food: { id: 'existing-food', name: 'Pan compartido', createdByMe: false },
+    };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status: 409 }));
+    await expect(client.post('/api/foods', {})).rejects.toMatchObject({
+      status: 409,
+      code: 'barcode_taken',
+      message: 'El código ya existe.',
+      body,
     });
   });
 
@@ -178,6 +193,7 @@ describe('api', () => {
         status: 503,
         code: 'http_error',
         message: 'No se pudo completar la solicitud.',
+        body: body === 'not json' ? undefined : JSON.parse(body),
       });
     },
   );

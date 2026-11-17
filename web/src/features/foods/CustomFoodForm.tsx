@@ -1,9 +1,15 @@
 import { useState } from 'react';
-import { createFoodSchema, per100gFromServing, type Food } from '@lean/shared';
+import {
+  barcodeTakenErrorSchema,
+  createFoodSchema,
+  per100gFromServing,
+  type Food,
+} from '@lean/shared';
 import { Input } from '../../components/ui/Input';
 import { NumberInput } from '../../components/ui/NumberInput';
 import { Button } from '../../components/ui/Button';
 import { decimalValue, formatNumber } from '../../lib/macros';
+import { ApiError } from '../../lib/api';
 import { useCreateFood } from './api';
 const numericFields = [
   { key: 'kcal', label: 'Calorías', unit: 'kcal' },
@@ -36,6 +42,10 @@ export function CustomFoodForm({
   });
   const [submitted, setSubmitted] = useState(false);
   const mutation = useCreateFood();
+  const barcodeTaken =
+    mutation.error instanceof ApiError && mutation.error.code === 'barcode_taken'
+      ? barcodeTakenErrorSchema.safeParse(mutation.error.body)
+      : undefined;
   const update = (key: keyof typeof fields, value: string) =>
     setFields((current) => ({ ...current, [key]: value }));
   const byServing = mode === 'serving';
@@ -129,6 +139,7 @@ export function CustomFoodForm({
         mutation.mutate(result.data, { onSuccess: onCreated });
       }}
     >
+      <p className="text-sm text-muted">Lo van a poder usar todos los usuarios de la app.</p>
       {initialBarcode && (
         <Input label="Código de barras" value={initialBarcode} readOnly error={errors.barcode} />
       )}
@@ -209,9 +220,16 @@ export function CustomFoodForm({
         </p>
       )}
       {mutation.isError && (
-        <p role="alert" className="text-danger">
-          {mutation.error.message}
-        </p>
+        <div role="alert" className="text-danger">
+          {barcodeTaken?.success ? (
+            <>
+              <p>Ese código ya está cargado como «{barcodeTaken.data.food.name}».</p>
+              <Button onClick={() => onCreated(barcodeTaken.data.food)}>Usar ese alimento</Button>
+            </>
+          ) : (
+            mutation.error.message
+          )}
+        </div>
       )}
       <div className="flex justify-between gap-3">
         <Button variant="ghost" disabled={mutation.isPending} onClick={onBack}>

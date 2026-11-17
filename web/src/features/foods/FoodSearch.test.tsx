@@ -50,7 +50,7 @@ it.each(['recent', 'frequent'] as const)(
 it.each(['recent', 'frequent', 'search'] as const)(
   'conserva datos de %s tras error de recarga y permite reintentar',
   async (tab) => {
-    const food = { id: 'food', name: 'Pan', kcal: 100, source: 'seed' };
+    const food = { id: 'food', name: 'Pan', kcal: 100, source: 'seed', createdByMe: false };
     const data = tab === 'search' ? { items: [food] } : [food];
     const key = tab === 'search' ? ['foods', 'search', 'pan'] : ['foods', tab];
     const fetchMock = vi

@@ -141,6 +141,7 @@ it.each(['eat', 'delete', 'edit', 'add'] as const)(
                     {
                       id: 'food',
                       source: 'seed',
+                      createdByMe: false,
                       name: 'Arroz',
                       brand: null,
                       barcode: null,
@@ -260,6 +261,7 @@ it('permite dos altas concurrentes y revierte solo la primera cuando falla', asy
   const food: Food = {
     id: 'rice',
     source: 'seed',
+    createdByMe: false,
     name: 'Arroz',
     brand: null,
     barcode: null,
@@ -348,6 +350,7 @@ it.each(['error', 'success'] as const)(
     });
     const food: Food = {
       ...summary.meals[0]!.entries[0]!.food,
+      createdByMe: false,
       barcode: null,
       kcal: 200,
       protein: 10,

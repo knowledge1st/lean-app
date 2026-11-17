@@ -22,6 +22,7 @@ afterEach(() => {
 const food: Food = {
   id: 'food',
   source: 'seed',
+  createdByMe: false,
   name: 'Pan',
   brand: 'Marca',
   barcode: '12345678',

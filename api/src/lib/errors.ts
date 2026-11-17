@@ -11,6 +11,7 @@ export class AppError extends Error {
     readonly status: ContentfulStatusCode,
     readonly code: string,
     message: string,
+    readonly extra?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'AppError';
@@ -38,7 +39,7 @@ export const errorResponse = (
 
 export const handleError = (err: Error, c: Context): Response => {
   if (err instanceof AppError) {
-    return errorResponse(c, err.status, err.code, err.message);
+    return c.json({ error: { code: err.code, message: err.message }, ...err.extra }, err.status);
   }
   if (err instanceof HTTPException && err.status < 500) {
     const status = err.status as ContentfulStatusCode;

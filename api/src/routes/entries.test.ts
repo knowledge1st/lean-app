@@ -11,7 +11,7 @@ import { handleError } from '../lib/errors';
 import { testEnv } from '../test-env';
 import { entries } from './entries';
 
-describe.skipIf(!hasTestDatabase)('entries integration', () => {
+describe.skipIf(!hasTestDatabase)('entries integration', { timeout: 30000 }, () => {
   let f: ReturnType<typeof diaryFixture>;
   beforeEach(async () => {
     f = diaryFixture();
@@ -95,7 +95,7 @@ describe.skipIf(!hasTestDatabase)('entries integration', () => {
     expect(Number(row!.kcal)).toBe(Number(row!.grams) * 2);
     expect(Number(row!.protein)).toBeCloseTo(Number(row!.grams) * 0.1025, 4);
   });
-  it('isolates entries and custom foods between users and accepts existing seeds', async () => {
+  it('isolates entries between users and accepts shared custom foods and seeds', async () => {
     const food = await f.food();
     const entry = await f.entry(food.id!);
     expect(
@@ -114,7 +114,7 @@ describe.skipIf(!hasTestDatabase)('entries integration', () => {
       ).toBe(404);
     const [row] = await f.db.select().from(mealEntries).where(eq(mealEntries.id, entry.id));
     expect(Number(row!.grams)).toBe(150);
-    for (const foodId of [food.id, crypto.randomUUID()]) {
+    for (const foodId of [crypto.randomUUID()]) {
       const response = await f.request(
         '/entries',
         'POST',
@@ -126,6 +126,9 @@ describe.skipIf(!hasTestDatabase)('entries integration', () => {
         error: { code: 'not_found', message: 'Alimento no encontrado' },
       });
     }
+    const shared = await f.entry(food.id!, {}, 1);
+    expect(shared.foodId).toBe(food.id);
+    expect((await f.request(`/entries/${shared.id}`, 'PATCH', { grams: 200 }, 1)).status).toBe(200);
     const [seed] = await f.db.select().from(foods).where(eq(foods.source, 'seed')).limit(1);
     expect(seed).toBeDefined();
     await f.entry(seed!.id, {}, 1);

@@ -30,6 +30,8 @@ describe('DELETE /foods/:id', () => {
 
     expect(returning).toHaveBeenCalledOnce();
     expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ error: { code: 'food_in_use' } });
+    expect(await response.json()).toEqual({
+      error: { code: 'food_in_use', message: 'El alimento está en uso en un diario' },
+    });
   });
 });

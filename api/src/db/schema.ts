@@ -99,8 +99,8 @@ export const foods = pgTable(
     uniqueIndex('foods_shared_barcode_idx')
       .on(t.barcode)
       .where(sql`${t.barcode} IS NOT NULL AND ${t.source} <> 'custom'`),
-    uniqueIndex('foods_owner_barcode_idx')
-      .on(t.ownerId, t.barcode)
+    uniqueIndex('foods_custom_barcode_idx')
+      .on(t.barcode)
       .where(sql`${t.barcode} IS NOT NULL AND ${t.source} = 'custom'`),
     index('foods_name_trgm_idx').using('gin', t.name.op('gin_trgm_ops')),
     index('foods_brand_trgm_idx').using('gin', t.brand.op('gin_trgm_ops')),

@@ -11,6 +11,11 @@ const makeApp = () => {
   a.get('/app-error', () => {
     throw new AppError(409, 'conflict', 'Already exists');
   });
+  a.get('/app-error-extra', () => {
+    throw new AppError(409, 'barcode_taken', 'Ese código ya está cargado', {
+      food: { id: 'existing' },
+    });
+  });
   a.get('/http-exception', () => {
     throw new HTTPException(401, { message: 'Nope' });
   });
@@ -37,6 +42,15 @@ describe('error handling', () => {
     const res = await makeApp().request('/app-error');
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: { code: 'conflict', message: 'Already exists' } });
+  });
+
+  it('includes AppError extra fields in the response', async () => {
+    const res = await makeApp().request('/app-error-extra');
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: { code: 'barcode_taken', message: 'Ese código ya está cargado' },
+      food: { id: 'existing' },
+    });
   });
 
   it('maps HTTPException to the error format', async () => {

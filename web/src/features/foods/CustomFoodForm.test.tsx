@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { Food } from '@lean/shared';
 import { jsonResponse } from '../../auth/testUtils';
 import { AddFoodSheet } from './AddFoodSheet';
 import { CustomFoodForm } from './CustomFoodForm';
@@ -28,6 +29,7 @@ function setup(sheet = false) {
               ...JSON.parse(String(init.body)),
               id: 'food',
               source: 'custom',
+              createdByMe: true,
               barcode: null,
               brand: null,
             }
@@ -37,6 +39,7 @@ function setup(sheet = false) {
   );
   vi.stubGlobal('fetch', fetchMock);
   const onCreated = vi.fn();
+  const onAdd = vi.fn();
   function Harness() {
     const [mode, setMode] = useState<'serving' | 'per100g'>('serving');
     return (
@@ -46,14 +49,14 @@ function setup(sheet = false) {
   render(
     <QueryClientProvider client={client}>
       {sheet ? (
-        <AddFoodSheet date="2026-11-15" meal="breakfast" onClose={vi.fn()} onAdd={vi.fn()} />
+        <AddFoodSheet date="2026-11-15" meal="breakfast" onClose={vi.fn()} onAdd={onAdd} />
       ) : (
         <Harness />
       )}
     </QueryClientProvider>,
   );
   const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
-  return { client, onCreated, posts };
+  return { client, onCreated, onAdd, posts, fetchMock };
 }
 function fill(serving = true, values = { kcal: '100', protein: '3', carbs: '12,5', fat: '4' }) {
   fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Mi alimento' } });
@@ -74,6 +77,83 @@ function grams(value: string) {
 function submit() {
   fireEvent.click(screen.getByRole('button', { name: 'Guardar alimento' }));
 }
+
+const sharedFood: Food = {
+  id: 'a8e2dd59-265a-4f12-bd13-d3f38814ce28',
+  source: 'custom',
+  createdByMe: false,
+  name: 'Pan compartido',
+  brand: 'Panadería',
+  barcode: '7790001000012',
+  kcal: 200,
+  protein: 10,
+  carbs: 20,
+  fat: 5,
+  servingG: 30,
+  servingLabel: '1 rebanada',
+};
+
+it('avisa debajo del título que el alimento será compartido', () => {
+  const { client } = setup(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Crear alimento' }));
+  expect(screen.getByRole('heading', { name: 'Crear alimento' })).toBeTruthy();
+  expect(screen.getByText('Lo van a poder usar todos los usuarios de la app.')).toBeTruthy();
+  client.clear();
+});
+
+it.each([false, true])(
+  'ofrece usar el alimento de un conflicto válido (hoja: %s)',
+  async (sheet) => {
+    const { client, fetchMock, onCreated, onAdd } = setup(sheet);
+    if (sheet) fireEvent.click(screen.getByRole('button', { name: 'Crear alimento' }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        { error: { code: 'barcode_taken', message: 'El código ya existe.' }, food: sharedFood },
+        409,
+      ),
+    );
+    fill();
+    grams('25');
+    submit();
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Ese código ya está cargado como «Pan compartido».',
+    );
+    expect(screen.queryByText('El código ya existe.')).toBeNull();
+    expect(onCreated).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Usar ese alimento' }));
+    if (sheet) {
+      expect(screen.getByText(sharedFood.name)).toBeTruthy();
+      expect((screen.getByLabelText('Gramos') as HTMLInputElement).value).toBe('30');
+      expect(screen.getByText('60 kcal')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+      expect(onAdd).toHaveBeenCalledWith(sharedFood, 30);
+    } else {
+      expect(onCreated).toHaveBeenCalledExactlyOnceWith(sharedFood);
+    }
+    client.clear();
+  },
+);
+
+it.each([undefined, { ...sharedFood, createdByMe: 'false' }])(
+  'conserva el mensaje genérico ante un conflicto con alimento inválido: %j',
+  async (food) => {
+    const { client, fetchMock, onCreated } = setup();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        { error: { code: 'barcode_taken', message: 'El código ya existe.' }, food },
+        409,
+      ),
+    );
+    fill();
+    grams('25');
+    submit();
+    expect((await screen.findByRole('alert')).textContent).toBe('El código ya existe.');
+    expect(screen.queryByRole('button', { name: 'Usar ese alimento' })).toBeNull();
+    expect(onCreated).not.toHaveBeenCalled();
+    client.clear();
+  },
+);
+
 it('convierte por porción, muestra lo enviado y permite cargar 75 g con 300 kcal', async () => {
   const { client, posts } = setup(true);
   fireEvent.click(screen.getByRole('button', { name: 'Crear alimento' }));
