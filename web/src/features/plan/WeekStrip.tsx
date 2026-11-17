@@ -47,13 +47,15 @@ function WeekDay({
         </span>
         <span className="block font-semibold">{Number(date.slice(-2))}</span>
         <span className="block text-[11px] tabular-nums">{formatNumber(total, 0)}</span>
-        {indicator && (
+        {indicator ? (
           <span
             aria-label={indicator.label}
-            className={`mx-auto block w-5 rounded-full bg-surface ${indicator.color}`}
+            className={`mx-auto block h-6 w-5 rounded-full bg-surface ${indicator.color}`}
           >
             {indicator.symbol}
           </span>
+        ) : (
+          <span aria-hidden="true" className="block h-6" />
         )}
       </button>
       {query.isPending && <Skeleton className="mt-1 h-1" />}

@@ -60,6 +60,13 @@ it('presenta siete días, totales, estados accesibles, hoy y selección', () => 
   );
   const buttons = screen.getAllByRole('button');
   expect(buttons).toHaveLength(7);
+  for (const button of buttons) {
+    expect(button.lastElementChild?.classList.contains('h-6')).toBe(true);
+  }
+  for (const index of [3, 4]) {
+    expect(buttons[index]!.lastElementChild?.getAttribute('aria-hidden')).toBe('true');
+    expect(buttons[index]!.lastElementChild?.textContent).toBe('');
+  }
   expect(
     screen.getByRole('button', { name: 'lun, 16 nov · 1.000 kcal · dentro de la meta · hoy' }),
   ).toBe(buttons[0]);
