@@ -46,8 +46,8 @@ Celular ──HTTPS──> GitHub Pages (estáticos: React)
 
 **Librerías**
 
-- Web: React Router (`HashRouter`, evita el problema de rutas en Pages), TanStack Query, Tailwind CSS, Radix UI para diálogos y menús, Recharts para gráficos, react-hook-form + zod.
-- Escáner: polyfill `barcode-detector` (basado en ZXing WASM). Safari en iOS no trae `BarcodeDetector` nativo, así que el polyfill es obligatorio.
+- Web: React, React Router (`HashRouter`, evita el problema de rutas en Pages), TanStack Query, Tailwind CSS, `@radix-ui/react-dialog` para diálogos y Recharts para gráficos. Tipos y esquemas zod compartidos desde `@lean/shared`.
+- Escáner: polyfill `barcode-detector` (basado en `zxing-wasm`, incluido para servir el WASM localmente). Safari en iOS no trae `BarcodeDetector` nativo, así que el polyfill es obligatorio.
 - API: Hono, Drizzle ORM, `@neondatabase/serverless` en modo HTTP, zod para validar cada request.
 
 ## 3. Restricciones del free tier que condicionan el diseño
@@ -127,21 +127,22 @@ Notas de diseño:
 
 Todo el motor son funciones puras con tests unitarios (Vitest): casos normales, fechas imposibles, pisos, datos insuficientes.
 
-## 7. API (todas bajo `/api`, JSON, sesión obligatoria salvo login)
+## 7. API (todas bajo `/api`, JSON, sesión obligatoria salvo login y salud)
 
 | Recurso | Endpoints |
 |---|---|
-| Auth | `POST /auth/login`, `POST /auth/logout`, `POST /auth/password`, `GET /me` |
+| Auth | `POST /auth/login`, `POST /auth/logout`, `POST /auth/logout-all`, `POST /auth/password`, `GET /me` |
 | Perfil | `GET/PUT /profile` |
-| Alimentos | `GET /foods/search?q=`, `GET /foods/barcode/:code`, `POST /foods` (personalizado), `GET /foods/recent` |
-| Diario y plan | `GET /entries?from=&to=`, `POST /entries`, `PATCH /entries/:id`, `DELETE /entries/:id`, `POST /entries/copy` (día, comida o semana), `POST /entries/parse-text` (interpreta texto libre, no guarda), `POST /entries/batch` (crea N entradas, todo o nada) |
+| Alimentos | `GET /foods/search?q=`, `GET /foods/barcode/:code`, `POST /foods/import` (por código de barras), `POST /foods` (personalizado), `PATCH /foods/:id`, `DELETE /foods/:id`, `GET /foods/recent`, `GET /foods/frequent` |
+| Diario y plan | `GET /entries?from=&to=`, `POST /entries`, `PATCH /entries/:id`, `DELETE /entries/:id`, `POST /entries/copy` (día, comida o semana), `POST /entries/mark-eaten` (marca lo planificado como comido por fecha y comida opcional), `POST /entries/parse-text` (interpreta texto libre, no guarda), `POST /entries/batch` (crea N entradas, todo o nada) |
 | Carga por texto | `GET /text-log/status` (diagnóstico de modelos gratuitos y cupo, sin datos de usuarios); `GET /me` suma `features.textLog` y `features.textLogAi` |
 | Objetivos | `POST /goals/preview` (calcula sin guardar), `POST /goals`, `GET /goals/active`, `GET /targets?date=` |
-| Check-in | `GET /checkins/pending`, `POST /checkins/:id/resolve` |
-| Cuerpo | `GET/PUT /body-logs/:date`, `GET /body-logs?from=&to=` |
-| Agua y ejercicio | `POST /water`, `GET/POST/DELETE /exercise` |
-| Compras | `POST /shopping/generate?week=`, `GET /shopping?week=`, `PATCH /shopping/:id`, `POST /shopping` (ítem libre) |
+| Check-in | `GET /checkins/pending`, `POST /checkins/:id/resolve`, `GET /checkins` (historial) |
+| Cuerpo | `PUT /body-logs/:date`, `DELETE /body-logs/:date`, `GET /body-logs?from=&to=` |
+| Agua y ejercicio | `GET /water?date=`, `POST /water`, `GET /exercise?from=&to=`, `POST /exercise`, `PATCH /exercise/:id`, `DELETE /exercise/:id` |
+| Compras | `POST /shopping/generate` (semana en el cuerpo), `GET /shopping?week=`, `PATCH /shopping/:id`, `POST /shopping` (ítem libre), `DELETE /shopping/checked?week=`, `DELETE /shopping/:id` |
 | Resumen | `GET /summary/day?date=`, `GET /summary/week?week=` |
+| Salud | `GET /health` (estado del Worker), `GET /health/db` (conexión a la base) |
 
 ## 8. Pantallas
 

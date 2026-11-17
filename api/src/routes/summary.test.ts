@@ -236,6 +236,24 @@ describe.skipIf(!hasTestDatabase)('weekly summary integration', { timeout: 30_00
     expect(after).toEqual({ ...before, exerciseKcal: 750 });
     expect(await (await f.request('/summary/week?week=2026-W47')).json()).toEqual(weekBefore);
   });
+  it('switches targets midweek and uses the Sunday owner for expected weight', async () => {
+    vi.setSystemTime(new Date('2026-11-09T12:00:00Z'));
+    await f.create();
+    vi.setSystemTime(new Date('2026-11-18T12:00:00Z'));
+    await f.profile();
+    const saved = await f.create(weightGoal);
+    const response = await f.request('/summary/week?week=2026-W47');
+    expect(response.status).toBe(200);
+    const result = weekSummarySchema.parse(await response.json());
+    const kcal = saved.plan.daily.kcal;
+    expect(result.days.map((day) => day.targetKcal)).toEqual([2000, 2000, ...Array(5).fill(kcal)]);
+    const first = saved.plan.milestones[0]!;
+    const expected = Math.round((100 + ((first.expectedWeightKg - 100) * 4) / 7) * 10) / 10;
+    expect(result).toMatchObject({
+      budgetKcal: 2 * 2000 + 5 * kcal,
+      expectedWeightKg: expected,
+    });
+  });
   it('allows negative remaining calories and returns null without a budget', async () => {
     const food = await f.food();
     await f.entry(food.id!, { date: '2026-11-22', grams: 1000 });

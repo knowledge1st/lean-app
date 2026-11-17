@@ -15,7 +15,7 @@ import { selectWater } from './water';
 import { Hono } from 'hono';
 import { getDb } from '../db/client';
 import type { AppEnv } from '../env';
-import { getTargetForDate, selectTargetForDate } from '../lib/targets';
+import { getTargetForDate, resolveTargetsByDay, selectTargetsForRange } from '../lib/targets';
 import { firstTarget, interpolateWeight, selectMilestones } from '../lib/goals';
 import { validate } from '../lib/validate';
 import { selectEntries, serializeEntry, storedMacros } from './entries';
@@ -63,28 +63,31 @@ summary.get('/week', validate('query', summaryWeekQuerySchema), async (c) => {
     db = getDb(c.env),
     userId = c.get('userId');
   const { from, to } = isoWeekRange(week);
-  const rows = (await selectEntries(db, userId, from, to)).filter(
-    (row) => row.entry.status === 'eaten',
+  const [entries, targetRows] = await Promise.all([
+    selectEntries(db, userId, from, to),
+    selectTargetsForRange(db, userId, from, to),
+  ]);
+  const rows = entries.filter((row) => row.entry.status === 'eaten');
+  const dates = Array.from({ length: 7 }, (_, index) =>
+    new Date(Date.parse(from) + index * 86400000).toISOString().slice(0, 10),
   );
-  const days = await Promise.all(
-    Array.from({ length: 7 }, async (_, index) => {
-      const date = new Date(Date.parse(from) + index * 86400000).toISOString().slice(0, 10);
-      return {
-        date,
-        eatenKcal: Math.round(
-          sumMacros(
-            rows.filter((row) => row.entry.date === date).map((row) => storedMacros(row.entry)),
-          ).kcal,
-        ),
-        targetKcal: (await getTargetForDate(db, userId, date))?.kcal ?? null,
-      };
-    }),
-  );
+  const dailyTargets = resolveTargetsByDay(targetRows, dates);
+  const days = dates.map((date, index) => {
+    return {
+      date,
+      eatenKcal: Math.round(
+        sumMacros(
+          rows.filter((row) => row.entry.date === date).map((row) => storedMacros(row.entry)),
+        ).kcal,
+      ),
+      targetKcal: dailyTargets[index]?.target.kcal ?? null,
+    };
+  });
   const eatenKcal = days.reduce((sum, day) => sum + day.eatenKcal, 0);
   const budgetKcal = days.some((day) => day.targetKcal !== null)
     ? days.reduce((sum, day) => sum + (day.targetKcal ?? 0), 0)
     : null;
-  const owner = await selectTargetForDate(db, userId, to);
+  const owner = dailyTargets.at(-1);
   let expectedWeightKg: number | null = null;
   if (owner) {
     const [initial, points] = await Promise.all([

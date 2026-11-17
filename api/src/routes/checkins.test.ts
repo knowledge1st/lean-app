@@ -50,6 +50,29 @@ describe.skipIf(!hasTestDatabase)('checkins integration', { timeout: 30_000 }, (
     });
     expect((await f.pending())?.id).toBe(first.id);
   });
+  it('uses the target effective today after a change during the reviewed week', async () => {
+    const saved = await f.started('manual');
+    await f.db.insert(targets).values(
+      [
+        { effectiveFrom: '2026-11-11', kcal: 1800 },
+        { effectiveFrom: '2026-11-16', kcal: 1700 },
+        { effectiveFrom: '2026-11-17', kcal: 1600 },
+      ].map((target) => ({
+        ...target,
+        goalId: saved.goal.id,
+        proteinG: '140',
+        carbsG: '180',
+        fatG: '60',
+        waterMl: 2500,
+        reason: 'adjustment' as const,
+      })),
+    );
+    expect(await f.pending()).toMatchObject({
+      weekStart: '2026-11-09',
+      weekEnd: '2026-11-15',
+      current: { kcal: 1700, proteinG: 140, carbsG: 180, fatG: 60 },
+    });
+  });
   it('persists the insufficient scenario with six logged days and two weigh-ins', async () => {
     const saved = await f.started();
     await f.data(saved.goal.id, 'insufficient');
