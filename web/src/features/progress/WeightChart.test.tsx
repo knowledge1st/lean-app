@@ -49,7 +49,7 @@ it('sin objetivo de peso no incluye Esperado en la leyenda ni en los resúmenes'
       <WeightSummary logs={logs} goal={goal} today="2026-01-02" />
     </>,
   );
-  expect(screen.getByText(/Registrado/)).toBeTruthy();
+  expect(screen.getByText('● Registrado')).toBeTruthy();
   expect(screen.getByText('━ Tendencia')).toBeTruthy();
   expect(screen.queryByText(/esperado|objetivo:|del plan/i)).toBeNull();
   expect(screen.getByText(/1 registros de peso en el rango/)).toBeTruthy();
@@ -103,3 +103,15 @@ it.each([
     );
   },
 );
+
+it('ofrece fechas y valores del rango en una tabla accesible', () => {
+  render(
+    <WeightChart logs={[log('2026-01-02', 79.5), log('2026-01-03', 79)]} today="2026-01-03" />,
+  );
+  fireEvent.click(screen.getByText('Ver datos'));
+  const table = screen.getByRole('table');
+  expect(table.textContent).toContain('2 ene');
+  expect(table.textContent).toContain('79,5 kg');
+  expect(table.textContent).toContain('3 ene');
+  expect(table.textContent).toContain('79 kg');
+});

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useIsMutating } from '@tanstack/react-query';
 import { addDays, isoWeekOf, isoWeekRange, isoWeekSchema } from '@lean/shared';
+import { formatNumber } from '../lib/macros';
 import { todayLocal } from '../lib/date';
 import { formatWeekRange, validWeekOf } from '../features/plan/dates';
 import { Button } from '../components/ui/Button';
@@ -85,7 +86,7 @@ function ShoppingWeek({ week, onSelect }: { week: string; onSelect: (week: strin
       {items.length > 0 && (
         <div className="flex items-center justify-between gap-2">
           <p aria-live="polite" className="text-lg font-semibold">
-            {checked} de {items.length}
+            {formatNumber(checked, 0)} de {formatNumber(items.length, 0)}
           </p>
           <ShoppingActions
             checked={checked}

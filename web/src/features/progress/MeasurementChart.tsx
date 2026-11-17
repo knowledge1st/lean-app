@@ -32,10 +32,10 @@ export default function MeasurementChart({
               tick={{ fontSize: 12 }}
             />
             <YAxis
-              width={48}
+              width={64}
               domain={axis.domain}
               ticks={axis.ticks}
-              tickFormatter={(v) => formatNumber(Number(v))}
+              tickFormatter={(v) => `${formatNumber(Number(v))} ${measurement.unit}`}
               stroke="var(--muted)"
             />
             <Tooltip
@@ -63,7 +63,7 @@ export default function MeasurementChart({
         {data
           .map((d) => `${shortDate(d.time)}: ${formatNumber(d.value!)} ${measurement.unit}`)
           .join('; ')}
-        . {data.length} registros.
+        . {formatNumber(data.length, 0)} registros.
       </figcaption>
     </figure>
   );

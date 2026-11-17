@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ShoppingItem } from '@lean/shared';
+import { useToast } from '../../components/ui/Toast';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { NumberInput } from '../../components/ui/NumberInput';
@@ -16,6 +17,7 @@ export function ShoppingItemRow({
   week: string;
   disabled?: boolean;
 }) {
+  const toast = useToast();
   const client = useQueryClient();
   const toggle = useShoppingMutation(week, 'toggle');
   const edit = useShoppingMutation(week, 'edit');
@@ -29,7 +31,7 @@ export function ShoppingItemRow({
   return (
     <li className="flex min-h-12 min-w-0 items-center gap-1 border-b border-border">
       <label
-        className={`flex min-h-12 min-w-0 flex-1 cursor-pointer items-center gap-2 ${item.checked ? 'text-muted opacity-60' : ''}`}
+        className={`flex min-h-12 min-w-0 flex-1 cursor-pointer items-center gap-2 ${item.checked ? 'text-muted' : ''}`}
       >
         <span className="flex min-h-11 min-w-11 shrink-0 items-center justify-center">
           <input
@@ -94,19 +96,17 @@ export function ShoppingItemRow({
           >
             <Input
               label="Nombre"
+              error={error && validateItem(label, '') ? error : undefined}
               value={label}
               onChange={(event) => setLabel(event.target.value)}
             />
             <NumberInput
               label="Cantidad en gramos (opcional)"
+              unit="g"
+              error={error && !validateItem(label, '') ? error : undefined}
               value={quantity}
               onChange={(event) => setQuantity(event.target.value)}
             />
-            {error && (
-              <p role="alert" className="text-danger">
-                {error}
-              </p>
-            )}
             <Button type="submit" disabled={edit.isPending}>
               Guardar
             </Button>
@@ -118,7 +118,14 @@ export function ShoppingItemRow({
                 variant="secondary"
                 onClick={() => {
                   setLabel(item.label);
-                  setQuantity(item.totalGrams === null ? '' : String(item.totalGrams));
+                  setQuantity(
+                    item.totalGrams === null
+                      ? ''
+                      : item.totalGrams.toLocaleString('es-AR', {
+                          useGrouping: false,
+                          maximumFractionDigits: 1,
+                        }),
+                  );
                   setError(null);
                   setEditing(true);
                 }}
@@ -130,7 +137,12 @@ export function ShoppingItemRow({
               variant="danger"
               onClick={() => {
                 setOpen(false);
-                remove.mutate({ kind: 'delete', id: item.id });
+                const undo = new AbortController();
+                remove.mutate({ kind: 'delete', id: item.id, undo: undo.signal });
+                toast(`Borraste ${item.label}`, {
+                  label: 'Deshacer',
+                  onAction: () => undo.abort(),
+                });
               }}
             >
               Borrar

@@ -43,8 +43,11 @@ function setup(
   logs: ProgressLog[] = [],
   put: () => Promise<Response> = () => Promise.resolve(jsonResponse({})),
   revisions: (typeof checkin)[] | null = [],
+  failPaths: Set<string> = new Set(),
 ) {
   const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+    if ([...failPaths].some((path) => url.includes(path)))
+      return Promise.reject(new Error('offline'));
     if (options?.method === 'PUT') return put();
     if (url.includes('/checkins?limit='))
       return revisions === null
@@ -94,7 +97,7 @@ it('agrega el punto optimista sin recargar, cierra la hoja e invalida al termina
   fireEvent.change(screen.getByLabelText('Peso'), { target: { value: '78,4' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   expect(await screen.findByText(/Último peso registrado: 78,4 kg/)).toBeTruthy();
-  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByRole('dialog')).toBeTruthy();
   expect(screen.getByTestId('weight-points').getAttribute('data-points')).toContain(
     '"weight":78.4',
   );
@@ -107,6 +110,7 @@ it('agrega el punto optimista sin recargar, cierra la hoja e invalida al termina
   logs.push(log(today, 78.4));
   finish(jsonResponse(logs[0]));
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['goals', 'active'] }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });
 it('revierte el punto y avisa con toast si falla', async () => {
   let fail!: (error: Error) => void;
@@ -122,11 +126,14 @@ it('revierte el punto y avisa con toast si falla', async () => {
   fail(new Error('offline'));
   expect(await screen.findByText(/No se pudo guardar el registro/)).toBeTruthy();
   await screen.findByText('Registrá tu primer peso');
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect((screen.getByLabelText('Peso') as HTMLInputElement).value).toBe('80');
+  expect(screen.getByRole('alert').textContent).toContain('No se pudo guardar.');
   expect(client.getQueryData(bodyRangeKey(addDays(todayLocal(), -365), todayLocal()))).toEqual({
     logs: [],
   });
 });
-it('precarga cada último valor conocido, valida y permite cargar solo medidas', async () => {
+it('muestra referencias, valida y envía solo las medidas ingresadas', async () => {
   let submitted: RequestInit | undefined;
   const { fetchMock } = setup([
     { ...log(addDays(todayLocal(), -1), 80), waistCm: 82 },
@@ -134,19 +141,21 @@ it('precarga cada último valor conocido, valida y permite cargar solo medidas',
   ]);
   await screen.findByText(/Último peso registrado/);
   fireEvent.click(screen.getByRole('button', { name: 'Registrar peso' }));
-  expect((screen.getByLabelText('Peso') as HTMLInputElement).value).toBe('80');
-  expect((screen.getByLabelText('Cintura') as HTMLInputElement).value).toBe('82');
-  expect((screen.getByLabelText('Cadera') as HTMLInputElement).value).toBe('90');
+  expect((screen.getByLabelText('Peso') as HTMLInputElement).value).toBe('');
+  expect(screen.getByLabelText('Peso').getAttribute('placeholder')).toBe('Último: 80 kg');
+  expect((screen.getByLabelText('Cintura') as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Cadera') as HTMLInputElement).value).toBe('');
   fireEvent.change(screen.getByLabelText('Peso'), { target: { value: '2' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   expect(screen.getByRole('alert').textContent).toContain('Peso: mínimo 25');
   fireEvent.change(screen.getByLabelText('Peso'), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('Cintura'), { target: { value: '83,5' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   await waitFor(() => {
     submitted = fetchMock.mock.calls.find(([, options]) => options?.method === 'PUT')?.[1];
     expect(submitted).toBeTruthy();
   });
-  expect(JSON.parse(String(submitted?.body))).toEqual({ waistCm: 82, hipCm: 90 });
+  expect(JSON.parse(String(submitted?.body))).toEqual({ waistCm: 83.5 });
 });
 it('cambiar el rango no vuelve a pedir logs', async () => {
   const { fetchMock } = setup([log(todayLocal(), 80)]);
@@ -186,3 +195,43 @@ it('conserva el gráfico sin marcas si falla el historial', async () => {
   expect(screen.queryByTestId('goal-change')).toBeNull();
   expect(screen.getByTestId('weight-points')).toBeTruthy();
 });
+
+it('abre medidas y enfoca el primer campo inválido con su descripción', async () => {
+  setup();
+  await screen.findByText('Registrá tu primer peso');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Registrar peso' })[0]!);
+  const waist = screen.getByLabelText('Cintura');
+  fireEvent.change(waist, { target: { value: '-1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(waist.closest('details')?.open).toBe(true);
+  expect(document.activeElement).toBe(waist);
+  expect(waist.getAttribute('aria-invalid')).toBe('true');
+  expect(
+    document.getElementById(waist.getAttribute('aria-describedby')!)?.textContent,
+  ).toBeTruthy();
+});
+
+it('comparte la consulta de revisiones entre marcas e historial', async () => {
+  const { fetchMock } = setup([log(todayLocal(), 80)]);
+  await screen.findByText(/Último peso registrado/);
+  await screen.findByText(/Todavía no hay revisiones/);
+  expect(fetchMock.mock.calls.filter(([url]) => url.includes('/checkins?limit='))).toHaveLength(1);
+  expect(fetchMock.mock.calls.find(([url]) => url.includes('/checkins?limit='))?.[0]).toContain(
+    'limit=52',
+  );
+});
+
+it.each(['/body-logs', '/summary/week', '/entries'])(
+  'muestra error sin caché y reintenta %s',
+  async (path) => {
+    const failures = new Set([path]);
+    setup([], undefined, [], failures);
+    const message =
+      path === '/body-logs' ? 'No se pudo cargar tu progreso.' : 'No se pudo cargar la semana.';
+    const error = await screen.findByText(message);
+    failures.clear();
+    fireEvent.click(error.closest('[role="alert"]')!.querySelector('button')!);
+    await waitFor(() => expect(screen.queryByText(message)).toBeNull());
+    expect(await screen.findByText('Registrá tu primer peso')).toBeTruthy();
+  },
+);
