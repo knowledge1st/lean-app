@@ -322,6 +322,40 @@ describe('catalogue and saved cache', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it.each(['catalogue', 'quota', 'body'])(
+    'bounds each discovery query to 5 seconds, including %s', async (stage) => {
+      vi.useFakeTimers();
+      try {
+        const { db } = storage({
+          candidates: ['qwen/a:free'], checkedAt: null, freeRemaining: 4, freeCheckedAt: null,
+        });
+        const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (url) => {
+          const quota = String(url).endsWith('/key');
+          if ((stage === 'catalogue' && !quota) || (stage === 'quota' && quota))
+            return new Promise(() => {});
+          if (stage === 'body' && !quota)
+            return { ok: true, json: () => new Promise(() => {}) } as Response;
+          return quota
+            ? json({ data: { free_model_daily_requests: { remaining: 12 } } })
+            : json({ data: [model('qwen/a:free')] });
+        });
+        let settled = false;
+        const pending = getFreeModels({
+          db, fetch,
+          env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
+        }).then((result) => { settled = true; return result; });
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect((await pending).candidates).toEqual(['qwen/a:free']);
+        const hung = fetch.mock.calls.find(([url]) => String(url).endsWith('/key') === (stage === 'quota'));
+        expect(hung?.[1]?.signal?.aborted).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('uses response_format when structured_outputs is unsupported', async () => {
     const { db } = storage({
       candidates: [],

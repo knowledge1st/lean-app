@@ -10,6 +10,7 @@ export const EXACT_MATCH_THRESHOLD = 0.8;
 interface SearchRow {
   itemIndex: number;
   chosen: Food | null;
+  chosenScore: number | null;
   food: Food | null;
   score: number | null;
 }
@@ -20,6 +21,7 @@ export async function mapItems(
   parse: AiMealParse,
   catalog: readonly CatalogItem[],
   defaultMeal: ProposedItem['meal'],
+  interpreter: 'ai' | 'rules' = 'ai',
 ): Promise<ProposedItem[]> {
   if (!parse.items.length) return [];
   const byIndex = new Map(catalog.map((item) => [item.index, item.foodId]));
@@ -45,10 +47,13 @@ export async function mapItems(
   )}]::uuid[]`;
   const result = await db.execute(sql`
     SELECT q.ordinality - 1 AS "itemIndex", chosen.food AS chosen, matches.food AS food,
-      matches.score AS score
+      matches.score AS score, chosen.score AS "chosenScore"
     FROM unnest(${queryArray}, ${idArray}) WITH ORDINALITY AS q(query, chosen_id, ordinality)
     LEFT JOIN LATERAL (
-      SELECT ${foodJson} AS food FROM ${foods} WHERE ${foods.id} = q.chosen_id
+      SELECT ${foodJson} AS food,
+        similarity(translate(lower(q.query), 'áéíóúüñ', 'aeiouun'),
+          translate(lower(${foods.name}), 'áéíóúüñ', 'aeiouun')) AS score
+      FROM ${foods} WHERE ${foods.id} = q.chosen_id
     ) chosen ON true
     LEFT JOIN LATERAL (
       SELECT ${foodJson} AS food,
@@ -86,7 +91,9 @@ export async function mapItems(
       ? item.grams
       : item.units !== null && chosen?.servingGrams != null
         ? item.units * Number(chosen.servingGrams)
-        : item.grams;
+        : interpreter === 'rules' && item.units === null
+          ? Number(chosen?.servingGrams ?? 100)
+          : item.grams;
     return {
       key: crypto.randomUUID(),
       meal: item.meal ?? defaultMeal,
@@ -96,7 +103,10 @@ export async function mapItems(
       gramsEstimated: !item.gramsStated,
       match: !chosen
         ? 'none'
-        : item.approximate || (!indexed && Number(first?.score ?? 0) < EXACT_MATCH_THRESHOLD)
+        : item.approximate ||
+          (indexed
+            ? Number(matches[0]?.chosenScore ?? 0) < 0.3
+            : Number(first?.score ?? 0) < EXACT_MATCH_THRESHOLD)
           ? 'approximate'
           : 'exact',
       food: chosen ? serializeFood(chosen, userId) : null,

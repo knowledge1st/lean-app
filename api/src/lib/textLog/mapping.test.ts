@@ -1,4 +1,5 @@
 import type { AiMealParse } from '@lean/shared';
+import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { describe, expect, it, vi } from 'vitest';
 import type { Db } from '../../db/client';
@@ -39,7 +40,7 @@ describe('text log mapping', () => {
   it('uses valid catalogue indices and excludes chosen food from alternatives in one query', async () => {
     const alternative = { ...food, id: crypto.randomUUID(), name: 'Huevo frito' };
     const db = makeDb([
-      { itemIndex: 0, chosen: food, food, score: 1 },
+      { itemIndex: 0, chosen: food, chosenScore: 0.5, food, score: 1 },
       { itemIndex: 0, chosen: food, food: alternative, score: 0.9 },
     ]);
     const [result] = await mapItems(
@@ -59,6 +60,26 @@ describe('text log mapping', () => {
     });
     expect(db.execute).toHaveBeenCalledTimes(1);
   });
+  it.each([0.29, 0.3])('checks indexed name coherence with trigram score %s', async (chosenScore) => {
+    const db = makeDb([{ itemIndex: 0, chosen: food, chosenScore, food: null, score: null }]);
+    const [result] = await mapItems(db, 'user', {
+      items: [{ ...item, searchQuery: 'arroz', catalogIndex: 0 }], otherDayMentioned: false,
+    }, catalog, 'lunch');
+    expect(result?.match).toBe(chosenScore < 0.3 ? 'approximate' : 'exact');
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    const compiled = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]![0] as SQL);
+    expect(compiled.sql).toContain('chosen.score AS "chosenScore"');
+    expect(compiled.sql).toContain("similarity(translate(lower(q.query), 'áéíóúüñ', 'aeiouun')");
+  });
+  it.each([['50', 50], [null, 100]] as const)(
+    'uses the serving or 100 g for rules without a quantity (%s)', async (servingGrams, grams) => {
+      const [result] = await mapItems(
+        makeDb([{ itemIndex: 0, chosen: null, food: { ...food, servingGrams }, score: 1 }]),
+        'user', { items: [item], otherDayMentioned: false }, catalog, 'lunch', 'rules',
+      );
+      expect(result).toMatchObject({ grams, gramsEstimated: true });
+    },
+  );
   it.each([null, 200])('uses search for null/out-of-range index %s', async (catalogIndex) => {
     const [result] = await mapItems(
       makeDb([{ itemIndex: 0, chosen: null, food, score: 0.8 }]),
@@ -130,7 +151,7 @@ describe('text log mapping', () => {
       'lunch',
     );
     expect(execute).toHaveBeenCalledTimes(1);
-    const compiled = new PgDialect().sqlToQuery(execute.mock.calls[0]![0]);
+    const compiled = new PgDialect().sqlToQuery(execute.mock.calls[0]![0] as SQL);
     expect(compiled.sql).toContain('unnest(ARRAY[$1, $2]::text[], ARRAY[$3, $4]::uuid[])');
     expect(compiled.params.slice(0, 4)).toEqual([
       'huevo',

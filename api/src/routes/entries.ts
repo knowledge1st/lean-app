@@ -30,7 +30,7 @@ import { buildPrompt } from '../lib/textLog/prompt';
 import { parseWithRules } from '../lib/textLog/rules';
 import { mapItems } from '../lib/textLog/mapping';
 import { interpretWithAi } from '../lib/textLog/openRouter';
-import { getFreeModels, savedModels } from '../lib/textLog/freeModels';
+import { savedModels } from '../lib/textLog/freeModels';
 import { reserveAiUse, finishAiUse, remainingToday } from '../lib/textLog/quota';
 
 export const entries = new Hono<AppEnv>();
@@ -288,23 +288,30 @@ export function createTextLogEntryRoutes(network?: typeof fetch) {
     let interpreter: ParseMealTextResponse['interpreter'] = 'rules';
     let catalog: Awaited<ReturnType<typeof buildCatalog>> = [];
     if (c.env.OPENROUTER_API_KEY) {
-      // Discovery does not reserve personal quota. Known-unavailable AI goes directly to rules.
-      const state = await getFreeModels(deps);
-      if (state.candidates.length && state.freeRemaining !== 0) {
+      let usageId: string | undefined;
+      const result = await interpretWithAi(deps, async (signal) => {
+        // Discovery happens inside interpretWithAi, before reserving personal quota.
         const reservation = await reserveAiUse(db, userId, profile?.timeZone);
-        if (reservation.reserved) {
-          catalog = await buildCatalog(db, userId);
-          const result = await interpretWithAi(deps, { ...buildPrompt(catalog), user: input.text });
-          if (result.attempts === 0) {
-            await db.delete(textLogUsage).where(eq(textLogUsage.id, reservation.usageId));
-          } else {
-            await finishAiUse(db, reservation.usageId, result);
-          }
-          if (result.ok && result.parse.items.length) {
-            parse = result.parse;
-            interpreter = 'ai';
-          }
+        if (!reservation.reserved) return null;
+        if (signal.aborted) {
+          // A reservation that finished after the deadline must also be released.
+          await db.delete(textLogUsage).where(eq(textLogUsage.id, reservation.usageId));
+          return null;
         }
+        usageId = reservation.usageId;
+        catalog = await buildCatalog(db, userId);
+        return signal.aborted ? null : { ...buildPrompt(catalog), user: input.text };
+      });
+      if (usageId) {
+        if (result.attempts === 0) {
+          await db.delete(textLogUsage).where(eq(textLogUsage.id, usageId));
+        } else {
+          await finishAiUse(db, usageId, result);
+        }
+      }
+      if (result.ok && result.parse.items.length) {
+        parse = result.parse;
+        interpreter = 'ai';
       }
     }
     parse ??= parseWithRules(input.text);
@@ -319,7 +326,7 @@ export function createTextLogEntryRoutes(network?: typeof fetch) {
     if (parse.otherDayMentioned) warnings.push('Se van a cargar en el día que estás viendo');
     const state = await savedModels(db);
     const response: ParseMealTextResponse = {
-      items: await mapItems(db, userId, parse, catalog, input.defaultMeal),
+      items: await mapItems(db, userId, parse, catalog, input.defaultMeal, interpreter),
       warnings,
       interpreter,
       remainingToday: await remainingToday(db, userId, profile?.timeZone, state.freeRemaining),

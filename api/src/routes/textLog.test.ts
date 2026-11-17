@@ -69,7 +69,7 @@ describe('text log route integration with auth middleware', () => {
     expect(await response.json()).toMatchObject({ available: false, freeRemainingToday: 0 });
   });
   it.each([true, false])(
-    '/me adds features using effective saved candidates, key=%s',
+    '/me adds privacy features based only on the configured key, key=%s',
     async (key) => {
       const response = await authorized.request(
         '/api/me',
@@ -81,7 +81,7 @@ describe('text log route integration with auth middleware', () => {
         features: { textLog: true, textLogAi: key },
       });
       expect(getFreeModels).not.toHaveBeenCalled();
-      expect(savedModels).toHaveBeenCalledWith(expect.anything(), expect.objectContaining(testEnv));
+      expect(savedModels).not.toHaveBeenCalled();
     },
   );
   it('/me keeps rules enabled when the saved candidate list is empty', async () => {
@@ -91,7 +91,7 @@ describe('text log route integration with auth middleware', () => {
       {},
       { ...testEnv, OPENROUTER_API_KEY: 'fake' },
     );
-    expect(await response.json()).toMatchObject({ features: { textLog: true, textLogAi: false } });
+    expect(await response.json()).toMatchObject({ features: { textLog: true, textLogAi: true } });
   });
 });
 
@@ -168,7 +168,7 @@ it.each(['legacy', 'records'])(
         expect(await me.json()).toMatchObject({
           features: {
             textLog: true,
-            textLogAi: Boolean(env.OPENROUTER_API_KEY && scenario.expected.length),
+            textLogAi: Boolean(env.OPENROUTER_API_KEY),
           },
         });
       }
@@ -179,12 +179,12 @@ it.each(['legacy', 'records'])(
   },
 );
 
-it('/me disables AI when account quota is exhausted', async () => {
+it('/me keeps the privacy notice enabled when account quota is exhausted', async () => {
   vi.mocked(savedModels).mockResolvedValue({ ...state, freeRemaining: 0 });
   const response = await authorized.request(
     '/api/me',
     {},
     { ...testEnv, OPENROUTER_API_KEY: 'fake' },
   );
-  expect(await response.json()).toMatchObject({ features: { textLog: true, textLogAi: false } });
+  expect(await response.json()).toMatchObject({ features: { textLog: true, textLogAi: true } });
 });

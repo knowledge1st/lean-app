@@ -1,7 +1,7 @@
 import type { AiMealParse } from '@lean/shared';
 import { eq, getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDb, type Db } from '../db/client';
 import { mealEntries, textLogUsage, type Food } from '../db/schema';
 import type { AppEnv } from '../env';
@@ -114,7 +114,7 @@ beforeEach(() => {
         };
       },
     }),
-    execute: vi.fn().mockResolvedValue({ rows: [{ itemIndex: 0, chosen: food, food, score: 1 }] }),
+    execute: vi.fn().mockResolvedValue({ rows: [{ itemIndex: 0, chosen: food, chosenScore: 1, food, score: 1 }] }),
     insert,
     delete: deleteUsage,
   } as unknown as Db;
@@ -127,6 +127,8 @@ beforeEach(() => {
   app.onError(handleError);
   app.route('/entries', createTextLogEntryRoutes(network));
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe('parse-text with injected fetch', () => {
   it('exposes parse-text and batch through the application entries router', async () => {
@@ -219,30 +221,65 @@ describe('parse-text with injected fetch', () => {
     expect(network).not.toHaveBeenCalled();
     expect(finishAiUse).not.toHaveBeenCalled();
   });
-  it.each([
-    { ...state, candidates: [] },
-    { ...state, freeRemaining: 0 },
-  ])(
-    'releases personal quota when AI becomes unavailable after reservation %j',
-    async (unavailable) => {
-      vi.mocked(getFreeModels).mockResolvedValueOnce(state).mockResolvedValueOnce(unavailable);
-      const response = await request('parse-text', input);
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({
-        interpreter: 'rules',
-        warnings: ['Interpretación simple: revisá con más cuidado.'],
-      });
-      expect(reserveAiUse).toHaveBeenCalledExactlyOnceWith(
-        db,
-        'session-user',
-        'America/Argentina/Buenos_Aires',
-      );
-      expect(network).not.toHaveBeenCalled();
-      expect(deleteUsage).toHaveBeenCalledExactlyOnceWith(textLogUsage);
-      expect(deleteWhere).toHaveBeenCalledExactlyOnceWith(eq(textLogUsage.id, 'usage'));
-      expect(finishAiUse).not.toHaveBeenCalled();
-    },
-  );
+  it('includes initial discovery in the 30 second deadline without reserving quota', async () => {
+    vi.useFakeTimers();
+    vi.mocked(getFreeModels).mockImplementationOnce(() => new Promise(() => {}));
+    const response = request('parse-text', input);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await (await response).json()).toMatchObject({ interpreter: 'rules' });
+    expect(network).not.toHaveBeenCalled();
+    expect(reserveAiUse).not.toHaveBeenCalled();
+  });
+  it('shares the deadline between discovery and model calls', async () => {
+    vi.useFakeTimers();
+    vi.mocked(getFreeModels).mockImplementationOnce(() => new Promise((resolve) => {
+      setTimeout(() => resolve(state), 10_000);
+    }));
+    network.mockImplementation(() => new Promise((resolve) => {
+      setTimeout(() => resolve(reply()), 25_000);
+    }));
+    const response = request('parse-text', input);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await (await response).json()).toMatchObject({ interpreter: 'rules' });
+    expect(finishAiUse).toHaveBeenCalledWith(db, 'usage', expect.objectContaining({
+      attempts: 1, outcome: 'timeout',
+    }));
+    expect(network.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(deleteUsage).not.toHaveBeenCalled();
+  });
+  it('releases quota when food catalogue preparation reaches the deadline', async () => {
+    vi.useFakeTimers();
+    const select = db.select.bind(db);
+    vi.spyOn(db, 'select').mockImplementation(((...args: Parameters<typeof db.select>) => {
+      const query = select(...args);
+      return {
+        from: (table: Parameters<typeof getTableName>[0]) => getTableName(table) === 'foods'
+          ? { where: () => ({ orderBy: () => new Promise(() => {}) }) }
+          : query.from(table),
+      };
+    }) as typeof db.select);
+    const response = request('parse-text', input);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await (await response).json()).toMatchObject({ interpreter: 'rules' });
+    expect(network).not.toHaveBeenCalled();
+    expect(deleteUsage).toHaveBeenCalledExactlyOnceWith(textLogUsage);
+    expect(deleteWhere).toHaveBeenCalledExactlyOnceWith(eq(textLogUsage.id, 'usage'));
+    expect(finishAiUse).not.toHaveBeenCalled();
+  });
+  it('releases a reservation completed after the deadline without calling the model', async () => {
+    vi.useFakeTimers();
+    vi.mocked(reserveAiUse).mockImplementationOnce(() => new Promise((resolve) => {
+      setTimeout(() => resolve({ reserved: true, usageId: 'usage', usedToday: 1 }), 31_000);
+    }));
+    const response = request('parse-text', input);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await (await response).json()).toMatchObject({ interpreter: 'rules' });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(network).not.toHaveBeenCalled();
+    expect(deleteUsage).toHaveBeenCalledExactlyOnceWith(textLogUsage);
+    expect(deleteWhere).toHaveBeenCalledExactlyOnceWith(eq(textLogUsage.id, 'usage'));
+    expect(finishAiUse).not.toHaveBeenCalled();
+  });
   it.each(['429', '500', 'invalid', 'paid', 'empty', 'timeout'])(
     'falls back after AI failure %s',
     async (mode) => {

@@ -22,7 +22,8 @@ export type AiResult =
 
 export async function interpretWithAi(
   deps: TextLogDeps,
-  input: { system: string; user: string },
+  input: { system: string; user: string } |
+    ((signal: AbortSignal) => Promise<{ system: string; user: string } | null>),
   evaluationModels?: readonly FreeModel[],
 ): Promise<AiResult> {
   const metrics: AiMetrics = { model: null, promptTokens: 0, completionTokens: 0, attempts: 0 };
@@ -97,6 +98,12 @@ export async function interpretWithAi(
             model.id, model.supported_parameters?.includes('reasoning') ?? false,
           ]));
       let candidates = discovered.filter((id) => id.endsWith(':free') && id !== 'openrouter/auto');
+      // Route preparation (personal quota and food catalogue) shares this deadline.
+      const prompt = typeof input === 'function'
+        ? await Promise.race([input(controller.signal), deadline])
+        : input;
+      if (timedOut) return failure('timeout');
+      if (!prompt) return failure('no_models');
       while (candidates.length && metrics.attempts < 2) {
         const reasoning = reasoningSupported[candidates[0]!] ?? false;
         sent = candidates.filter((id) => (reasoningSupported[id] ?? false) === reasoning);
@@ -111,8 +118,8 @@ export async function interpretWithAi(
           body: JSON.stringify({
             models: sent,
             messages: [
-              { role: 'system', content: input.system },
-              { role: 'user', content: input.user },
+              { role: 'system', content: prompt.system },
+              { role: 'user', content: prompt.user },
             ],
             response_format: {
               type: 'json_schema',

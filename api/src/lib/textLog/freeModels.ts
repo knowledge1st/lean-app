@@ -198,7 +198,7 @@ async function getJson(deps: TextLogDeps, url: string): Promise<unknown> {
         timer = setTimeout(() => {
           controller.abort();
           reject(new Error('openrouter_catalog_timeout'));
-        }, 10_000);
+        }, 5_000);
       }),
     ]);
   } finally {
