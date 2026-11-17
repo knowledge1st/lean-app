@@ -20,7 +20,7 @@ const model = (id: string, context_length = 32_000): FreeModel => ({
   architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
 });
 const ids = (models: FreeModel[]) => models.map((m) => m.id);
-type StoredState = Omit<ModelState, 'candidates'> & { candidates: string[] | FreeModel[] };
+type StoredState = Omit<ModelState, 'candidates'> & { candidates: (string | FreeModel)[] };
 function storage(initial: StoredState) {
   let state = initial;
   const db = {
@@ -111,9 +111,48 @@ describe('catalogue and saved cache', () => {
     });
     expect(result.candidates).toEqual(['google/a:free']);
     expect(result.freeRemaining).toBe(12);
-    expect(read()).toMatchObject({ ...result, candidates: [model('google/a:free')] });
+    expect(read()).toMatchObject({
+      checkedAt: result.checkedAt, freeRemaining: 12, candidates: [model('google/a:free')],
+    });
     expect(String(fetch.mock.calls[0]?.[0])).toContain('structured_outputs');
     expect(String(fetch.mock.calls[1]?.[0])).toContain('response_format');
+  });
+  it('preserves reasoning support through discovery, memory and saved records', async () => {
+    const now = new Date('2026-11-17T12:00:00Z');
+    const { db, read } = storage({
+      candidates: [], checkedAt: null, freeRemaining: null, freeCheckedAt: null,
+    });
+    const pool = [
+      { ...model('google/a:free'), supported_parameters: ['response_format', 'reasoning'] },
+      { ...model('qwen/a:free'), supported_parameters: ['response_format'] },
+      model('other/a:free'),
+    ];
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(json({ data: pool }))
+      .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 12 } } }));
+    const deps = {
+      db, fetch, now: () => now,
+      env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
+    };
+    const expected = { 'google/a:free': true, 'qwen/a:free': false, 'other/a:free': false };
+    expect((await getFreeModels(deps)).reasoningSupported).toEqual(expected);
+    expect(read().candidates).toEqual(pool);
+    expect((await getFreeModels(deps)).reasoningSupported).toEqual(expected);
+    expect((await savedModels(db)).reasoningSupported).toEqual(expected);
+    // A different cache key loads the persisted pool without catalogue access.
+    expect((await getFreeModels({ ...deps, env: { ...deps.env,
+      TEXT_LOG_PREFERRED_MODELS: 'qwen/*',
+    } })).reasoningSupported).toEqual(expected);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('treats legacy IDs and records without supported parameters as unsupported', async () => {
+    const { db } = storage({
+      candidates: ['google/a:free', model('qwen/a:free')],
+      checkedAt: new Date(), freeRemaining: 8, freeCheckedAt: null,
+    });
+    expect((await savedModels(db)).reasoningSupported).toEqual({
+      'google/a:free': false, 'qwen/a:free': false,
+    });
   });
   it('reapplies current preferences, denylist, health and maximum to legacy saved IDs', async () => {
     const now = new Date('2026-11-17T12:00:00Z');

@@ -91,9 +91,15 @@ export async function interpretWithAi(
       if (timedOut) return failure('timeout');
       if (!discovered.length) return failure('no_models');
       if (state.freeRemaining === 0) return failure('rate_limited', 'quota');
+      const reasoningSupported = evaluationModels === undefined
+        ? state.reasoningSupported ?? {}
+        : Object.fromEntries(evaluationModels.map((model) => [
+            model.id, model.supported_parameters?.includes('reasoning') ?? false,
+          ]));
       let candidates = discovered.filter((id) => id.endsWith(':free') && id !== 'openrouter/auto');
       while (candidates.length && metrics.attempts < 2) {
-        sent = candidates;
+        const reasoning = reasoningSupported[candidates[0]!] ?? false;
+        sent = candidates.filter((id) => (reasoningSupported[id] ?? false) === reasoning);
         metrics.model = null;
         metrics.attempts++;
         const response = await network('https://openrouter.ai/api/v1/chat/completions', {
@@ -115,6 +121,7 @@ export async function interpretWithAi(
             provider: { require_parameters: true, max_price: { prompt: 0, completion: 0 } },
             temperature: 0,
             max_tokens: 2000,
+            ...(reasoning ? { reasoning: { enabled: false } } : {}),
           }),
         });
         if (response.status === 429) {
@@ -166,7 +173,7 @@ export async function interpretWithAi(
         }
         await failModel(model);
         if (timedOut) return failure('timeout');
-        candidates = sent.filter((id) => id !== model);
+        candidates = candidates.filter((id) => id !== model);
         if (!candidates.length || metrics.attempts === 2) return failure('invalid_output');
       }
       return failure('no_models');

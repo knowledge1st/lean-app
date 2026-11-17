@@ -8,7 +8,7 @@ import { interpretWithAi } from './openRouter';
 
 vi.mock('./freeModels', () => ({ getFreeModels: vi.fn(), refreshFreeRemaining: vi.fn() }));
 vi.mock('./health', () => ({ recordFailure: vi.fn(), recordSuccess: vi.fn() }));
-const candidates = ['google/a:free', 'qwen/b:free', 'other/c:free'];
+const candidates: [string, string, string] = ['google/a:free', 'qwen/b:free', 'other/c:free'];
 const parse = { items: [], otherDayMentioned: false };
 const input = { system: 'system prompt', user: 'texto privado' };
 function reply(model = candidates[0], content = JSON.stringify(parse), finish_reason = 'stop') {
@@ -127,6 +127,42 @@ describe('interpretWithAi', () => {
       expect(fetch).toHaveBeenCalledOnce();
     },
   );
+  it.each([true, false])('sends a homogeneous group with reasoning support %s', async (reasoning) => {
+    vi.mocked(getFreeModels).mockResolvedValueOnce({
+      candidates,
+      reasoningSupported: {
+        [candidates[0]]: reasoning, [candidates[1]]: !reasoning, [candidates[2]]: reasoning,
+      },
+      checkedAt: new Date(), freeRemaining: 10, freeCheckedAt: null,
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(reply());
+    expect(await interpretWithAi(deps(fetch), input)).toMatchObject({ ok: true, attempts: 1 });
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+    expect(body.models).toEqual([candidates[0], candidates[2]]);
+    if (reasoning) expect(body.reasoning).toEqual({ enabled: false });
+    else expect(body).not.toHaveProperty('reasoning');
+    expect(body.provider).toEqual({ require_parameters: true, max_price: { prompt: 0, completion: 0 } });
+  });
+  it.each([true, false])('recalculates the group after invalid output with reasoning %s', async (reasoning) => {
+    vi.mocked(getFreeModels).mockResolvedValueOnce({
+      candidates,
+      reasoningSupported: {
+        [candidates[0]]: reasoning, [candidates[1]]: !reasoning, [candidates[2]]: reasoning,
+      },
+      checkedAt: new Date(), freeRemaining: 10, freeCheckedAt: null,
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(reply(candidates[0], '', 'length'))
+      .mockResolvedValueOnce(reply(candidates[1]));
+    expect(await interpretWithAi(deps(fetch), input)).toMatchObject({ ok: true, attempts: 2 });
+    const bodies = fetch.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies[0].models).toEqual([candidates[0], candidates[2]]);
+    expect(bodies[1].models).toEqual([candidates[1]]);
+    expect(bodies[0].reasoning).toEqual(reasoning ? { enabled: false } : undefined);
+    expect(bodies[1].reasoning).toEqual(reasoning ? undefined : { enabled: false });
+    expect(recordFailure).toHaveBeenCalledTimes(1);
+    expect(recordFailure).toHaveBeenCalledWith(expect.anything(), candidates[0], expect.any(Date));
+  });
   it.each(['{"items":[{}]}', 'not json'])(
     'retries invalid output once excluding responder: %s',
     async (content) => {

@@ -17,12 +17,14 @@ export interface TextLogDeps {
 }
 export interface ModelState {
   candidates: string[];
+  reasoningSupported?: Record<string, boolean>;
   checkedAt: Date | null;
   freeRemaining: number | null;
   freeCheckedAt: Date | null;
 }
 const modelSchema = z.object({
   id: z.string(),
+  supported_parameters: z.array(z.string()).optional(),
   pricing: z
     .object({ prompt: z.string().optional(), completion: z.string().optional() })
     .optional(),
@@ -135,9 +137,21 @@ async function loadSavedModels(db: Db): Promise<SavedModelState> {
   return { ...row, candidates };
 }
 
+function modelState(state: SavedModelState): ModelState {
+  return {
+    ...state,
+    candidates: state.candidates.map((model) => model.id),
+    reasoningSupported: Object.fromEntries(
+      state.candidates.map((model) => [
+        model.id,
+        model.supported_parameters?.includes('reasoning') ?? false,
+      ]),
+    ),
+  };
+}
+
 export async function savedModels(db: Db): Promise<ModelState> {
-  const state = await loadSavedModels(db);
-  return { ...state, candidates: state.candidates.map((model) => model.id) };
+  return modelState(await loadSavedModels(db));
 }
 
 class CatalogueHttpError extends Error {
@@ -237,9 +251,9 @@ export async function getFreeModels(deps: TextLogDeps): Promise<ModelState> {
   if (entry.pending) return entry.pending;
   const degraded = await degradedModels(deps.db, now);
   if (entry.pending) return entry.pending;
-  const usable = (state: SavedModelState): ModelState => ({
+  const usable = (state: SavedModelState): ModelState => modelState({
     ...state,
-    candidates: filterAndRankModels(state.candidates, deps.env, degraded).map((model) => model.id),
+    candidates: filterAndRankModels(state.candidates, deps.env, degraded),
   });
   const checked = entry.state.freeCheckedAt;
   if (

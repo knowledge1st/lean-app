@@ -38,6 +38,7 @@ async function main() {
   if (!response.ok) throw new Error('catalog_unavailable');
   const liveModelSchema = z.object({
     id: z.string(),
+    supported_parameters: z.array(z.string()).optional(),
     pricing: z
       .object({ prompt: z.string().optional(), completion: z.string().optional() })
       .optional(),

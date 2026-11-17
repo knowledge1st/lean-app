@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import console from 'node:console';
+import { existsSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -14,6 +15,8 @@ if (
   );
   process.exitCode = 1;
 } else {
+  const envFile = new URL('../.dev.vars', import.meta.url);
+  if (process.env.DATABASE_URL === undefined && existsSync(envFile)) process.loadEnvFile(envFile);
   const result = spawnSync(
     process.execPath,
     [
@@ -21,6 +24,8 @@ if (
       'run',
       '--config',
       'vitest.eval.config.ts',
+      '--silent=false',
+      '--reporter=verbose',
     ],
     {
       cwd: fileURLToPath(new URL('..', import.meta.url)),

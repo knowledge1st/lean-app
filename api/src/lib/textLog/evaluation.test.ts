@@ -44,7 +44,7 @@ describe('manual evaluation model selection', () => {
     expect(result).toMatchObject({ ok: false, outcome: 'no_models', attempts: 0 });
     expect(fetch).not.toHaveBeenCalled();
   });
-  it('limits a model evaluation to the checked live model', async () => {
+  it.each([true, false])('uses live model reasoning support %s during evaluation', async (reasoning) => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()
       .mockResolvedValue(
@@ -61,9 +61,12 @@ describe('manual evaluation model selection', () => {
     const result = await interpretWithAi(
       { db: {} as Db, env: { ...testEnv, OPENROUTER_API_KEY: 'fake' }, fetch },
       { system: 'system', user: 'arroz' },
-      [model],
+      [{ ...model, supported_parameters: reasoning ? ['reasoning'] : ['response_format'] }],
     );
     expect(result.ok).toBe(true);
-    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).models).toEqual([model.id]);
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+    expect(body.models).toEqual([model.id]);
+    if (reasoning) expect(body.reasoning).toEqual({ enabled: false });
+    else expect(body).not.toHaveProperty('reasoning');
   });
 });
