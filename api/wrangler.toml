@@ -9,6 +9,11 @@ compatibility_date = "2026-11-13"
 [triggers]
 crons = ["*/5 * * * *"]
 
+# Resumen de horarios de recordatorios, para que el cron no despierte Neon en cada corrida.
+[[kv_namespaces]]
+binding = "PUSH_SCHEDULE"
+id = "8d8206654f9543a68b6bab43e68a27ea"
+
 [vars]
 ALLOWED_ORIGIN = "https://knowledge1st.github.io"
 APP_URL = "https://knowledge1st.github.io/lean-app/"
