@@ -236,7 +236,7 @@ describe('api', () => {
       { clientTimeout: 1000, requestTimeout: undefined, expectedTimeout: 1000 },
       { clientTimeout: 1000, requestTimeout: 200, expectedTimeout: 200 },
     ])(
-      'traduce el timeout a network_error ($expectedTimeout ms)',
+      'traduce el timeout a timeout_error ($expectedTimeout ms)',
       async ({ clientTimeout, requestTimeout, expectedTimeout }) => {
         const timedClient = createApiClient({
           baseUrl: 'http://localhost:8787',
@@ -249,8 +249,8 @@ describe('api', () => {
         const rejection = expect(request).rejects.toMatchObject({
           name: 'ApiError',
           status: 0,
-          code: 'network_error',
-          message: 'No se pudo conectar con el servidor.',
+          code: 'timeout_error',
+          message: 'El servidor tarda en responder. Volvé a intentar.',
         });
         await vi.advanceTimersByTimeAsync(expectedTimeout - 1);
         expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
@@ -291,7 +291,7 @@ describe('api', () => {
     });
 
     it.each([200, 400, 401])(
-      'traduce el timeout al leer el cuerpo a network_error (status: %s)',
+      'traduce el timeout al leer el cuerpo a timeout_error (status: %s)',
       async (status) => {
         setToken('session-token');
         const listener = vi.fn();
@@ -311,8 +311,8 @@ describe('api', () => {
           const rejection = expect(request).rejects.toMatchObject({
             name: 'ApiError',
             status: 0,
-            code: 'network_error',
-            message: 'No se pudo conectar con el servidor.',
+            code: 'timeout_error',
+            message: 'El servidor tarda en responder. Volvé a intentar.',
           });
           await vi.advanceTimersByTimeAsync(14999);
           expect(json).toHaveBeenCalledOnce();
@@ -387,5 +387,29 @@ describe('session', () => {
     expect(getToken()).toBeNull();
     expect(() => setToken('token')).not.toThrow();
     expect(() => clearToken()).not.toThrow();
+  });
+});
+
+it.each([
+  [false, 'Sin conexión. Revisá tu internet y volvé a intentar.'],
+  [true, 'No pudimos conectarnos. Volvé a intentar.'],
+])('distingue fallas de conexión (online: %s)', async (onLine, message) => {
+  vi.stubGlobal('navigator', { onLine });
+  fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+  await expect(client.get('/me')).rejects.toMatchObject({
+    status: 0,
+    code: 'network_error',
+    message,
+  });
+});
+
+it('normaliza el JSON inválido de una respuesta exitosa', async () => {
+  fetchMock.mockResolvedValue(new Response('not json'));
+  const request = client.get('/me');
+  await expect(request).rejects.toBeInstanceOf(ApiError);
+  await expect(request).rejects.toMatchObject({
+    status: 200,
+    code: 'invalid_response',
+    message: 'No pudimos leer la respuesta del servidor. Volvé a intentar.',
   });
 });

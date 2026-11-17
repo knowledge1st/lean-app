@@ -87,7 +87,13 @@ export function createApiClient({
       } catch (error) {
         // Preserve cancellation so Query can distinguish it from a network failure.
         if (options.signal?.aborted) throw error;
-        throw new ApiError(0, 'network_error', 'No se pudo conectar con el servidor.');
+        throw new ApiError(
+          0,
+          'network_error',
+          typeof navigator !== 'undefined' && navigator.onLine === false
+            ? 'Sin conexión. Revisá tu internet y volvé a intentar.'
+            : 'No pudimos conectarnos. Volvé a intentar.',
+        );
       }
       if (!response.ok) {
         let payload: unknown;
@@ -117,11 +123,20 @@ export function createApiClient({
       }
 
       if (response.status === 204) return undefined as T;
-      return (await response.json()) as T;
+      try {
+        return (await response.json()) as T;
+      } catch (error) {
+        if (options.signal?.aborted || timedOut) throw error;
+        throw new ApiError(
+          response.status,
+          'invalid_response',
+          'No pudimos leer la respuesta del servidor. Volvé a intentar.',
+        );
+      }
     } catch (error) {
       if (options.signal?.aborted) throw error;
       if (timedOut) {
-        throw new ApiError(0, 'network_error', 'No se pudo conectar con el servidor.');
+        throw new ApiError(0, 'timeout_error', 'El servidor tarda en responder. Volvé a intentar.');
       }
       throw error;
     } finally {
