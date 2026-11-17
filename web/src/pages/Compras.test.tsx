@@ -16,6 +16,12 @@ vi.mock('../lib/api', async (original) => {
 const week = '2026-W47';
 const key = shoppingKey(week);
 const storageKey = 'lean.shopping.v1';
+function savedWeek() {
+  const saved = JSON.parse(localStorage.getItem(storageKey)!) as {
+    weeks: Record<string, { items: ShoppingItem[]; savedAt: number }>;
+  };
+  return saved.weeks[week]!;
+}
 const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
@@ -142,12 +148,14 @@ it('marca diez filas rápido, conserva optimismo durante refetch y acepta respue
   expect(
     (screen.getAllByRole('checkbox') as HTMLInputElement[]).every((checkbox) => checkbox.checked),
   ).toBe(true);
+  expect(savedWeek().items).toEqual(initial);
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   for (const index of [9, 2, 7, 1, 5, 0, 8, 4, 6, 3]) {
     server = server.map((entry, position) =>
       position === index ? { ...entry, checked: true } : entry,
     );
     await act(async () => requests[index]!.resolve(jsonResponse(server[index])));
+    expect(savedWeek().items).toEqual(server);
     if (index !== 3) expect(invalidate).not.toHaveBeenCalled();
   }
   await waitFor(() => expect(client.isMutating()).toBe(0));
@@ -318,7 +326,7 @@ it('alta manual, edición y borrado de cantidad, y borrado de la fila', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
   await screen.findByText('Tu lista está vacía');
 });
-it.each(['same', 'other', 'corrupt', 'invalid'])(
+it.each(['same', 'recent', 'other', 'corrupt', 'invalid', 'temporary'])(
   'hidrata únicamente caché válida del usuario: %s',
   async (kind) => {
     const saved = item(1, { label: 'Guardado', checked: true });
@@ -330,25 +338,33 @@ it.each(['same', 'other', 'corrupt', 'invalid'])(
             userId: kind === 'other' ? 'user-2' : 'user-1',
             weeks: {
               [week]: {
-                items: kind === 'invalid' ? [{ wrong: true }] : [saved],
-                savedAt: Date.now() - 60000,
+                items:
+                  kind === 'invalid'
+                    ? [{ wrong: true }]
+                    : [{ ...saved, id: kind === 'temporary' ? `temp-${saved.id}` : saved.id }],
+                savedAt: Date.now() - (kind === 'recent' ? 0 : 60000),
               },
             },
           }),
     );
     const request = deferred();
-    vi.stubGlobal('fetch', vi.fn().mockReturnValue(request.promise));
+    const fetchMock = vi.fn().mockReturnValue(request.promise);
+    vi.stubGlobal('fetch', fetchMock);
     setup();
-    if (kind === 'same')
+    if (kind === 'same' || kind === 'recent')
       expect((screen.getByRole('checkbox', { name: 'Guardado' }) as HTMLInputElement).checked).toBe(
         true,
       );
     else expect(screen.queryByRole('checkbox')).toBeNull();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(String(fetchMock.mock.calls[0]![0])).toContain(`/api/shopping?week=${week}`);
     await act(async () => request.resolve(jsonResponse([item(2)])));
     await screen.findByRole('checkbox', { name: 'Alimento 2' });
+    expect(screen.queryByRole('checkbox', { name: 'Guardado' })).toBeNull();
+    expect(savedWeek().items).toEqual([item(2)]);
   },
 );
-it('guarda cambios optimistas y conserva como máximo cuatro semanas', async () => {
+it('persiste solo el marcado confirmado y conserva como máximo cuatro semanas', async () => {
   const weeks = Object.fromEntries(
     ['2026-W40', '2026-W41', '2026-W42', '2026-W43'].map((value, index) => [
       value,
@@ -365,9 +381,21 @@ it('guarda cambios optimistas y conserva como máximo cuatro semanas', async () 
         init?.method === 'PATCH' ? request.promise : Promise.resolve(jsonResponse([item(1)])),
       ),
   );
-  setup();
+  const { client } = setup();
   await screen.findByRole('checkbox');
+  const beforePatch = localStorage.getItem(storageKey);
   fireEvent.click(screen.getByRole('checkbox'));
+  await waitFor(() => expect(client.isMutating()).toBe(1));
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
+  await act(async () => {
+    await client.refetchQueries({ queryKey: key });
+  });
+  expect(localStorage.getItem(storageKey)).toBe(beforePatch);
+  expect(savedWeek().items).toEqual([item(1)]);
+  // Keep the revalidation pending to observe persistence from PATCH success alone.
+  vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise<Response>(() => {})));
+  const confirmedAfter = Date.now();
+  await act(async () => request.resolve(jsonResponse({ ...item(1), checked: true })));
   await waitFor(() => {
     const saved = JSON.parse(localStorage.getItem(storageKey)!) as {
       weeks: Record<string, { items: ShoppingItem[] }>;
@@ -375,13 +403,17 @@ it('guarda cambios optimistas y conserva como máximo cuatro semanas', async () 
     expect(Object.keys(saved.weeks)).toHaveLength(4);
     expect(saved.weeks['2026-W40']).toBeUndefined();
     expect(saved.weeks[week]!.items[0]!.checked).toBe(true);
+    expect(savedWeek().savedAt).toBeGreaterThanOrEqual(confirmedAfter);
+    expect(savedWeek().savedAt).toBeLessThanOrEqual(Date.now());
   });
-  await act(async () => request.resolve(jsonResponse({ ...item(1), checked: true })));
 });
-it('mantiene datos persistidos y avisa si falla revalidación', async () => {
+it('mantiene datos persistidos recientes y avisa si falla revalidación', async () => {
   localStorage.setItem(
     storageKey,
-    JSON.stringify({ userId: 'user-1', weeks: { [week]: { items: [item(1)], savedAt: 1 } } }),
+    JSON.stringify({
+      userId: 'user-1',
+      weeks: { [week]: { items: [item(1)], savedAt: Date.now() } },
+    }),
   );
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
   setup();
@@ -421,12 +453,15 @@ it('alta optimista queda deshabilitada hasta recibir confirmación', async () =>
   );
   const { client } = setup();
   await screen.findByText('Tu lista está vacía');
+  const beforeAdd = localStorage.getItem(storageKey);
   const input = screen.getByRole('textbox', { name: 'Agregar a mano' });
   fireEvent.change(input, { target: { value: 'Bolsas' } });
   fireEvent.submit(input.closest('form')!);
   const checkbox = await screen.findByRole('checkbox', { name: 'Bolsas' });
   expect((checkbox as HTMLInputElement).disabled).toBe(true);
   expect(client.getQueryData<ShoppingItem[]>(key)![0]!.id).toMatch(/^temp-/);
+  expect(localStorage.getItem(storageKey)).toBe(beforeAdd);
+  expect(savedWeek().items).toEqual([]);
   const saved = item(10, { label: 'Bolsas', manual: true, totalGrams: null });
   // Hold the final GET so the confirmed row is observable.
   vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise<Response>(() => {})));

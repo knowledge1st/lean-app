@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { isoWeekSchema, shoppingItemSchema, type ShoppingItem } from '@lean/shared';
 import { useAuth } from '../../auth/AuthProvider';
@@ -38,28 +37,9 @@ function readSaved(userId: string): Saved | undefined {
       )
         return;
       if (!Array.isArray(entry.items)) return;
-      // Temporary rows use the same schema, with their UUID prefixed while saving.
-      const parsed = shoppingItemSchema.array().safeParse(
-        entry.items.map((item: unknown) => {
-          if (
-            item &&
-            typeof item === 'object' &&
-            'id' in item &&
-            typeof item.id === 'string' &&
-            item.id.startsWith('temp-')
-          )
-            return { ...item, id: item.id.slice(5) };
-          return item;
-        }),
-      );
+      const parsed = shoppingItemSchema.array().safeParse(entry.items);
       if (!parsed.success) return;
-      weeks[week] = {
-        items: parsed.data.map((item, index) => {
-          const original = (entry.items as { id: string }[])[index]!;
-          return { ...item, id: original.id };
-        }),
-        savedAt: entry.savedAt,
-      };
+      weeks[week] = { items: parsed.data, savedAt: entry.savedAt };
     }
     return { userId, weeks };
   } catch {
@@ -149,48 +129,37 @@ function apply(items: ShoppingItem[], action: Action): ShoppingItem[] {
       : item,
   );
 }
-function publish(client: QueryClient, week: string, state: WeekState, userId: string | undefined) {
+function publish(client: QueryClient, week: string, state: WeekState) {
   client.setQueryData(
     shoppingKey(week),
     state.pending.reduce((items, pending) => apply(items, pending.action), state.base),
   );
-  if (userId)
-    persist(userId, week, client.getQueryData<ShoppingItem[]>(shoppingKey(week))!, Date.now());
 }
 export function useShoppingList(week: string) {
   const client = useQueryClient();
   const { user } = useAuth();
   const saved = user ? readSaved(user.id)?.weeks[week] : undefined;
-  useEffect(() => {
-    if (!user) return;
-    const token = getToken();
-    const save = (savedWeek: string) => {
-      if (getToken() !== token) return;
-      const query = client.getQueryState<ShoppingItem[]>(shoppingKey(savedWeek));
-      if (query?.data) persist(user.id, savedWeek, query.data, query.dataUpdatedAt);
-    };
-    save(week);
-    return client.getQueryCache().subscribe((event) => {
-      if (
-        event.type === 'updated' &&
-        event.action.type === 'success' &&
-        event.query.queryKey[0] === 'shopping' &&
-        typeof event.query.queryKey[1] === 'string'
-      )
-        save(event.query.queryKey[1] as string);
-    });
-  }, [client, user, week]);
   return useQuery({
     queryKey: shoppingKey(week),
-    ...(saved ? { initialData: saved.items, initialDataUpdatedAt: saved.savedAt } : {}),
+    ...(saved
+      ? {
+          initialData: saved.items,
+          initialDataUpdatedAt: saved.savedAt,
+          refetchOnMount: 'always' as const,
+        }
+      : {}),
     queryFn: async ({ signal }) => {
       const current = () => client.getQueryData<ShoppingItem[]>(shoppingKey(week));
       const pending = () =>
         sessionFor(client).weeks.size > 0 ||
         client.isMutating({ mutationKey: ['shopping', 'bulk'] }) > 0;
       if (pending() && current()) return current()!;
+      const token = getToken();
       const items = await getShoppingList(week, signal);
-      return pending() && current() ? current()! : items;
+      if (pending() && current()) return current()!;
+      if (user && getToken() === token && !signal.aborted)
+        persist(user.id, week, items, Date.now());
+      return items;
     },
   });
 }
@@ -240,7 +209,7 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
       }
       const pending = { action };
       state.pending.push(pending);
-      publish(client, week, state, user?.id);
+      publish(client, week, state);
       await cancellation;
       return { session, state, pending };
     },
@@ -253,6 +222,7 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
           action.kind === 'add'
             ? [...state.base, item]
             : state.base.map((old) => (old.id === item.id ? item : old));
+      if (user) persist(user.id, week, state.base, Date.now());
     },
     onError: (error, _action, context) => {
       if (context && sessionFor(client) === context.session)
@@ -267,7 +237,7 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
       context.state.pending = context.state.pending.filter(
         (pending) => pending !== context.pending,
       );
-      publish(client, week, context.state, user?.id);
+      publish(client, week, context.state);
       if (!context.state.pending.length) context.session.weeks.delete(week);
       if (client.isMutating({ mutationKey: ['shopping'] }) === 1)
         await client.invalidateQueries({ queryKey: ['shopping'] });
