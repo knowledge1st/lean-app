@@ -49,9 +49,11 @@ it('cerrar sesión limpia token y caché incluso sin conexión', async () => {
   const { client } = renderAuth(<Account />);
   await screen.findByText('authenticated');
   client.setQueryData(['private-data'], { secret: 'data' });
+  localStorage.setItem('lean.shopping.v1', JSON.stringify({ userId: testUser.id, weeks: {} }));
   fireEvent.click(screen.getByText('Salir'));
   await screen.findByText('anonymous');
   expect(getToken()).toBeNull();
+  expect(localStorage.getItem('lean.shopping.v1')).toBeNull();
   expect(client.getQueryCache().getAll()).toHaveLength(0);
   expect(fetchMock.mock.calls[1]?.[0]).toBe('http://localhost/api/auth/logout');
 });
