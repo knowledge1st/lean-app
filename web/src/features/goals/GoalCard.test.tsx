@@ -65,6 +65,8 @@ it('muestra peso, avance, meta diaria y los tres próximos hitos mensuales o fin
   expect(screen.getByText('80 kg')).toBeTruthy();
   expect(screen.getByText('76 kg')).toBeTruthy();
   expect(screen.getByText('2.000 kcal')).toBeTruthy();
+  for (const label of ['Calorías', 'Proteína', 'Carbohidratos', 'Grasa'])
+    expect(screen.getByText(label)).toBeTruthy();
   for (const value of ['140 g', '220 g', '62 g', '2.500 ml'])
     expect(screen.getByText(value)).toBeTruthy();
   vi.useRealTimers();
@@ -132,7 +134,7 @@ it('muestra carga, error y permite reintentar', async () => {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  expect(screen.getByRole('status').textContent).toContain('Cargando');
+  expect(screen.getByRole('status', { name: 'Cargando tu objetivo' })).toBeTruthy();
   expect(await screen.findByRole('alert')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByText('Todavía no definiste tu objetivo')).toBeTruthy();

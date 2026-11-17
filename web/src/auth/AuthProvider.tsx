@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LoginResponse, PublicUser } from '@lean/shared';
 import { api, ApiError, onUnauthorized } from '../lib/api';
+import { clearDraft, clearWizardSkipped } from '../features/goals/draft';
 import { clearToken, getToken, setToken } from '../lib/session';
 
 type AuthStatus = 'loading' | 'authenticated' | 'anonymous' | 'error';
@@ -24,9 +25,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   // Ignore responses from a previous session or an unmounted provider.
   const generation = useRef(0);
+  const userId = useRef<string | null>(null);
   const closeSession = useCallback(() => {
     generation.current += 1;
     clearToken();
+    clearDraft();
+    clearWizardSkipped();
     try {
       localStorage.removeItem('lean.shopping.v1');
     } catch {
@@ -46,6 +50,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void api.get<PublicUser>('/api/me').then(
       (profile) => {
         if (current !== generation.current) return;
+        if (userId.current && userId.current !== profile.id) {
+          clearDraft();
+          clearWizardSkipped();
+          queryClient.clear();
+        }
+        userId.current = profile.id;
         setUser(profile);
         setStatus('authenticated');
       },
@@ -58,12 +68,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       generation.current += 1;
     };
-  }, [attempt, closeSession]);
+  }, [attempt, closeSession, queryClient]);
 
   async function login(username: string, password: string) {
     const current = ++generation.current;
     const response = await api.post<LoginResponse>('/api/auth/login', { username, password });
     if (current !== generation.current) return;
+    if (userId.current !== response.user.id) {
+      clearDraft();
+      clearWizardSkipped();
+    }
+    userId.current = response.user.id;
     setToken(response.token);
     queryClient.clear();
     setUser(response.user);

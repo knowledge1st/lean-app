@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { profileInputSchema, type ProfileResponse } from '@lean/shared';
+import { ErrorState } from '../../components/ui/ErrorState';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Sheet } from '../../components/ui/Sheet';
@@ -7,7 +9,8 @@ import { ApiError } from '../../lib/api';
 import { useProfile, useSaveProfile } from './api';
 import { emptyDraft, fieldError, numeric, type Draft, type Errors } from './draft';
 import { Choices, Field } from './fields';
-import { formatNumber } from './format';
+import { todayLocal } from '../../lib/date';
+import { formatDecimalInput, formatNumber } from './format';
 
 const activityOptions = [
   ['sedentary', 'Poco movimiento'],
@@ -24,12 +27,16 @@ export function ProfileCard() {
     <Card className="min-w-0 space-y-5">
       <h2 className="text-xl font-semibold">Datos personales</h2>
       {query.isPending ? (
-        <p role="status">Cargando tus datos…</p>
-      ) : query.isError ? (
-        <div role="alert" className="space-y-3">
-          <p>No pudimos cargar tus datos personales.</p>
-          <Button onClick={() => void query.refetch()}>Reintentar</Button>
+        <div role="status" aria-label="Cargando tus datos" className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 4 }, (_, index) => (
+            <Skeleton key={index} className="h-14" />
+          ))}
         </div>
+      ) : query.isError ? (
+        <ErrorState
+          message="No pudimos cargar tus datos personales."
+          onRetry={() => void query.refetch()}
+        />
       ) : (
         <>
           {profile ? (
@@ -83,7 +90,7 @@ export function ProfileForm({
       ? {
           sex: profile.sex,
           birthDate: profile.birthDate,
-          heightCm: String(profile.heightCm),
+          heightCm: formatDecimalInput(profile.heightCm),
           activityLevel: profile.activityLevel,
         }
       : {}),
@@ -109,18 +116,23 @@ export function ProfileForm({
       activityLevel: draft.activityLevel,
       timeZone: profile?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
+    const nextErrors: Errors = {};
     if (!result.success) {
-      const nextErrors: Errors = {};
       for (const issue of result.error.issues)
         nextErrors[issue.path[0] as keyof Draft] = fieldError(
           draft,
           issue.path[0] as keyof Draft,
           issue.message,
         );
+    }
+    if (draft.birthDate >= todayLocal())
+      nextErrors.birthDate = 'Indicá una fecha de nacimiento anterior a hoy';
+    if (Object.keys(nextErrors).length) {
       setErrors(nextErrors);
       return;
     }
     try {
+      if (!result.success) return;
       await save.mutateAsync(result.data);
       onClose();
     } catch {
@@ -158,7 +170,9 @@ export function ProfileForm({
         {save.isError && (
           <p role="alert" className="text-danger">
             {save.error instanceof ApiError
-              ? save.error.message
+              ? save.error.status === 0
+                ? 'Sin conexión. Revisá tu internet y volvé a intentar.'
+                : 'No pudimos guardar tus datos. Revisalos y probá de nuevo.'
               : 'No pudimos guardar tus datos. Probá de nuevo.'}
           </p>
         )}

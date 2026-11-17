@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import type { ProfileResponse } from '@lean/shared';
+import { ErrorState } from '../components/ui/ErrorState';
+import { Skeleton } from '../components/ui/Skeleton';
 import { Button } from '../components/ui/Button';
+import { formatDecimalInput } from '../features/goals/format';
 import { todayLocal } from '../lib/date';
 import {
   getProfile,
@@ -47,6 +50,8 @@ export function ObjetivoNuevo() {
   const submitting = useRef(false);
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState(false);
+  const [confirmReplacement, setConfirmReplacement] = useState(false);
+  const content = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const today = todayLocal();
   const initial = useQuery({
@@ -71,11 +76,11 @@ export function ObjetivoNuevo() {
         ? {
             sex: profile.sex,
             birthDate: profile.birthDate,
-            heightCm: String(profile.heightCm),
+            heightCm: formatDecimalInput(profile.heightCm),
             activityLevel: profile.activityLevel,
           }
         : {}),
-      ...(goal ? { weightKg: String(goal.progress.currentWeightKg) } : {}),
+      ...(goal ? { weightKg: formatDecimalInput(goal.progress.currentWeightKg) } : {}),
     });
     setReady(true);
   }, [initial.data, initial.isFetching, initial.isError, ready]);
@@ -85,11 +90,24 @@ export function ObjetivoNuevo() {
   useEffect(() => {
     if (ready) heading.current?.focus();
   }, [draft.step, ready]);
+  const activeGoal = useQuery({
+    queryKey: activeGoalKey,
+    queryFn: getActiveGoal,
+    enabled: ready,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  useEffect(() => {
+    if (Object.keys(errors).length)
+      content.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errors]);
   const preview = useQuery({
     queryKey: ['goals', 'wizard', 'preview', draft, today],
     enabled: ready && draft.step === 4,
     retry: false,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    placeholderData: keepPreviousData,
     queryFn: ({ signal }) =>
       inOrder(async () => {
         signal.throwIfAborted();
@@ -119,6 +137,7 @@ export function ObjetivoNuevo() {
   const go = (step: number) => {
     if (submitting.current) return;
     setErrors({});
+    setConfirmReplacement(false);
     setSubmitError(false);
     create.reset();
     setDraft((current) => ({ ...current, step }));
@@ -135,6 +154,11 @@ export function ObjetivoNuevo() {
       !preview.isError &&
       !preview.data.warnings.some(({ code }) => code === 'date_unreachable')
     ) {
+      if (activeGoal.isPending || activeGoal.isError) return;
+      if (activeGoal.data && !confirmReplacement) {
+        setConfirmReplacement(true);
+        return;
+      }
       submitting.current = true;
       setSaving(true);
       setSubmitError(false);
@@ -156,7 +180,10 @@ export function ObjetivoNuevo() {
   };
   const props = { draft, errors, change };
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-xl px-4 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
+    <main
+      ref={content}
+      className="mx-auto min-h-dvh w-full max-w-xl px-4 pt-4 pb-[calc(7rem+env(safe-area-inset-bottom))]"
+    >
       <header className="mb-6 space-y-3">
         <p className="text-sm text-muted">Paso {draft.step} de 4</p>
         <div
@@ -184,12 +211,16 @@ export function ObjetivoNuevo() {
       </header>
       {!ready ? (
         initial.isError ? (
-          <div role="alert">
-            <p>No pudimos cargar tus datos.</p>
-            <Button onClick={() => void initial.refetch()}>Reintentar</Button>
-          </div>
+          <ErrorState
+            message="No pudimos cargar tus datos."
+            onRetry={() => void initial.refetch()}
+          />
         ) : (
-          <p role="status">Cargando tus datos…</p>
+          <div role="status" aria-label="Cargando tus datos" className="space-y-5">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-40" />
+            <Skeleton className="h-24" />
+          </div>
         )
       ) : (
         <>
@@ -211,13 +242,16 @@ export function ObjetivoNuevo() {
           {draft.step === 2 && <StepKind {...props} />}
           {draft.step === 3 && <StepDetail {...props} today={today} />}
           {draft.step === 4 &&
-            (preview.isFetching ? (
-              <p role="status">Armando tu plan…</p>
-            ) : preview.isError ? (
-              <div role="alert">
-                <p>No pudimos armar tu plan. Revisá tu conexión y probá de nuevo.</p>
-                <Button onClick={() => void preview.refetch()}>Reintentar</Button>
+            (!preview.data && preview.isPending ? (
+              <div role="status" aria-label="Armando tu plan" className="space-y-5">
+                <Skeleton className="h-48" />
+                <Skeleton className="h-32" />
               </div>
+            ) : preview.isError ? (
+              <ErrorState
+                message="No pudimos armar tu plan. Revisá tu conexión y probá de nuevo."
+                onRetry={() => void preview.refetch()}
+              />
             ) : (
               preview.data && (
                 <StepPlan
@@ -229,9 +263,28 @@ export function ObjetivoNuevo() {
                 />
               )
             ))}
+          {draft.step === 4 && (
+            <div className="mt-5 space-y-3">
+              {preview.data && !preview.isPlaceholderData && (
+                <p className="text-sm text-muted">Tus datos personales ya quedaron guardados.</p>
+              )}
+              {activeGoal.isError && (
+                <ErrorState
+                  message="No pudimos verificar tu objetivo actual."
+                  onRetry={() => void activeGoal.refetch()}
+                />
+              )}
+              {activeGoal.data && (
+                <p>Vas a reemplazar tu objetivo actual. El anterior queda en el historial.</p>
+              )}
+              {confirmReplacement && (
+                <p role="status">Tocá «Confirmar reemplazo» para guardar tu nuevo objetivo.</p>
+              )}
+            </div>
+          )}
           {(submitError || create.isError) && (
             <p role="alert" className="mt-4 text-danger">
-              No pudimos guardar tu objetivo. Probá de nuevo con Empezar.
+              No pudimos guardar tu objetivo. Revisá tu conexión y volvé a intentar.
             </p>
           )}
         </>
@@ -244,14 +297,24 @@ export function ObjetivoNuevo() {
             saving ||
             create.isPending ||
             (draft.step === 4 &&
-              (!preview.data ||
+              (activeGoal.isPending ||
+                activeGoal.isError ||
+                !preview.data ||
                 preview.isFetching ||
                 preview.isError ||
                 preview.data.warnings.some(({ code }) => code === 'date_unreachable')))
           }
           onClick={() => void submit()}
         >
-          {saving || create.isPending ? 'Guardando…' : draft.step === 4 ? 'Empezar' : 'Siguiente'}
+          {saving || create.isPending
+            ? 'Guardando…'
+            : draft.step === 4
+              ? activeGoal.data
+                ? confirmReplacement
+                  ? 'Confirmar reemplazo'
+                  : 'Reemplazar objetivo'
+                : 'Empezar'
+              : 'Siguiente'}
         </Button>
       </footer>
     </main>

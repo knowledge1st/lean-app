@@ -14,6 +14,7 @@ export function Perfil() {
   const navigate = useNavigate();
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAll, setConfirmAll] = useState(false);
   const [updated, setUpdated] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
@@ -66,7 +67,11 @@ export function Perfil() {
             variant="secondary"
             className="w-full"
             disabled={pending}
-            onClick={() => void endSession(false)}
+            onClick={() => {
+              setMessage('');
+              setConfirmAll(false);
+              setConfirmOpen(true);
+            }}
           >
             Cerrar sesión
           </Button>
@@ -76,6 +81,7 @@ export function Perfil() {
             disabled={pending}
             onClick={() => {
               setMessage('');
+              setConfirmAll(true);
               setConfirmOpen(true);
             }}
           >
@@ -93,16 +99,20 @@ export function Perfil() {
         onOpenChange={(open) => {
           if (!pending) setConfirmOpen(open);
         }}
-        title="Cerrar todas las sesiones"
-        description="Se cerrará la sesión en este y en todos tus otros dispositivos."
+        title={confirmAll ? 'Cerrar todas las sesiones' : 'Cerrar sesión'}
+        description={
+          confirmAll
+            ? 'Se cerrará la sesión en este y en todos tus otros dispositivos.'
+            : 'Vas a salir de tu cuenta en este dispositivo.'
+        }
       >
         <div className="flex flex-col gap-3">
           {message && <p role="alert">{message}</p>}
           <Button variant="secondary" disabled={pending} onClick={() => setConfirmOpen(false)}>
             Cancelar
           </Button>
-          <Button variant="danger" disabled={pending} onClick={() => void endSession(true)}>
-            {pending ? 'Cerrando…' : 'Cerrar todas'}
+          <Button variant="danger" disabled={pending} onClick={() => void endSession(confirmAll)}>
+            {pending ? 'Cerrando…' : confirmAll ? 'Cerrar todas' : 'Confirmar cierre'}
           </Button>
         </div>
       </Sheet>

@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProfileCard } from './ProfileForm';
+import { todayLocal } from '../../lib/date';
 import { api, ApiError } from '../../lib/api';
 
 afterEach(() => {
@@ -49,8 +50,52 @@ it('invita a completar un perfil ausente, valida sin enviar y permite crearlo', 
 it('muestra carga y error de lectura con reintento', async () => {
   vi.spyOn(api, 'get').mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(null);
   setup();
-  expect(screen.getByRole('status').textContent).toBe('Cargando tus datos…');
+  expect(screen.getByRole('status', { name: 'Cargando tus datos' })).toBeTruthy();
   expect(await screen.findByRole('alert')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByRole('button', { name: 'Completar mis datos' })).toBeTruthy();
+});
+
+it.each(['1899-01-01', '2100-12-31', todayLocal()])(
+  'rechaza nacimiento inválido %s sin enviar y asocia el error',
+  async (birthDate) => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      sex: 'female',
+      birthDate: '1990-01-01',
+      heightCm: 165.5,
+      activityLevel: 'light',
+      timeZone: 'UTC',
+    });
+    const put = vi.spyOn(api, 'put');
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    expect((screen.getByLabelText('Altura') as HTMLInputElement).value).toBe('165,5');
+    const birth = screen.getByLabelText('Fecha de nacimiento');
+    fireEvent.change(birth, { target: { value: birthDate } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(put).not.toHaveBeenCalled();
+    expect(birth.getAttribute('aria-invalid')).toBe('true');
+    expect(
+      document.getElementById(birth.getAttribute('aria-describedby')!)?.textContent,
+    ).toBeTruthy();
+  },
+);
+
+it('oculta detalles técnicos del servidor al guardar', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    sex: 'female',
+    birthDate: '1990-01-01',
+    heightCm: 165,
+    activityLevel: 'light',
+    timeZone: 'UTC',
+  });
+  vi.spyOn(api, 'put').mockRejectedValue(
+    new ApiError(400, 'invalid_profile', 'birthDate: invalid'),
+  );
+  setup();
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    'No pudimos guardar tus datos. Revisalos y probá de nuevo.',
+  );
 });

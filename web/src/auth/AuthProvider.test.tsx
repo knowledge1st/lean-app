@@ -13,6 +13,7 @@ vi.mock('../lib/api', async (importOriginal) => {
 const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
 });
@@ -50,8 +51,12 @@ it('cerrar sesión limpia token y caché incluso sin conexión', async () => {
   await screen.findByText('authenticated');
   client.setQueryData(['private-data'], { secret: 'data' });
   localStorage.setItem('lean.shopping.v1', JSON.stringify({ userId: testUser.id, weeks: {} }));
+  sessionStorage.setItem('lean.goalWizard.v1', 'draft');
+  localStorage.setItem('lean.goalWizard.skipped', '1');
   fireEvent.click(screen.getByText('Salir'));
   await screen.findByText('anonymous');
+  expect(sessionStorage.getItem('lean.goalWizard.v1')).toBeNull();
+  expect(localStorage.getItem('lean.goalWizard.skipped')).toBeNull();
   expect(getToken()).toBeNull();
   expect(localStorage.getItem('lean.shopping.v1')).toBeNull();
   expect(client.getQueryCache().getAll()).toHaveLength(0);
@@ -186,4 +191,19 @@ it('una sesión vencida notifica al provider y limpia caché', async () => {
   await waitFor(() => expect(screen.getByText('anonymous')).toBeTruthy());
   expect(getToken()).toBeNull();
   expect(client.getQueryCache().getAll()).toHaveLength(0);
+});
+
+it('limpia el asistente cuando ingresa otra cuenta', async () => {
+  setToken('old-token');
+  fetchMock
+    .mockResolvedValueOnce(jsonResponse(testUser))
+    .mockResolvedValueOnce(jsonResponse({ token: 'new-token', user: nextUser }));
+  renderAuth(<Account />);
+  await screen.findByText(testUser.username);
+  sessionStorage.setItem('lean.goalWizard.v1', 'draft');
+  localStorage.setItem('lean.goalWizard.skipped', '1');
+  fireEvent.click(screen.getByText('Ingresar'));
+  await screen.findByText(nextUser.username);
+  expect(sessionStorage.getItem('lean.goalWizard.v1')).toBeNull();
+  expect(localStorage.getItem('lean.goalWizard.skipped')).toBeNull();
 });

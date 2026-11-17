@@ -172,6 +172,13 @@ export function clearDraft() {
     /* Storage may be unavailable. */
   }
 }
+export function clearWizardSkipped() {
+  try {
+    localStorage.removeItem('lean.goalWizard.skipped');
+  } catch {
+    /* Storage may be unavailable. */
+  }
+}
 export function wasWizardSkipped() {
   try {
     return localStorage.getItem('lean.goalWizard.skipped') === '1';

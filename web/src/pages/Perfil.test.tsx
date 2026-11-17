@@ -144,7 +144,9 @@ it('muestra el error del servidor, conserva el formulario y permite reintentar e
     ),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-  expect((await screen.findByRole('alert')).textContent).toBe('Revisá la fecha de nacimiento.');
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    'No pudimos guardar tus datos. Revisalos y probá de nuevo.',
+  );
   expect(screen.getByRole('dialog')).toBeTruthy();
   expect(screen.getByLabelText('Altura').getAttribute('value')).toBe('175');
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
@@ -212,7 +214,7 @@ it('Cambiar objetivo precarga perfil y peso frescos con una caché inicial vací
   expect((screen.getByRole('radio', { name: /Algo activo/ }) as HTMLInputElement).checked).toBe(
     true,
   );
-  expect((screen.getByLabelText('Peso actual') as HTMLInputElement).value).toBe('76.5');
+  expect((screen.getByLabelText('Peso actual') as HTMLInputElement).value).toBe('76,5');
   client.clear();
 });
 
@@ -222,4 +224,25 @@ it('muestra objetivo, datos personales y cuenta en ese orden', async () => {
   expect(
     screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
   ).toEqual(['Mi objetivo', 'Datos personales', 'Cuenta']);
+});
+
+it('pide confirmar el cierre de sesión y permite cancelarlo', async () => {
+  renderAuth(
+    <Routes>
+      <Route path="/perfil" element={<Perfil />} />
+      <Route path="/login" element={<LoginDestination />} />
+    </Routes>,
+    '/perfil',
+  );
+  await screen.findByText('@jose');
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/auth/logout'))).toBe(
+    false,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }));
+  await screen.findByText('Login REPLACE');
 });
