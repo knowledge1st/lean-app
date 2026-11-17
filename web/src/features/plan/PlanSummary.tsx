@@ -1,8 +1,10 @@
 import type { DaySummary } from '@lean/shared';
+import { useActiveGoal } from '../goals/api';
 import { Link } from 'react-router';
 import { Card } from '../../components/ui/Card';
 import { MACROS, formatNumber } from '../../lib/macros';
 export function PlanSummary({ summary }: { summary: DaySummary }) {
+  const goal = useActiveGoal();
   return (
     <Card className="space-y-3">
       <h2 className="text-lg font-semibold">Total del día</h2>
@@ -26,11 +28,12 @@ export function PlanSummary({ summary }: { summary: DaySummary }) {
           </div>
         );
       })}
-      {!summary.target && (
+      {!summary.target && goal.data === null && (
         <Link className="inline-flex min-h-11 items-center text-accent" to="/objetivo/nuevo">
           Definí tu objetivo
         </Link>
       )}
+      {!summary.target && goal.data != null && <p className="text-muted">Sin meta para este día</p>}
     </Card>
   );
 }

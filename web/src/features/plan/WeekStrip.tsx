@@ -1,5 +1,5 @@
 import { useDaySummary } from '../diary/api';
-import { todayLocal, formatDayLabel } from '../../lib/date';
+import { todayLocal } from '../../lib/date';
 import { formatNumber } from '../../lib/macros';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { ErrorState } from '../../components/ui/ErrorState';
@@ -22,14 +22,21 @@ function WeekDay({
 }) {
   const query = useDaySummary(date);
   const total = query.data ? query.data.eaten.kcal + query.data.planned.kcal : 0;
-  const status = kcalStatus(total, query.data?.target?.kcal);
+  const hasEntries = query.data?.meals.some((meal) => meal.entries.length > 0);
+  const status = hasEntries ? kcalStatus(total, query.data?.target?.kcal) : null;
   const indicator = status ? indicators[status] : null;
   const today = todayLocal();
+  const dayLabel = new Intl.DateTimeFormat('es-AR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T12:00:00Z`));
   return (
     <div className="min-w-0">
       <button
         type="button"
-        aria-label={`${formatDayLabel(date, today)} · ${date}${date === today ? ', hoy' : ''}`}
+        aria-label={`${dayLabel} · ${formatNumber(total, 0)} kcal${indicator ? ` · ${indicator.label.toLowerCase()}` : ''}${date === today ? ' · hoy' : ''}`}
         aria-pressed={selected}
         onClick={() => onSelect(date)}
         className={`min-h-11 w-full min-w-0 rounded-xl border py-2 text-center ${selected ? 'border-accent bg-accent text-on-accent' : 'border-border bg-surface'}`}

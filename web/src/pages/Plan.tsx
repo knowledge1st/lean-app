@@ -9,6 +9,7 @@ import { useDaySummary } from '../features/diary/api';
 import { WeekStrip } from '../features/plan/WeekStrip';
 import { PlanSummary } from '../features/plan/PlanSummary';
 import { DayPlan } from '../features/plan/DayPlan';
+import { formatWeekRange, validWeekOf } from '../features/plan/dates';
 import { PlanActions } from '../features/plan/PlanActions';
 export function Plan() {
   const [params, setParams] = useSearchParams();
@@ -37,21 +38,13 @@ export function Plan() {
     next.set('dia', nextDate);
     setParams(next, { replace: true });
   }
-  const dateFormat = new Intl.DateTimeFormat('es-AR', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  });
   return (
     <section className="min-w-0 space-y-5">
       <header className="flex items-center justify-between gap-2">
         <Button
           variant="ghost"
           aria-label="Semana anterior"
-          disabled={
-            !parseLocalDateParam(addDays(from, -7)) ||
-            !isoWeekSchema.safeParse(isoWeekOf(addDays(from, -7))).success
-          }
+          disabled={!parseLocalDateParam(addDays(from, -7)) || !validWeekOf(addDays(from, -7))}
           onClick={() => {
             const monday = addDays(from, -7);
             select(isoWeekOf(monday), monday);
@@ -61,17 +54,12 @@ export function Plan() {
         </Button>
         <h1 className="text-center text-2xl font-bold">
           <span className="block">Plan</span>
-          <span className="text-base">
-            {dateFormat.formatRange(new Date(`${from}T12:00:00Z`), new Date(`${to}T12:00:00Z`))}
-          </span>
+          <span className="text-base">{formatWeekRange(from, to)}</span>
         </h1>
         <Button
           variant="ghost"
           aria-label="Semana siguiente"
-          disabled={
-            !parseLocalDateParam(addDays(from, 7)) ||
-            !isoWeekSchema.safeParse(isoWeekOf(addDays(from, 7))).success
-          }
+          disabled={!parseLocalDateParam(addDays(from, 7)) || !validWeekOf(addDays(from, 7))}
           onClick={() => {
             const monday = addDays(from, 7);
             select(isoWeekOf(monday), monday);

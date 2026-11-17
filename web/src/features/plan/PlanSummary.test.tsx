@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { ZERO_MACROS, type DaySummary } from '@lean/shared';
 import { PlanSummary } from './PlanSummary';
-afterEach(cleanup);
+const goal = vi.hoisted(() => ({ data: null as object | null | undefined }));
+vi.mock('../goals/api', () => ({ useActiveGoal: () => goal }));
+afterEach(() => {
+  cleanup();
+  goal.data = null;
+});
 const summary: DaySummary = {
   date: '2026-11-16',
   eaten: { kcal: 600, protein: 50, carbs: 80, fat: 20 },
@@ -37,4 +42,24 @@ it('sin meta muestra totales y acceso al objetivo', () => {
   expect(screen.getByRole('link', { name: 'Definí tu objetivo' }).getAttribute('href')).toBe(
     '/objetivo/nuevo',
   );
+});
+
+it('con objetivo activo y sin meta para el día muestra texto atenuado', () => {
+  goal.data = { id: 'active' };
+  render(
+    <MemoryRouter>
+      <PlanSummary summary={{ ...summary, target: null }} />
+    </MemoryRouter>,
+  );
+  expect(screen.queryByRole('link', { name: 'Definí tu objetivo' })).toBeNull();
+  expect(screen.getByText('Sin meta para este día').className).toContain('text-muted');
+});
+it('no invita a definir objetivo mientras se consulta el objetivo activo', () => {
+  goal.data = undefined;
+  render(
+    <MemoryRouter>
+      <PlanSummary summary={{ ...summary, target: null }} />
+    </MemoryRouter>,
+  );
+  expect(screen.queryByRole('link', { name: 'Definí tu objetivo' })).toBeNull();
 });

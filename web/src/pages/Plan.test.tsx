@@ -124,7 +124,7 @@ it('agrega planned en un día futuro y actualiza la tira optimista', async () =>
   );
   const button = within(screen.getByRole('navigation', { name: /Días de la semana/ })).getByRole(
     'button',
-    { name: /2026-11-17/ },
+    { name: /mar, 17 nov/ },
   );
   await waitFor(() => expect(within(button).getByText('200')).toBeTruthy());
   expect(client.getQueryData<DaySummary>(['summary', 'day', '2026-11-17'])!.planned.kcal).toBe(200);
@@ -238,5 +238,76 @@ it('muestra skeleton y permite reintentar errores del día', async () => {
   const retryButtons = screen.getAllByRole('button', { name: 'Reintentar' });
   fireEvent.click(retryButtons[retryButtons.length - 1]!);
   expect(await screen.findByRole('button', { name: 'Agregar a Almuerzo' })).toBeTruthy();
+  client.clear();
+});
+
+it('deshabilita copiar semana anterior en el límite inferior', async () => {
+  const fetchMock = mockApi();
+  const client = setup('/plan?semana=1900-W01');
+  fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
+  const button = screen.getByRole('button', {
+    name: 'Copiar la semana anterior',
+  }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+  client.clear();
+});
+it.each(['Agregar', 'Reemplazar'] as const)(
+  'copia desde el atajo de día y permite %s',
+  async (choice) => {
+    const fetchMock = mockApi(['2026-11-18']);
+    const client = setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar este día a…' }));
+    const dialog = screen.getByRole('dialog');
+    for (const label of ['lun 16', 'mié 18', 'jue 19', 'vie 20', 'sáb 21', 'dom 22']) {
+      expect(within(dialog).getByRole('button', { name: label }).className).toContain('min-h-11');
+    }
+    expect(within(dialog).queryByRole('button', { name: 'mar 17' })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'mié 18' }));
+    fireEvent.click(await screen.findByRole('button', { name: choice }));
+    await screen.findByText('Día copiado');
+    const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/entries/copy'))!;
+    expect(JSON.parse(String(call[1]?.body))).toEqual({
+      scope: 'day',
+      from: '2026-11-17',
+      to: '2026-11-18',
+      mode: choice === 'Agregar' ? 'append' : 'replace',
+    });
+    client.clear();
+  },
+);
+it('copia directo desde un atajo a un día vacío', async () => {
+  const fetchMock = mockApi();
+  const client = setup();
+  fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar este día a…' }));
+  fireEvent.click(screen.getByRole('button', { name: 'dom 22' }));
+  await screen.findByText('Día copiado');
+  const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/entries/copy'))!;
+  expect(JSON.parse(String(call[1]?.body))).toEqual({
+    scope: 'day',
+    from: '2026-11-17',
+    to: '2026-11-22',
+    mode: 'append',
+  });
+  client.clear();
+});
+
+it('copia directo desde un atajo si el destino no tiene planificados', async () => {
+  const fetchMock = mockApi();
+  const client = setup();
+  fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar este día a…' }));
+  fireEvent.click(screen.getByRole('button', { name: 'lun 16' }));
+  await screen.findByText('Día copiado');
+  const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/entries/copy'))!;
+  expect(JSON.parse(String(call[1]?.body))).toEqual({
+    scope: 'day',
+    from: '2026-11-17',
+    to: '2026-11-16',
+    mode: 'append',
+  });
   client.clear();
 });

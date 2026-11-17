@@ -1,15 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
-import { isoWeekOf, isoWeekRange, type DaySummary } from '@lean/shared';
+import { isoWeekRange, type DaySummary } from '@lean/shared';
 import { addDays } from '../../lib/date';
 import { Button } from '../../components/ui/Button';
 import { Sheet } from '../../components/ui/Sheet';
 import { useToast } from '../../components/ui/Toast';
 import { getDaySummary, summaryKey, useDiaryMutation, waitForDiaryIdle } from '../diary/api';
+import { validWeekOf } from './dates';
 import { CopyDaySheet } from './CopyDaySheet';
 import { useCopyEntries, useGenerateShopping, type CopyEntriesBody } from './api';
 export function PlanActions({ week, summary }: { week: string; summary: DaySummary }) {
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(isoWeekRange(week).from, i));
+  const previousWeek = validWeekOf(addDays(dates[0]!, -7));
   const [sheet, setSheet] = useState<'actions' | 'copy' | 'clear' | null>(null);
   const [pendingCopy, setPendingCopy] = useState<Omit<CopyEntriesBody, 'mode'> | null>(null);
   const [checking, setChecking] = useState(false);
@@ -80,11 +83,12 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
               Copiar este día a…
             </Button>
             <Button
-              disabled={busy}
+              disabled={busy || !previousWeek}
               onClick={() => {
+                if (!previousWeek) return;
                 void prepareCopy({
                   scope: 'week',
-                  from: isoWeekOf(addDays(isoWeekRange(week).from, -7)),
+                  from: previousWeek,
                   to: week,
                 });
               }}
@@ -117,6 +121,7 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
       )}
       {sheet === 'copy' && (
         <CopyDaySheet
+          dates={dates}
           from={summary.date}
           busy={busy}
           onClose={() => setSheet(null)}
