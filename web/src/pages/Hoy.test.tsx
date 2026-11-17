@@ -29,6 +29,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   clearToken();
   localStorage.clear();
 });
@@ -793,19 +794,23 @@ it('mantiene el aviso cerrado cuando falla el storage', async () => {
   client.clear();
 });
 
-it('muestra la fecha seleccionada en formato local legible', async () => {
+it.each([
+  { date: '2026-11-10', title: 'mar, 10 nov' },
+  { date: '2026-11-17', title: 'Hoy' },
+])('muestra $title y la fecha una sola vez en el encabezado', async ({ date, title }) => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-17T12:00:00Z'));
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(summary)));
-  const client = setup();
+  const client = setup(`/hoy?fecha=${date}`);
   await screen.findByText('Pan');
   const expected = new Intl.DateTimeFormat('es-AR', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
     timeZone: 'UTC',
-    ...(summary.date.slice(0, 4) !== todayLocal().slice(0, 4) ? { year: 'numeric' } : {}),
-  }).format(new Date(`${summary.date}T12:00:00Z`));
-  expect(
-    within(screen.getByRole('heading', { level: 1 })).getByText(expected, { selector: '.text-xs' }),
-  ).toBeTruthy();
+  }).format(new Date(`${date}T12:00:00Z`));
+  const heading = within(screen.getByRole('heading', { level: 1 }));
+  expect(heading.getByText(title)).toBeTruthy();
+  expect(heading.getAllByText(expected)).toHaveLength(1);
   client.clear();
 });

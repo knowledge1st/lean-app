@@ -25,6 +25,14 @@ export function Hoy() {
   const today = todayLocal();
   const raw = params.get('fecha');
   const date = parseLocalDateParam(raw) ?? today;
+  const title = formatDayLabel(date, today);
+  const shortDate = new Intl.DateTimeFormat('es-AR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(date.slice(0, 4) !== today.slice(0, 4) ? { year: 'numeric' } : {}),
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T12:00:00Z`));
   const [adding, setAdding] = useState<{ date: string; meal: Meal } | null>(null);
   const [repeating, setRepeating] = useState<Meal | null>(null);
   const [editing, setEditing] = useState<Entry | null>(null);
@@ -71,19 +79,11 @@ export function Hoy() {
           <Button
             variant="ghost"
             onClick={() => navigate(today)}
-            aria-label={`${formatDayLabel(date, today)}. Volver a hoy`}
+            aria-label={`${title}. Volver a hoy`}
           >
             <span>
-              <span className="block text-2xl font-bold">{formatDayLabel(date, today)}</span>
-              <span className="text-xs text-muted">
-                {new Intl.DateTimeFormat('es-AR', {
-                  weekday: 'short',
-                  day: 'numeric',
-                  month: 'short',
-                  ...(date.slice(0, 4) !== todayLocal().slice(0, 4) ? { year: 'numeric' } : {}),
-                  timeZone: 'UTC',
-                }).format(new Date(`${date}T12:00:00Z`))}
-              </span>
+              <span className="block text-2xl font-bold">{title}</span>
+              {shortDate !== title && <span className="text-xs text-muted">{shortDate}</span>}
             </span>
           </Button>
         </h1>
