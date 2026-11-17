@@ -5,10 +5,12 @@ import { formatNumber } from '../../lib/macros';
 export function EntryRow({
   entry,
   disabled,
+  missed,
   onEdit,
   onEat,
 }: {
   entry: Entry;
+  missed?: boolean | undefined;
   disabled?: boolean | undefined;
   onEdit: (entry: Entry) => void;
   onEat: (entry: Entry) => void;
@@ -35,7 +37,8 @@ export function EntryRow({
             <span className="block truncate text-sm text-muted">{entry.food.brand}</span>
           )}
           <span className="text-sm text-muted">
-            {formatNumber(entry.grams)} g{entry.status === 'planned' ? ' · Planificado' : ''}
+            {formatNumber(entry.grams)} g
+            {entry.status === 'planned' ? (missed ? ' · No cumplido' : ' · Planificado') : ''}
           </span>
         </span>
         <span className="shrink-0 text-sm">{entry.kcal} kcal</span>

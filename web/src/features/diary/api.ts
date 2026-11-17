@@ -17,6 +17,7 @@ export const createEntry = (body: {
   meal: Entry['meal'];
   foodId: string;
   grams: number;
+  status?: Entry['status'];
 }) => api.post<Entry>('/api/entries', body);
 export const updateEntry = (id: string, changes: EntryChanges) =>
   api.patch<Entry>(`/api/entries/${id}`, changes);
@@ -63,6 +64,7 @@ export function useDiaryMutation() {
           meal: action.meal,
           foodId: action.food.id!,
           grams: action.grams,
+          ...(action.status ? { status: action.status } : {}),
         });
       const requests = diarySession(client).requests;
       const id = action.entry.id;
