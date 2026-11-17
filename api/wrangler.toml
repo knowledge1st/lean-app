@@ -5,8 +5,15 @@ compatibility_date = "2026-11-13"
 # Local api/.dev.vars values override [vars] during `wrangler dev` (see .dev.vars.example).
 # Production DATABASE_URL is a secret set with `wrangler secret put DATABASE_URL`.
 
+# Recordatorios push: cada 5 minutos se revisa qué recordatorios vencen (ver src/lib/reminders.ts).
+[triggers]
+crons = ["*/5 * * * *"]
+
 [vars]
 ALLOWED_ORIGIN = "https://knowledge1st.github.io"
+APP_URL = "https://knowledge1st.github.io/lean-app/"
+VAPID_SUBJECT = "https://knowledge1st.github.io/lean-app/"
+# VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY se cargan con `wrangler secret put` (ver scripts/generate-vapid-keys.ts).
 # Orden según la evaluación de T100 del 2026-11-17 (Nemotron 26/29 comidas; particle-1 respondió bien la prueba manual; ling-3.2-flash falló por 429 y timeouts).
 TEXT_LOG_PREFERRED_MODELS = "nvidia/nemotron-*,particle-ai/*,meta-llama/*,google/*,qwen/*,mistralai/*,deepseek/*"
 TEXT_LOG_MODEL_DENYLIST = ""

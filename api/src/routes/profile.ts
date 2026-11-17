@@ -7,6 +7,7 @@ import type { AppEnv } from '../env';
 import { AppError } from '../lib/errors';
 import { today } from '../lib/today';
 import { validate } from '../lib/validate';
+import { refreshSchedule } from '../lib/reminders';
 
 export async function selectProfile(db: Db, userId: string) {
   const [row] = await db.select().from(profiles).where(eq(profiles.userId, userId));
@@ -44,10 +45,13 @@ profile.put('/', validate('json', profileInputSchema), async (c) => {
       'birthDate: La fecha de nacimiento debe ser anterior a hoy',
     );
   const values = { ...input, heightCm: String(input.heightCm) };
-  const [row] = await getDb(c.env)
+  const db = getDb(c.env);
+  const [row] = await db
     .insert(profiles)
     .values({ userId: c.get('userId'), ...values })
     .onConflictDoUpdate({ target: profiles.userId, set: { ...values, updatedAt: new Date() } })
     .returning();
+  // Reminder times are local: a new time zone changes when they fire.
+  await refreshSchedule(c.env, db);
   return c.json(serializeProfile(row)!);
 });

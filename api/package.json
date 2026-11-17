@@ -18,6 +18,7 @@
     "eval:text-log": "node scripts/run-text-log.mjs eval-text-log"
   },
   "dependencies": {
+    "@block65/webcrypto-web-push": "2.0.0",
     "@lean/shared": "workspace:*",
     "@neondatabase/serverless": "^1.2.1",
     "drizzle-orm": "^0.45.4",

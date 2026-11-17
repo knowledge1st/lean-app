@@ -218,12 +218,12 @@ it('Cambiar objetivo precarga perfil y peso frescos con una caché inicial vací
   client.clear();
 });
 
-it('muestra objetivo, datos personales y cuenta en ese orden', async () => {
+it('muestra objetivo, datos personales, recordatorios y cuenta en ese orden', async () => {
   renderAuth(<Perfil />, '/perfil');
   await screen.findByText('@jose');
   expect(
     screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
-  ).toEqual(['Mi objetivo', 'Datos personales', 'Cuenta']);
+  ).toEqual(['Mi objetivo', 'Datos personales', 'Recordatorios', 'Cuenta']);
 });
 
 it('pide confirmar el cierre de sesión y permite cancelarlo', async () => {

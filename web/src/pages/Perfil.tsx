@@ -8,6 +8,8 @@ import { ProfileCard } from '../features/goals/ProfileForm';
 import { Sheet } from '../components/ui/Sheet';
 import { ChangePasswordSheet } from '../features/account/ChangePasswordSheet';
 import { ApiError } from '../lib/api';
+import { RemindersCard } from '../features/notifications/RemindersCard';
+import { forgetDeviceOnLogout } from '../features/notifications/push';
 
 export function Perfil() {
   const { user, logout, logoutAll } = useAuth();
@@ -24,6 +26,7 @@ export function Perfil() {
     setPending(true);
     setMessage('');
     try {
+      await forgetDeviceOnLogout();
       await (all ? logoutAll() : logout());
       navigate('/login', { replace: true });
     } catch (error) {
@@ -42,6 +45,7 @@ export function Perfil() {
       <h1 className="text-3xl font-bold tracking-tight">Perfil</h1>
       <GoalCard />
       <ProfileCard />
+      <RemindersCard />
       <Card className="space-y-5">
         <h2 className="text-xl font-semibold">Cuenta</h2>
         <div>
