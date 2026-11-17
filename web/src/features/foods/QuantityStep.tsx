@@ -1,3 +1,4 @@
+import { formatDecimalInput } from './decimalInput';
 import { useState } from 'react';
 import { gramsSchema, macrosForGrams, roundMacros, type Food } from '@lean/shared';
 import { Button } from '../../components/ui/Button';
@@ -12,14 +13,14 @@ export function QuantityStep({
   onBack: () => void;
   onAdd: (grams: number) => void;
 }) {
-  const [value, setValue] = useState(String(food.servingG ?? 100));
+  const [value, setValue] = useState(formatDecimalInput(food.servingG ?? 100));
   const result = gramsSchema.safeParse(decimalValue(value));
   const macros = result.success ? roundMacros(macrosForGrams(food, result.data)) : null;
   return (
     <div className="space-y-4">
       <div className="min-w-0">
-        <h3 className="truncate font-semibold">{food.name}</h3>
-        {food.brand && <p className="truncate text-muted">{food.brand}</p>}
+        <h3 className="break-words font-semibold">{food.name}</h3>
+        {food.brand && <p className="break-words text-muted">{food.brand}</p>}
       </div>
       <NumberInput
         label="Gramos"
@@ -31,7 +32,7 @@ export function QuantityStep({
       {food.servingG && (
         <div className="min-w-0 space-y-2">
           {food.servingLabel && (
-            <p className="truncate text-sm text-muted">1 porción = {food.servingLabel}</p>
+            <p className="break-words text-sm text-muted">1 porción = {food.servingLabel}</p>
           )}
           <div className="flex min-w-0 flex-wrap gap-2">
             {[0.5, 1, 2].map((multiplier) => {
@@ -41,9 +42,9 @@ export function QuantityStep({
                   key={multiplier}
                   variant="secondary"
                   className="max-w-full min-w-0"
-                  onClick={() => setValue(String(grams))}
+                  onClick={() => setValue(formatDecimalInput(grams))}
                 >
-                  <span className="truncate">
+                  <span className="break-words">
                     {multiplier === 0.5
                       ? '½ porción'
                       : `${multiplier} ${multiplier === 1 ? 'porción' : 'porciones'}`}

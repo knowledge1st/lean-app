@@ -139,9 +139,10 @@ export function useExerciseMutation(date: string) {
             }
           : old,
       );
+      toast(action.kind === 'delete' ? 'Eliminaste el ejercicio' : 'Guardaste el ejercicio');
       void client.invalidateQueries({ queryKey: exerciseKey(date) });
       void client.invalidateQueries({ queryKey: summaryKey(date) });
     },
-    onError: () => toast('No se pudo guardar el ejercicio. Intentá de nuevo.'),
+    onError: (error) => toast(`No se pudo guardar el ejercicio. ${error.message}`),
   });
 }

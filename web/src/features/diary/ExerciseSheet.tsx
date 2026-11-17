@@ -37,7 +37,7 @@ export function ExerciseSheet({
       open
       title={entry ? 'Editar ejercicio' : 'Agregar ejercicio'}
       onOpenChange={(open) => {
-        if (!open && !mutation.isPending) onClose();
+        if (!open) onClose();
       }}
     >
       <form

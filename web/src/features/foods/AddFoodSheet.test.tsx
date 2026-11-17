@@ -323,7 +323,7 @@ it('muestra errores de red en el escáner y cerrar vuelve a búsqueda', async ()
   const { client } = setup();
   await openScanner();
   expect((await screen.findByRole('alert')).textContent).toBe(
-    'No se pudo conectar con el servidor.',
+    'No pudimos conectarnos. Volvé a intentar.',
   );
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar escáner' }));
   expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();

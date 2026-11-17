@@ -172,6 +172,7 @@ export function useDiaryMutation() {
               client.invalidateQueries({ queryKey: ['summary', 'week'] }),
             ]
           : []),
+        client.invalidateQueries({ queryKey: ['progress', 'entries'] }),
         client.invalidateQueries({ queryKey: ['foods', 'recent'] }),
         client.invalidateQueries({ queryKey: ['foods', 'frequent'] }),
       ]);

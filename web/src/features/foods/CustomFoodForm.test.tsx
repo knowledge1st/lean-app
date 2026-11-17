@@ -437,3 +437,26 @@ it('muestra una sola alerta por la suma en modo por 100 g y la revalida al edita
   expect(posts()).toHaveLength(0);
   client.clear();
 });
+
+it('bloquea campos y modo durante el guardado y los habilita si falla', async () => {
+  const { client, fetchMock } = setup();
+  let reject!: (error: Error) => void;
+  fetchMock.mockImplementationOnce(
+    () =>
+      new Promise<Response>((_resolve, no) => {
+        reject = no;
+      }),
+  );
+  fill();
+  grams('25');
+  submit();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Guardando…' })).toBeTruthy());
+  for (const input of document.querySelectorAll('input'))
+    expect(input.matches(':disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: 'Por 100 g' }).matches(':disabled')).toBe(true);
+  reject(new Error('offline'));
+  await screen.findByRole('alert');
+  expect(screen.getByLabelText('Nombre').matches(':disabled')).toBe(false);
+  expect((screen.getByLabelText('Nombre') as HTMLInputElement).value).toBe('Mi alimento');
+  client.clear();
+});

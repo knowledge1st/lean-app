@@ -41,13 +41,13 @@ it('inicia con 100 y actualiza las cuatro macros en vivo', () => {
 it('inicia con la porción y permite media, una y dos porciones', () => {
   setup({ servingG: 33.3, servingLabel: '1 rebanada' });
   const input = screen.getByLabelText('Gramos') as HTMLInputElement;
-  expect(input.value).toBe('33.3');
+  expect(input.value).toBe('33,3');
   fireEvent.click(screen.getByRole('button', { name: /½ porción/ }));
-  expect(input.value).toBe('16.7');
+  expect(input.value).toBe('16,7');
   fireEvent.click(screen.getByRole('button', { name: /^2 porciones/ }));
-  expect(input.value).toBe('66.6');
+  expect(input.value).toBe('66,6');
   fireEvent.click(screen.getByRole('button', { name: /^1 porción/ }));
-  expect(input.value).toBe('33.3');
+  expect(input.value).toBe('33,3');
 });
 it('acepta coma y envía gramos numéricos', () => {
   const add = setup();
@@ -74,12 +74,12 @@ it('vuelve a búsqueda', () => {
   expect(onBack).toHaveBeenCalledOnce();
 });
 
-it('limita una etiqueta de porción sin espacios y conserva los gramos visibles', () => {
+it('ajusta una etiqueta de porción sin espacios y conserva los gramos visibles', () => {
   const label = 'W'.repeat(40);
   setup({ name: 'N'.repeat(100), brand: 'B'.repeat(100), servingG: 50, servingLabel: label });
   const button = screen.getByRole('button', { name: '1 porción (50 g)' });
   expect(button.className).toContain('max-w-full min-w-0');
-  expect(screen.getByText(`1 porción = ${label}`).className).toContain('truncate');
+  expect(screen.getByText(`1 porción = ${label}`).className).toContain('break-words');
   expect(button.querySelector('.shrink-0')?.textContent).toBe('(50 g)');
 });
 

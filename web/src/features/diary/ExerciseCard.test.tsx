@@ -97,13 +97,64 @@ it.each(['add', 'edit', 'delete'])(
       fireEvent.change(screen.getByLabelText('Minutos'), { target: { value: '30' } });
       fireEvent.click(screen.getByText('Guardar'));
     }
-    expect(
-      await screen.findByText('No se pudo guardar el ejercicio. Intentá de nuevo.'),
-    ).toBeTruthy();
+    expect(await screen.findByText('No se pudo guardar el ejercicio. offline')).toBeTruthy();
     expect(screen.getByRole('dialog')).toBeTruthy();
     await waitFor(() =>
       expect(client.getQueryData(exerciseKey(date))).toEqual({ logs: kind === 'add' ? [] : [log] }),
     );
+    client.clear();
+  },
+);
+
+it('avisa si falla la recarga con caché y reintenta conservando el valor', async () => {
+  const { client } = setup([log]);
+  vi.mocked(api.get).mockRejectedValue(new Error('offline'));
+  await client.invalidateQueries({ queryKey: exerciseKey(date) });
+  expect(await screen.findByText('No se pudo actualizar')).toBeTruthy();
+  expect(screen.getByText('Total: 150 kcal')).toBeTruthy();
+  vi.mocked(api.get).mockResolvedValue({ logs: [{ ...log, kcal: 1234, minutes: 30.5 }] });
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByText('Total: 1.234 kcal')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Caminata · 30,5 min · 1.234 kcal' })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText('No se pudo actualizar')).toBeNull());
+  client.clear();
+});
+
+it.each([
+  ['success', 'button'],
+  ['error', 'button'],
+  ['success', 'escape'],
+  ['error', 'escape'],
+])(
+  'permite cerrar durante el guardado e informa %s por toast usando %s',
+  async (outcome, closeMethod) => {
+    let resolve!: (value: ExerciseLog) => void;
+    let reject!: (error: Error) => void;
+    vi.spyOn(api, 'post').mockImplementation(
+      () =>
+        new Promise<ExerciseLog>((yes, no) => {
+          resolve = yes;
+          reject = no;
+        }),
+    );
+    const { client } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar ejercicio' }));
+    fireEvent.change(screen.getByLabelText('Actividad'), { target: { value: 'Caminata' } });
+    fireEvent.change(screen.getByLabelText('Minutos'), { target: { value: '30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    if (closeMethod === 'escape') fireEvent.keyDown(document, { key: 'Escape' });
+    else fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    if (outcome === 'success') resolve(log);
+    else reject(new Error('Mensaje del servidor'));
+    expect(
+      await screen.findByText(
+        outcome === 'success'
+          ? 'Guardaste el ejercicio'
+          : 'No se pudo guardar el ejercicio. Mensaje del servidor',
+      ),
+    ).toBeTruthy();
     client.clear();
   },
 );

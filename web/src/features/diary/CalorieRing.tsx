@@ -1,4 +1,4 @@
-const formatKcal = (value: number) => new Intl.NumberFormat('es-AR').format(value);
+import { formatNumber } from '../../lib/macros';
 
 export function CalorieRing({ kcal, target }: { kcal: number; target?: number | undefined }) {
   const progress = target && target > 0 ? Math.min(kcal / target, 1) : 0;
@@ -21,15 +21,15 @@ export function CalorieRing({ kcal, target }: { kcal: number; target?: number | 
           )}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <strong className="text-3xl">{formatKcal(kcal)}</strong>
+          <strong className="text-3xl">{formatNumber(kcal)}</strong>
           <span className="text-sm text-muted">kcal consumidas</span>
         </div>
       </div>
       {target != null && (
         <p className="text-sm text-muted">
           {kcal <= target
-            ? `quedan ${formatKcal(target - kcal)} kcal`
-            : `${formatKcal(kcal - target)} kcal de más`}
+            ? `quedan ${formatNumber(target - kcal)} kcal`
+            : `${formatNumber(kcal - target)} kcal de más`}
         </p>
       )}
     </div>

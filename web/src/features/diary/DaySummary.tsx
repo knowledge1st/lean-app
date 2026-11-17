@@ -1,3 +1,4 @@
+import { formatNumber } from '../../lib/macros';
 import type { DaySummary as Summary } from '@lean/shared';
 import { Link } from 'react-router';
 import { Card } from '../../components/ui/Card';
@@ -19,7 +20,7 @@ export function DaySummary({ summary }: { summary: Summary }) {
         </Link>
       )}
       {Object.values(summary.planned).some((value) => value > 0) && (
-        <p className="mt-3 text-sm text-muted">Planificado: {summary.planned.kcal} kcal</p>
+        <p className="mt-3 text-sm text-muted">Planificado: {formatNumber(summary.planned.kcal)} kcal</p>
       )}
     </Card>
   );

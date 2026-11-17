@@ -514,3 +514,45 @@ it('waitForDiaryIdle espera todas las mutaciones del diario y se desuscribe, ign
   subscribe.mockRestore();
   client.clear();
 });
+
+it.each(['add', 'edit', 'delete'] as const)(
+  'invalida entradas de Progreso al finalizar %s con éxito o error',
+  async (kind) => {
+    for (const failed of [false, true]) {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockImplementation(() =>
+            failed
+              ? Promise.reject(new Error('offline'))
+              : Promise.resolve(jsonResponse(kind === 'delete' ? null : entry)),
+          ),
+      );
+      const { client, wrapper } = setup();
+      client.setQueryData(summaryKey(entry.date), base());
+      const key = ['progress', 'entries', '2026-11-09', '2026-11-15'];
+      client.setQueryData(key, [entry]);
+      const { result, unmount } = renderHook(() => useDiaryMutation(), { wrapper });
+      const action: DiaryAction =
+        kind === 'add'
+          ? {
+              kind,
+              date: entry.date,
+              meal: entry.meal,
+              food: { ...entry.food, ...ZERO_MACROS, createdByMe: false, barcode: null },
+              grams: entry.grams,
+              temporaryId: 'temp-test',
+            }
+          : kind === 'edit'
+            ? { kind, entry, changes: { grams: 50 } }
+            : { kind, entry };
+      await act(async () => {
+        await result.current.mutateAsync(action).catch(() => {});
+      });
+      expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+      unmount();
+      client.clear();
+    }
+  },
+);

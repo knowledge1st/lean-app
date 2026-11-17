@@ -1,7 +1,7 @@
 import type { DaySummary, Entry } from '@lean/shared';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { MEAL_LABELS } from '../../lib/macros';
+import { formatNumber, MEAL_LABELS } from '../../lib/macros';
 import { EntryRow } from './EntryRow';
 export function MealSection({
   meal,
@@ -24,10 +24,10 @@ export function MealSection({
     <Card className="min-w-0">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">{MEAL_LABELS[meal.meal]}</h2>
-        <span>{meal.eaten.kcal} kcal</span>
+        <span>{formatNumber(meal.eaten.kcal)} kcal</span>
       </div>
       {Object.values(meal.planned).some((value) => value > 0) && (
-        <p className="mb-2 text-sm text-muted">Planificado: {meal.planned.kcal} kcal</p>
+        <p className="mb-2 text-sm text-muted">Planificado: {formatNumber(meal.planned.kcal)} kcal</p>
       )}
       {meal.entries.length ? (
         meal.entries.map((entry) => (

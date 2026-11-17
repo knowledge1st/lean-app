@@ -1,3 +1,4 @@
+import { formatDecimalInput } from '../foods/decimalInput';
 import { useState } from 'react';
 import { MEALS, gramsSchema, type Entry } from '@lean/shared';
 import { Sheet } from '../../components/ui/Sheet';
@@ -16,7 +17,8 @@ export function EntrySheet({
   onSave: (changes: EntryChanges) => void;
   onDelete: () => void;
 }) {
-  const [grams, setGrams] = useState(String(entry.grams));
+  const [grams, setGrams] = useState(formatDecimalInput(entry.grams));
+  const [confirming, setConfirming] = useState(false);
   const [meal, setMeal] = useState(entry.meal);
   const result = gramsSchema.safeParse(decimalValue(grams));
   const changed = result.success && (result.data !== entry.grams || meal !== entry.meal);
@@ -28,7 +30,11 @@ export function EntrySheet({
       }}
       title="Editar alimento"
     >
-      <p className="mb-4 truncate">{entry.food.name}</p>
+      <div className="mb-4 space-y-1 break-words">
+        <p>{entry.food.name}</p>
+        {entry.food.brand && <p className="text-muted">{entry.food.brand}</p>}
+        {entry.food.servingLabel && <p className="text-sm text-muted">{entry.food.servingLabel}</p>}
+      </div>
       <form
         className="space-y-4"
         onSubmit={(event) => {
@@ -67,9 +73,23 @@ export function EntrySheet({
           </div>
         </fieldset>
         <div className="flex justify-between gap-3">
-          <Button variant="danger" onClick={onDelete}>
-            Borrar
-          </Button>
+          {confirming ? (
+            <div className="min-w-0 space-y-2">
+              <p className="break-words">¿Borrar {entry.food.name}?</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="danger" onClick={onDelete}>
+                  Sí, borrar
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirming(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button variant="danger" onClick={() => setConfirming(true)}>
+              Borrar
+            </Button>
+          )}
           <Button type="submit" disabled={!changed}>
             Guardar
           </Button>
