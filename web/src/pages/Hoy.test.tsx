@@ -698,7 +698,13 @@ it('elegir Cena navega a hoy y abre la hoja para agregar a Cena', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Cena' }));
   expect(screen.getByLabelText('URL').textContent).toBe(`?fecha=${todayLocal()}`);
   expect(await screen.findByRole('dialog', { name: 'Agregar alimento' })).toBeTruthy();
-  expect(screen.getByText(`Cena · ${todayLocal()}`)).toBeTruthy();
+  const expectedDate = new Intl.DateTimeFormat('es-AR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(`${todayLocal()}T12:00:00Z`));
+  expect(screen.getByText(`Cena · ${expectedDate}`)).toBeTruthy();
   expect(screen.queryByRole('dialog', { name: '¿Querés cargar alguna comida?' })).toBeNull();
   client.clear();
 });

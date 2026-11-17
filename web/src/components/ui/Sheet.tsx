@@ -1,7 +1,20 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, CSSProperties } from 'react';
 import { Button } from './Button';
+
+function restoreFocus(opener: HTMLElement | null, content: HTMLElement | null) {
+  const activeElement = document.activeElement;
+  if (
+    opener?.isConnected &&
+    (activeElement === document.body ||
+      activeElement?.matches('main') ||
+      (activeElement && !activeElement.isConnected) ||
+      (activeElement && content?.contains(activeElement)))
+  ) {
+    opener.focus({ preventScroll: true });
+  }
+}
 
 export type SheetProps = Omit<ComponentProps<typeof Dialog.Content>, 'title'> & {
   open: boolean;
@@ -24,8 +37,29 @@ export function Sheet({
   ...props
 }: SheetProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
   const [viewportStyle, setViewportStyle] = useState<CSSProperties>({});
+
+  // Capture before React mounts children: autoFocus runs before Radix's open autofocus event.
+  if (open && !wasOpenRef.current) {
+    const activeElement = document.activeElement;
+    openerRef.current =
+      activeElement instanceof HTMLElement && !dialogRef.current?.contains(activeElement)
+        ? activeElement
+        : null;
+  }
+  wasOpenRef.current = open;
+
+  useLayoutEffect(() => {
+    return () => {
+      const opener = openerRef.current;
+      // Use the same deferred phase as Radix's FocusScope unmount autofocus.
+      // Only restore abandoned focus, respecting any newly focused control.
+      setTimeout(() => restoreFocus(opener, null), 0);
+    };
+  }, []);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -54,16 +88,13 @@ export function Sheet({
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
         <Dialog.Content
           {...props}
+          ref={dialogRef}
           style={{ ...style, ...viewportStyle }}
-          onOpenAutoFocus={(event) => {
-            openerRef.current =
-              document.activeElement instanceof HTMLElement ? document.activeElement : null;
-            onOpenAutoFocus?.(event);
-          }}
+          onOpenAutoFocus={onOpenAutoFocus}
           onCloseAutoFocus={(event) => {
             onCloseAutoFocus?.(event);
             event.preventDefault();
-            if (openerRef.current?.isConnected) openerRef.current.focus({ preventScroll: true });
+            restoreFocus(openerRef.current, dialogRef.current);
           }}
           onFocusCapture={(event) => {
             onFocusCapture?.(event);
