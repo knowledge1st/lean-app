@@ -41,6 +41,26 @@ const quantityPattern =
   /^(\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?|media|medio|uno|una|un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)(?=\s|g\b|gramos\b|$)\s*/;
 const dayPattern = /\b(ayer|anoche|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/g;
 
+// Match on an accent-free projection, then remove the corresponding original spans.
+function removeNormalized(text: string, pattern: RegExp): string {
+  const offsets: number[] = [];
+  let position = 0;
+  for (const character of text) {
+    for (let i = 0; i < normalize(character).length; i++) offsets.push(position);
+    position += character.length;
+  }
+  offsets.push(text.length);
+  const normalized = normalize(text);
+  let result = '';
+  let end = 0;
+  for (const match of normalized.matchAll(pattern)) {
+    const start = offsets[match.index]!;
+    result += text.slice(end, start) + ' ';
+    end = offsets[match.index + match[0].length]!;
+  }
+  return result + text.slice(end);
+}
+
 export function parseWithRules(text: string): AiMealParse {
   const items: AiMealParse['items'] = [];
   const normalized = normalize(text);
@@ -61,19 +81,18 @@ export function parseWithRules(text: string): AiMealParse {
       const part = normalize(originalPart);
       const marker = [...part.matchAll(mealPattern)].at(-1);
       if (marker) currentMeal = meals[marker[0]] ?? null;
-      let query = part
-        .replace(mealPattern, '')
-        .replace(dayPattern, '')
-        .replace(
-          /\b(?:me\s+comi|comi|tome|comido|tomado|para|en|el|la|los|las|de|del|al|hoy)\b/g,
-          ' ',
-        )
+      let query = removeNormalized(originalPart, mealPattern);
+      query = removeNormalized(query, dayPattern);
+      query = removeNormalized(
+        query,
+        /\b(?:me\s+comi|comi|tome|comido|tomado|para|en|el|la|los|las|de|del|al|hoy)\b/g,
+      )
         .replace(/\s+/g, ' ')
         .trim();
       let grams = 100;
       let gramsStated = false;
       let units: number | null = null;
-      const quantity = query.match(quantityPattern);
+      const quantity = normalize(query).match(quantityPattern);
       if (quantity) {
         const spelling = quantity[1]!;
         const fraction = spelling.split('/').map(Number);
@@ -81,7 +100,7 @@ export function parseWithRules(text: string): AiMealParse {
           ? fraction[0]! / fraction[1]!
           : (quantities[spelling] ?? Number(spelling.replace(',', '.')));
         query = query.slice(quantity[0].length).trim();
-        const gramUnit = query.match(/^(?:gramos|gramo|gr|g)\b\s*/);
+        const gramUnit = normalize(query).match(/^(?:gramos|gramo|gr|g)\b\s*/);
         if (gramUnit) {
           grams = amount;
           gramsStated = true;
@@ -92,7 +111,7 @@ export function parseWithRules(text: string): AiMealParse {
         } else units = amount;
       }
       if (
-        !/[a-z]/.test(query) ||
+        !/[a-z]/.test(normalize(query)) ||
         !Number.isFinite(grams) ||
         grams <= 0 ||
         (units !== null && (!Number.isFinite(units) || units <= 0 || units > 50))

@@ -22,6 +22,22 @@ describe('rules interpreter', () => {
     expect(result.items[3]?.said).toBe('café');
     expect(aiMealParseSchema.safeParse(result).success).toBe(true);
   });
+  it.each(['zorbifláun', 'zorbifla\u0301un'])(
+    'preserves original accents in search queries and said (%s)',
+    (name) => {
+      const text = `ayer almorcé 200 g de ${name} con café y dos ñoquis`;
+      const result = parseWithRules(text);
+      expect(result.items.map((item) => item.searchQuery)).toEqual([name, 'café', 'ñoquis']);
+      expect(result.items.map((item) => item.said)).toEqual([
+        `ayer almorcé 200 g de ${name}`,
+        'café',
+        'dos ñoquis',
+      ]);
+      expect(result.items[0]).toMatchObject({ meal: 'lunch', grams: 200, gramsStated: true });
+      expect(result.items[2]?.units).toBe(2);
+      expect(result.otherDayMentioned).toBe(true);
+    },
+  );
   it('splits a simple list, semicolons and newlines', () => {
     expect(parseWithRules('arroz, pollo, tomate').items.map((i) => i.searchQuery)).toEqual([
       'arroz',

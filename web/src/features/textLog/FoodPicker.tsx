@@ -16,6 +16,7 @@ export function FoodPicker({
   onSelect: (food: Food) => void;
   onBack: () => void;
 }) {
+  const initialName = (item.searchQuery || item.said).trim();
   const [custom, setCustom] = useState(create);
   const [mode, setMode] = useState<'serving' | 'per100g'>('serving');
   const [error, setError] = useState<string>();
@@ -49,7 +50,7 @@ export function FoodPicker({
       </Button>
       {custom ? (
         <CustomFoodForm
-          initialName={item.searchQuery || item.said}
+          initialName={initialName.charAt(0).toUpperCase() + initialName.slice(1)}
           mode={mode}
           onModeChange={setMode}
           onCreated={choose}

@@ -69,7 +69,7 @@ describe('text log mapping', () => {
     expect(db.execute).toHaveBeenCalledTimes(1);
     const compiled = new PgDialect().sqlToQuery(vi.mocked(db.execute).mock.calls[0]![0] as SQL);
     expect(compiled.sql).toContain('chosen.score AS "chosenScore"');
-    expect(compiled.sql).toContain("similarity(translate(lower(q.query), 'áéíóúüñ', 'aeiouun')");
+    expect(compiled.sql).toContain('similarity(n.query, n.name) AS score');
   });
   it.each([['50', 50], [null, 100]] as const)(
     'uses the serving or 100 g for rules without a quantity (%s)', async (servingGrams, grams) => {
@@ -109,6 +109,7 @@ describe('text log mapping', () => {
     expect(results.map((result) => result.match)).toEqual(['approximate', 'approximate', 'none']);
     expect(new Set(results.map((result) => result.key)).size).toBe(3);
     expect(results[2]?.food).toBeNull();
+    expect(results[2]?.alternatives).toEqual([]);
   });
   it('converts units by serving, respects stated grams, rounds and clamps', async () => {
     const inputs = [
@@ -161,6 +162,17 @@ describe('text log mapping', () => {
     ]);
     expect(compiled.sql).toContain('LEFT JOIN LATERAL');
     expect(compiled.sql).toContain('LIMIT 4');
+    // Both the catalogue choice and alternatives must pass the same admission filter.
+    const minimumScore =
+      'greatest(strict_word_similarity(n.query, n.name), strict_word_similarity(n.query, n.brand)) >= 0.4';
+    expect(compiled.sql.split(minimumScore)).toHaveLength(3);
+    const wordPrefix = 'starts_with(substr(n.name, position.value), n.query)';
+    expect(compiled.sql.split(wordPrefix)).toHaveLength(3);
+    expect(compiled.sql).toContain(
+      "position.value = 1 OR substr(n.name, position.value - 1, 1) !~ '[[:alnum:]_]'",
+    );
+    expect(compiled.sql).not.toContain('greatest(word_similarity');
+    expect(compiled.sql).not.toContain('strpos');
     expect(compiled.sql).not.toContain('DROP TABLE');
     expect(compiled.params).toContain('session-user');
   });

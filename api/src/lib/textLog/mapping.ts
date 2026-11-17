@@ -45,15 +45,29 @@ export async function mapItems(
     ids.map((id) => sql`${id}`),
     sql`, `,
   )}]::uuid[]`;
+  const normalizedFood = sql`CROSS JOIN LATERAL (SELECT
+    translate(lower(q.query), 'áéíóúüñ', 'aeiouun') AS query,
+    translate(lower(${foods.name}), 'áéíóúüñ', 'aeiouun') AS name,
+    translate(lower(coalesce(${foods.brand}, '')), 'áéíóúüñ', 'aeiouun') AS brand
+  ) n`;
+  const eligible = sql`n.query <> '' AND (
+    greatest(strict_word_similarity(n.query, n.name), strict_word_similarity(n.query, n.brand)) >= 0.4
+    OR EXISTS (
+      SELECT 1 FROM generate_series(1, length(n.name)) AS position(value)
+      WHERE starts_with(substr(n.name, position.value), n.query)
+        AND (position.value = 1 OR substr(n.name, position.value - 1, 1) !~ '[[:alnum:]_]')
+    )
+  )`;
   const result = await db.execute(sql`
     SELECT q.ordinality - 1 AS "itemIndex", chosen.food AS chosen, matches.food AS food,
       matches.score AS score, chosen.score AS "chosenScore"
     FROM unnest(${queryArray}, ${idArray}) WITH ORDINALITY AS q(query, chosen_id, ordinality)
     LEFT JOIN LATERAL (
       SELECT ${foodJson} AS food,
-        similarity(translate(lower(q.query), 'áéíóúüñ', 'aeiouun'),
-          translate(lower(${foods.name}), 'áéíóúüñ', 'aeiouun')) AS score
-      FROM ${foods} WHERE ${foods.id} = q.chosen_id
+        similarity(n.query, n.name) AS score
+      FROM ${foods}
+      ${normalizedFood}
+      WHERE ${foods.id} = q.chosen_id AND ${eligible}
     ) chosen ON true
     LEFT JOIN LATERAL (
       SELECT ${foodJson} AS food,
@@ -61,15 +75,8 @@ export async function mapItems(
         similarity(n.query, n.name) AS similarity, ${foods.name} AS name, ${foods.id} AS id,
         greatest(strict_word_similarity(n.query, n.name), strict_word_similarity(n.query, n.brand)) AS score
       FROM ${foods}
-      CROSS JOIN LATERAL (SELECT
-        translate(lower(q.query), 'áéíóúüñ', 'aeiouun') AS query,
-        translate(lower(${foods.name}), 'áéíóúüñ', 'aeiouun') AS name,
-        translate(lower(coalesce(${foods.brand}, '')), 'áéíóúüñ', 'aeiouun') AS brand
-      ) n
-      WHERE n.query <> '' AND (
-        greatest(word_similarity(n.query, n.name), word_similarity(n.query, n.brand)) >= 0.3
-        OR strpos(n.name, n.query) > 0
-      )
+      ${normalizedFood}
+      WHERE ${eligible}
       ORDER BY EXISTS (SELECT 1 FROM meal_entries e WHERE e.food_id = ${foods.id} AND e.user_id = ${userId}) DESC,
         score DESC, similarity(n.query, n.name) DESC, ${foods.name} ASC, ${foods.id} ASC
       LIMIT 4

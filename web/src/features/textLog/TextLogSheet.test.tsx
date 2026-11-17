@@ -304,10 +304,25 @@ it('opens custom food with the missing name prefilled and returns to review', as
   setup();
   await interpret();
   fireEvent.click(screen.getByRole('button', { name: 'Crear alimento' }));
-  expect(screen.getByLabelText('Nombre')).toHaveProperty('value', 'medialuna');
+  expect(screen.getByLabelText('Nombre')).toHaveProperty('value', 'Medialuna');
   fireEvent.click(screen.getByRole('button', { name: 'Volver a la revisión' }));
   expect(screen.getByText('Total: 175 kcal')).toBeTruthy();
 });
+it.each(['zorbifláun', ''])(
+  'capitalizes the missing food name with accents (%s)',
+  async (searchQuery) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      json({
+        ...response,
+        items: [{ ...item('zorbifláun', 'lunch', 100, 'none'), searchQuery }],
+      }),
+    );
+    setup();
+    await interpret();
+    fireEvent.click(screen.getByRole('button', { name: 'Crear alimento' }));
+    expect(screen.getByLabelText('Nombre')).toHaveProperty('value', 'Zorbifláun');
+  },
+);
 it('preserves text and proposal on edit, confirms closing and focuses the safe choice', async () => {
   mockFetch();
   const { onClose } = setup();
