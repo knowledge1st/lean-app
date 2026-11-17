@@ -3,6 +3,7 @@ import type { AppEnv } from './env';
 import { handleError, handleNotFound } from './lib/errors';
 import { cors } from './middleware/cors';
 import { requireAuth } from './middleware/requireAuth';
+import { bodyLimit, securityHeaders } from './middleware/security';
 import { auth, me } from './routes/auth';
 import { shopping } from './routes/shopping';
 import { entries } from './routes/entries';
@@ -19,7 +20,9 @@ import { exercise } from './routes/exercise';
 
 export const app = new Hono<AppEnv>();
 
+app.use('*', securityHeaders());
 app.use('*', cors());
+app.use('/api/*', bodyLimit());
 app.use('/api/*', (c, next) => {
   const path = c.req.path;
   if (

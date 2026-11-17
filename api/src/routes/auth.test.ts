@@ -181,6 +181,35 @@ describe.skipIf(!hasTestDatabase)('auth integration', () => {
     expect((await authorized('/api/me', second.token)).status).toBe(401);
   }, 30_000);
 
+  it('isolates me, logout, logout-all and password changes between users', async () => {
+    const own = await loginOk();
+    const { user: other } = await createTestUser(db, { password });
+    usernames.push(other.username);
+    try {
+      const response = await login(password, other.username);
+      expect(response.status).toBe(200);
+      const { token } = (await response.json()) as LoginResponse;
+      expect(await (await authorized('/api/me', token)).json()).toMatchObject({ id: other.id });
+      expect((await authorized('/api/auth/logout-all', token)).status).toBe(204);
+      expect((await authorized('/api/me', own.token)).status).toBe(200);
+      const again = (await (await login(password, other.username)).json()) as LoginResponse;
+      expect(
+        (
+          await authorized('/api/auth/password', again.token, {
+            currentPassword: password,
+            newPassword: 'other-user-new-password',
+          })
+        ).status,
+      ).toBe(204);
+      expect((await login(password)).status).toBe(200);
+      expect((await authorized('/api/me', own.token)).status).toBe(200);
+      expect((await authorized('/api/auth/logout', again.token)).status).toBe(204);
+      expect((await authorized('/api/me', own.token)).status).toBe(200);
+    } finally {
+      await deleteTestUser(db, other.id);
+    }
+  }, 30_000);
+
   it('changes the password and revokes only other sessions', async () => {
     const first = await loginOk();
     const second = await loginOk();

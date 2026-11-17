@@ -1,0 +1,79 @@
+name: Backup
+
+# Weekly encrypted pg_dump of the production database, kept as an artifact for 90 days.
+# Restore steps: docs/restauracion.md (kept outside git) and the README "Respaldo" section.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC (03:00 Argentina)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Must match the major version of the Neon server (18).
+      PG_IMAGE: postgres:18
+    steps:
+      - name: Comprobar secretos
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          [[ -n "$BACKUP_DATABASE_URL" ]] || { echo "::error::Falta el secreto BACKUP_DATABASE_URL"; exit 1; }
+          [[ -n "$BACKUP_PASSPHRASE" ]] || { echo "::error::Falta el secreto BACKUP_PASSPHRASE"; exit 1; }
+
+      - name: Volcar y cifrar
+        id: dump
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          name="lean-$(date -u +%Y-%m-%dT%H%MZ).dump.gpg"
+          # The plaintext dump only exists in the pipe; only ciphertext touches the disk.
+          docker run --rm -e BACKUP_DATABASE_URL "$PG_IMAGE" \
+            sh -c 'exec pg_dump --dbname="$BACKUP_DATABASE_URL" --format=custom --compress=9 --no-owner --no-privileges' \
+            | gpg --batch --no-symkey-cache --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 \
+                --passphrase-fd 3 --output "$name" 3< <(printf '%s' "$BACKUP_PASSPHRASE")
+          echo "file=$name" >> "$GITHUB_OUTPUT"
+          echo "Tamaño cifrado: $(stat -c %s "$name") bytes"
+
+      - name: Verificar el respaldo
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          FILE: ${{ steps.dump.outputs.file }}
+        run: |
+          set -euo pipefail
+          # Without the passphrase the file must not decrypt or parse as a dump.
+          if gpg --batch --no-symkey-cache --pinentry-mode loopback --passphrase 'wrong-passphrase' --decrypt "$FILE" >/dev/null 2>&1; then
+            echo "::error::El archivo se pudo descifrar con una frase incorrecta"; exit 1
+          fi
+          if head -c 5 "$FILE" | grep -q 'PGDMP'; then
+            echo "::error::El archivo contiene un volcado sin cifrar"; exit 1
+          fi
+          # With the passphrase it must decrypt into a dump with table data.
+          tables=$(gpg --batch --no-symkey-cache --quiet --pinentry-mode loopback --passphrase-fd 3 --decrypt "$FILE" 3< <(printf '%s' "$BACKUP_PASSPHRASE") \
+            | docker run --rm -i "$PG_IMAGE" pg_restore --list \
+            | grep -c ' TABLE DATA ' || true)
+          echo "Tablas con datos en el volcado: $tables"
+          [[ "$tables" -gt 0 ]] || { echo "::error::El volcado no contiene datos de tablas"; exit 1; }
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.dump.outputs.file }}
+          path: ${{ steps.dump.outputs.file }}
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error

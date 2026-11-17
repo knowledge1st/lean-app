@@ -72,3 +72,23 @@ DATABASE_URL='<url de production con el rol dueño>' pnpm --filter @lean/api db:
 URL web: https://knowledge1st.github.io/lean-app/
 
 URL API: https://lean-api.toferozo.workers.dev
+
+## Respaldo
+
+`backup.yml` corre los lunes a las 06:00 UTC y con **Run workflow**: hace `pg_dump`
+(Postgres 18, formato custom) de producción con el secreto `BACKUP_DATABASE_URL`, lo cifra
+con `gpg --symmetric` (AES-256) usando el secreto `BACKUP_PASSPHRASE` y lo sube como
+artefacto `lean-<fecha>.dump.gpg`, que se conserva 90 días. El repositorio es público: el
+artefacto se puede descargar, pero no se puede leer sin la frase, que vive solo en el
+gestor de contraseñas del dueño.
+
+Restaurar en una base vacía (por ejemplo, una base nueva dentro de una rama nueva de Neon),
+con `brew install gnupg libpq`:
+
+```bash
+gh run download <RUN_ID> --repo knowledge1st/lean-app
+```
+
+```bash
+gpg --decrypt lean-<fecha>.dump.gpg/lean-<fecha>.dump.gpg | "$(brew --prefix libpq)/bin/pg_restore" --dbname="$RESTORE_URL" --no-owner --no-privileges --single-transaction --exit-on-error
+```

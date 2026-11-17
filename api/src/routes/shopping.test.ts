@@ -132,6 +132,7 @@ describe.skipIf(!hasTestDatabase)('shopping integration', { timeout: 30000 }, ()
     expect((await f.request(`/shopping/checked?week=${week}`, 'DELETE', undefined, 1)).status).toBe(
       204,
     );
+    expect((await f.request('/shopping', 'POST', { week, label: 'Ajeno' }, 1)).status).toBe(201);
     expect(await (await f.request(`/shopping?week=${week}`)).json()).toEqual([
       { ...item, checked: true },
     ]);

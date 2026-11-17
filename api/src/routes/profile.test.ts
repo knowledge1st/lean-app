@@ -37,6 +37,9 @@ describe.skipIf(!hasTestDatabase)('profile integration', { timeout: 30_000 }, ()
     const other = await f.request('/profile', 'GET', undefined, 1);
     expect(other.status).toBe(404);
     expect(await other.json()).toMatchObject({ error: { code: 'profile_not_found' } });
+    const otherPut = await f.request('/profile', 'PUT', { ...completeProfile, heightCm: 160 }, 1);
+    expect(otherPut.status).toBe(200);
+    expect(profileSchema.parse(await (await f.request('/profile')).json()).heightCm).toBe(175.5);
   });
   it('treats incomplete rows as missing', async () => {
     await f.db.insert(profiles).values({ userId: f.accounts[0]!.user.id, sex: 'male' });
