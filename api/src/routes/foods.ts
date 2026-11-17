@@ -22,7 +22,7 @@ export const foods = new Hono<AppEnv>();
 const owned = (id: string, userId: string) =>
   and(eq(table.id, id), eq(table.source, 'custom'), eq(table.ownerId, userId));
 const notFound = () => new AppError(404, 'not_found', 'Alimento no encontrado');
-const serialize = (row: FoodRow, userId: string): Food => ({
+export const serializeFood = (row: FoodRow, userId: string): Food => ({
   createdByMe: row.source === 'custom' && row.ownerId === userId,
   id: row.id,
   source: row.source,
@@ -75,7 +75,7 @@ async function barcodeTaken(
       .limit(1);
     if (existing)
       throw new AppError(409, 'barcode_taken', 'Ese código ya está cargado', {
-        food: serialize(existing, userId),
+        food: serializeFood(existing, userId),
       });
   }
   throw original;
@@ -99,7 +99,7 @@ async function resolveBarcode(
       .orderBy(sql`CASE WHEN ${table.source} = 'custom' THEN 0 ELSE 1 END`)
       .limit(1);
   const [existing] = await lookup();
-  if (existing) return serialize(existing, userId);
+  if (existing) return serializeFood(existing, userId);
   let product;
   try {
     product = await fetchProduct(barcode);
@@ -127,7 +127,7 @@ async function resolveBarcode(
     });
   const [saved] = await lookup();
   if (!saved) throw new AppError(404, 'not_found', 'Producto no encontrado');
-  return serialize(saved, userId);
+  return serializeFood(saved, userId);
 }
 const normalized = (value: SQL) => sql`translate(lower(${value}), 'áéíóúüñ', 'aeiouun')`;
 foods.get('/search', validate('query', foodSearchQuerySchema), async (c) => {
@@ -147,7 +147,7 @@ foods.get('/search', validate('query', foodSearchQuerySchema), async (c) => {
     .where(sql`(${score} >= 0.3 OR strpos(${name}, ${query}) > 0)`)
     .orderBy(desc(used), desc(wordScore), desc(sql`similarity(${query}, ${name})`), asc(table.name))
     .limit(Math.max(5, limit));
-  const items = local.slice(0, limit).map((row) => serialize(row, userId));
+  const items = local.slice(0, limit).map((row) => serializeFood(row, userId));
   let offAvailable = true;
   if (local.length < 5 && q.length >= 3) {
     try {
@@ -168,7 +168,7 @@ foods.get('/search', validate('query', foodSearchQuerySchema), async (c) => {
         const saved = storedByBarcode.get(product.barcode);
         items.push(
           saved
-            ? serialize(saved, userId)
+            ? serializeFood(saved, userId)
             : { ...product, id: null, source: 'off', createdByMe: false },
         );
       }
@@ -206,7 +206,7 @@ for (const kind of ['recent', 'frequent'] as const) {
         asc(table.id),
       )
       .limit(c.req.valid('query').limit);
-    return c.json(rows.map((r) => serialize(r.food, c.get('userId'))));
+    return c.json(rows.map((r) => serializeFood(r.food, c.get('userId'))));
   });
 }
 foods.post('/', validate('json', createFoodSchema), async (c) => {
@@ -216,7 +216,7 @@ foods.post('/', validate('json', createFoodSchema), async (c) => {
       .values({ ...values(c.req.valid('json')), source: 'custom', ownerId: c.get('userId') })
       .returning();
     if (!row) throw notFound();
-    return c.json(serialize(row, c.get('userId')), 201);
+    return c.json(serializeFood(row, c.get('userId')), 201);
   } catch (error) {
     if (pgCode(error, '23505'))
       return barcodeTaken(getDb(c.env), c.req.valid('json').barcode, c.get('userId'), error);
@@ -231,7 +231,7 @@ foods.patch('/:id', validate('param', idSchema), validate('json', updateFoodSche
   if (!current) throw notFound();
   const patch = c.req.valid('json');
   const merged = {
-    ...serialize(current, c.get('userId')),
+    ...serializeFood(current, c.get('userId')),
     ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)),
   };
   const parsed = createFoodSchema.safeParse({
@@ -266,7 +266,7 @@ foods.patch('/:id', validate('param', idSchema), validate('json', updateFoodSche
       .where(condition)
       .returning();
     if (!row) throw notFound();
-    return c.json(serialize(row, c.get('userId')));
+    return c.json(serializeFood(row, c.get('userId')));
   } catch (error) {
     if (pgCode(error, '23505'))
       return barcodeTaken(db, parsed.data.barcode, c.get('userId'), error, c.req.valid('param').id);

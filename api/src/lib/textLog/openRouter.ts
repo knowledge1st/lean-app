@@ -1,6 +1,12 @@
 import { aiMealParseJsonSchema, aiMealParseSchema, type AiMealParse } from '@lean/shared';
-import { getFreeModels, refreshFreeRemaining, type TextLogDeps } from './freeModels';
-import { recordFailure, recordSuccess } from './health';
+import {
+  getFreeModels,
+  refreshFreeRemaining,
+  filterAndRankModels,
+  type FreeModel,
+  type TextLogDeps,
+} from './freeModels';
+import { recordFailure, recordSuccess, degradedModels } from './health';
 
 export type AiOutcome =
   'invalid_output' | 'timeout' | 'provider_error' | 'rate_limited' | 'non_free_model' | 'no_models';
@@ -17,6 +23,7 @@ export type AiResult =
 export async function interpretWithAi(
   deps: TextLogDeps,
   input: { system: string; user: string },
+  evaluationModels?: readonly FreeModel[],
 ): Promise<AiResult> {
   const metrics: AiMetrics = { model: null, promptTokens: 0, completionTokens: 0, attempts: 0 };
   const failure = (outcome: AiOutcome, reason?: 'quota' | 'busy'): AiResult => ({
@@ -56,11 +63,19 @@ export async function interpretWithAi(
     Promise.all(sent.map((id) => recordFailure(deps.db, id, (deps.now ?? (() => new Date()))())));
   try {
     const state = await Promise.race([getFreeModels(boundedDeps), deadline]);
-    if (!state.candidates.length) return failure('no_models');
+    // Manual evaluation may narrow discovery to live catalogue records. Apply the
+    // same free-price, modality, context, denylist and health checks to those records.
+    const discovered =
+      evaluationModels === undefined
+        ? state.candidates
+        : filterAndRankModels(
+            evaluationModels,
+            deps.env,
+            await degradedModels(deps.db, (deps.now ?? (() => new Date()))()),
+          ).map((model) => model.id);
+    if (!discovered.length) return failure('no_models');
     if (state.freeRemaining === 0) return failure('rate_limited', 'quota');
-    let candidates = state.candidates.filter(
-      (id) => id.endsWith(':free') && id !== 'openrouter/auto',
-    );
+    let candidates = discovered.filter((id) => id.endsWith(':free') && id !== 'openrouter/auto');
     while (candidates.length && metrics.attempts < 2) {
       sent = candidates;
       metrics.model = null;
