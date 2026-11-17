@@ -244,6 +244,7 @@ it('confirma quitar comprados y conserva los pendientes', async () => {
   const { fetchMock } = mockServer(items);
   const { client } = setup();
   await screen.findByText('1 de 2');
+  fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Quitar comprados' }));
   const dialog = screen.getByRole('dialog', { name: '¿Quitar 1 ítems comprados?' });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Quitar comprados' }));
@@ -264,6 +265,7 @@ it('regenera reemplazando con manuales y marcados de la respuesta', async () => 
     item(2, { checked: true }),
     item(3, { manual: true, label: 'Servilletas', totalGrams: null }),
   ]);
+  fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
   await screen.findByText('Lista actualizada');
   expect(screen.queryByRole('checkbox', { name: 'Alimento 1' })).toBeNull();
@@ -271,6 +273,29 @@ it('regenera reemplazando con manuales y marcados de la respuesta', async () => 
     true,
   );
   expect(screen.getByRole('checkbox', { name: 'Servilletas' })).toBeTruthy();
+});
+it('en vacío oculta el avance y las acciones', async () => {
+  mockServer([]);
+  setup();
+  await screen.findByText('Tu lista está vacía');
+  expect(screen.queryByText('0 de 0')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Acciones' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Generar desde el plan' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Agregar a mano' })).toBeTruthy();
+});
+it('oculta las acciones en la hoja y deshabilita quitar sin comprados', async () => {
+  mockServer([item(1)]);
+  setup();
+  await screen.findByText('0 de 1');
+  expect(screen.queryByRole('button', { name: 'Actualizar desde el plan' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Quitar comprados' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
+  const dialog = screen.getByRole('dialog', { name: 'Acciones' });
+  expect(within(dialog).getByRole('button', { name: 'Actualizar desde el plan' })).toBeTruthy();
+  expect(
+    (within(dialog).getByRole('button', { name: 'Quitar comprados' }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
 });
 it('ofrece ambos caminos en vacío, enfoca alta y enlaza al plan sin comidas', async () => {
   mockServer([]);
@@ -283,6 +308,28 @@ it('ofrece ambos caminos en vacío, enfoca alta y enlaza al plan sin comidas', a
   expect(screen.getByRole('link', { name: 'Ir a Plan' }).getAttribute('href')).toBe(
     `/plan?semana=${week}`,
   );
+});
+it('mantiene validación y entrada decimal en el alta compacta', async () => {
+  const { fetchMock } = mockServer([]);
+  setup();
+  await screen.findByText('Tu lista está vacía');
+  const name = screen.getByRole('textbox', { name: 'Agregar a mano' });
+  const grams = screen.getByRole('textbox', { name: 'Cantidad en gramos (opcional)' });
+  expect(grams.getAttribute('inputmode')).toBe('decimal');
+  expect(grams.getAttribute('placeholder')).toBe('g');
+  fireEvent.submit(name.closest('form')!);
+  expect(screen.getByRole('alert').textContent).toContain('Ingresá un nombre');
+  expect(name.getAttribute('aria-invalid')).toBe('true');
+  fireEvent.change(name, { target: { value: 'Pan' } });
+  fireEvent.change(grams, { target: { value: '-1' } });
+  fireEvent.submit(name.closest('form')!);
+  expect(screen.getByRole('alert').textContent).toContain('Ingresá una cantidad');
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+  fireEvent.change(grams, { target: { value: '' } });
+  fireEvent.submit(name.closest('form')!);
+  await screen.findByRole('checkbox', { name: 'Pan' });
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(document.activeElement).toBe(name);
 });
 it('alta manual, edición y borrado de cantidad, y borrado de la fila', async () => {
   const { fetchMock } = mockServer([]);
@@ -434,6 +481,7 @@ it('espera un marcado pendiente antes de regenerar', async () => {
   const { client } = setup();
   fireEvent.click(await screen.findByRole('checkbox'));
   await waitFor(() => expect(client.isMutating()).toBe(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/generate'))).toBe(false);
   server = [{ ...original, checked: true }];
@@ -497,6 +545,7 @@ it('edita nombre y cantidad de manual y avisa sin generados aunque haya manuales
   mockServer([item(1, { manual: true })]);
   setup();
   await screen.findByRole('checkbox');
+  fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
   await screen.findByRole('link', { name: 'Ir a Plan' });
   fireEvent.click(screen.getByRole('button', { name: 'Opciones de Alimento 1' }));

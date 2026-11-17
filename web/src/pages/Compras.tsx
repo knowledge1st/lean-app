@@ -60,7 +60,7 @@ function ShoppingWeek({ week, onSelect }: { week: string; onSelect: (week: strin
     }
   }
   return (
-    <section className="min-w-0 space-y-5 pb-44">
+    <section className="min-w-0 space-y-5 pb-20">
       <header className="flex items-center justify-between gap-2">
         <Button
           variant="ghost"
@@ -82,15 +82,19 @@ function ShoppingWeek({ week, onSelect }: { week: string; onSelect: (week: strin
           →
         </Button>
       </header>
-      <p aria-live="polite" className="text-lg font-semibold">
-        {checked} de {items.length}
-      </p>
-      <ShoppingActions
-        checked={checked}
-        disabled={blocked || !query.data}
-        onGenerate={() => void run('generate')}
-        onClear={() => void run('clear')}
-      />
+      {items.length > 0 && (
+        <div className="flex items-center justify-between gap-2">
+          <p aria-live="polite" className="text-lg font-semibold">
+            {checked} de {items.length}
+          </p>
+          <ShoppingActions
+            checked={checked}
+            disabled={blocked || !query.data}
+            onGenerate={() => void run('generate')}
+            onClear={() => void run('clear')}
+          />
+        </div>
+      )}
       {query.isPending && (
         <div aria-label="Cargando compras" className="space-y-3">
           {Array.from({ length: 6 }, (_, index) => (
