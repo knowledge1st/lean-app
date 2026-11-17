@@ -158,7 +158,10 @@ describe('text log schemas', () => {
         ...itemJson.properties[field],
       });
     }
-    for (const [field, type] of [['catalogIndex', 'integer'], ['units', 'number']] as const) {
+    for (const [field, type] of [
+      ['catalogIndex', 'integer'],
+      ['units', 'number'],
+    ] as const) {
       expect(z.toJSONSchema(itemZod[field])).toEqual({
         $schema: 'https://json-schema.org/draft/2020-12/schema',
         anyOf: [{ ...itemJson.properties[field], type }, { type: 'null' }],

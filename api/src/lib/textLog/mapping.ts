@@ -111,9 +111,9 @@ export async function mapItems(
       match: !chosen
         ? 'none'
         : item.approximate ||
-          (indexed
-            ? Number(matches[0]?.chosenScore ?? 0) < 0.3
-            : Number(first?.score ?? 0) < EXACT_MATCH_THRESHOLD)
+            (indexed
+              ? Number(matches[0]?.chosenScore ?? 0) < 0.3
+              : Number(first?.score ?? 0) < EXACT_MATCH_THRESHOLD)
           ? 'approximate'
           : 'exact',
       food: chosen ? serializeFood(chosen, userId) : null,

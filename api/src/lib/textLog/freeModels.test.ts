@@ -112,7 +112,9 @@ describe('catalogue and saved cache', () => {
     expect(result.candidates).toEqual(['google/a:free']);
     expect(result.freeRemaining).toBe(12);
     expect(read()).toMatchObject({
-      checkedAt: result.checkedAt, freeRemaining: 12, candidates: [model('google/a:free')],
+      checkedAt: result.checkedAt,
+      freeRemaining: 12,
+      candidates: [model('google/a:free')],
     });
     expect(String(fetch.mock.calls[0]?.[0])).toContain('structured_outputs');
     expect(String(fetch.mock.calls[1]?.[0])).toContain('response_format');
@@ -120,18 +122,24 @@ describe('catalogue and saved cache', () => {
   it('preserves reasoning support through discovery, memory and saved records', async () => {
     const now = new Date('2026-11-17T12:00:00Z');
     const { db, read } = storage({
-      candidates: [], checkedAt: null, freeRemaining: null, freeCheckedAt: null,
+      candidates: [],
+      checkedAt: null,
+      freeRemaining: null,
+      freeCheckedAt: null,
     });
     const pool = [
       { ...model('google/a:free'), supported_parameters: ['response_format', 'reasoning'] },
       { ...model('qwen/a:free'), supported_parameters: ['response_format'] },
       model('other/a:free'),
     ];
-    const fetch = vi.fn<typeof globalThis.fetch>()
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(json({ data: pool }))
       .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 12 } } }));
     const deps = {
-      db, fetch, now: () => now,
+      db,
+      fetch,
+      now: () => now,
       env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
     };
     const expected = { 'google/a:free': true, 'qwen/a:free': false, 'other/a:free': false };
@@ -140,34 +148,45 @@ describe('catalogue and saved cache', () => {
     expect((await getFreeModels(deps)).reasoningSupported).toEqual(expected);
     expect((await savedModels(db)).reasoningSupported).toEqual(expected);
     // A different cache key loads the persisted pool without catalogue access.
-    expect((await getFreeModels({ ...deps, env: { ...deps.env,
-      TEXT_LOG_PREFERRED_MODELS: 'qwen/*',
-    } })).reasoningSupported).toEqual(expected);
+    expect(
+      (await getFreeModels({ ...deps, env: { ...deps.env, TEXT_LOG_PREFERRED_MODELS: 'qwen/*' } }))
+        .reasoningSupported,
+    ).toEqual(expected);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
   it('treats legacy IDs and records without supported parameters as unsupported', async () => {
     const { db } = storage({
       candidates: ['google/a:free', model('qwen/a:free')],
-      checkedAt: new Date(), freeRemaining: 8, freeCheckedAt: null,
+      checkedAt: new Date(),
+      freeRemaining: 8,
+      freeCheckedAt: null,
     });
     expect((await savedModels(db)).reasoningSupported).toEqual({
-      'google/a:free': false, 'qwen/a:free': false,
+      'google/a:free': false,
+      'qwen/a:free': false,
     });
   });
   it('reapplies current preferences, denylist, health and maximum to legacy saved IDs', async () => {
     const now = new Date('2026-11-17T12:00:00Z');
     const { db } = storage({
       candidates: ['google/a:free', 'qwen/a:free', 'qwen/b:free', 'qwen/c:free', 'paid/a'],
-      checkedAt: now, freeRemaining: 8, freeCheckedAt: now,
+      checkedAt: now,
+      freeRemaining: 8,
+      freeCheckedAt: now,
     });
     vi.mocked(degradedModels).mockResolvedValue(['qwen/a:free']);
     const fetch = vi.fn<typeof globalThis.fetch>();
     const result = await getFreeModels({
-      db, fetch, now: () => now,
+      db,
+      fetch,
+      now: () => now,
       env: {
-        ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake',
+        ...testEnv,
+        DATABASE_URL: crypto.randomUUID(),
+        OPENROUTER_API_KEY: 'fake',
         TEXT_LOG_PREFERRED_MODELS: 'qwen/*',
-        TEXT_LOG_MODEL_DENYLIST: 'qwen/b*', TEXT_LOG_MAX_CANDIDATES: '1',
+        TEXT_LOG_MODEL_DENYLIST: 'qwen/b*',
+        TEXT_LOG_MAX_CANDIDATES: '1',
       },
     });
     expect(result.candidates).toEqual(['qwen/c:free']);
@@ -176,18 +195,31 @@ describe('catalogue and saved cache', () => {
   it('persists the eligible pool and context for configuration changes on a fresh cache', async () => {
     const now = new Date('2026-11-17T12:00:00Z');
     const { db, read } = storage({
-      candidates: [], checkedAt: null, freeRemaining: null, freeCheckedAt: null,
+      candidates: [],
+      checkedAt: null,
+      freeRemaining: null,
+      freeCheckedAt: null,
     });
-    const pool = [model('google/a:free'), model('qwen/z:free', 64_000),
-      model('qwen/a:free'), model('other/a:free')];
-    const fetch = vi.fn<typeof globalThis.fetch>()
+    const pool = [
+      model('google/a:free'),
+      model('qwen/z:free', 64_000),
+      model('qwen/a:free'),
+      model('other/a:free'),
+    ];
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(json({ data: [...pool, model('paid/a'), model('small/a:free', 100)] }))
       .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 12 } } }));
     const deps = {
-      db, fetch, now: () => now,
+      db,
+      fetch,
+      now: () => now,
       env: {
-        ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake',
-        TEXT_LOG_MAX_CANDIDATES: '1', TEXT_LOG_MODEL_DENYLIST: 'qwen/*',
+        ...testEnv,
+        DATABASE_URL: crypto.randomUUID(),
+        OPENROUTER_API_KEY: 'fake',
+        TEXT_LOG_MAX_CANDIDATES: '1',
+        TEXT_LOG_MODEL_DENYLIST: 'qwen/*',
       },
     };
     vi.mocked(degradedModels).mockResolvedValue(['other/a:free']);
@@ -195,28 +227,47 @@ describe('catalogue and saved cache', () => {
     expect(read().candidates).toHaveLength(4);
     expect((await savedModels(db)).candidates).toEqual(pool.map((m) => m.id));
     vi.mocked(degradedModels).mockResolvedValue([]);
-    const updated = { ...deps, env: { ...deps.env,
-      TEXT_LOG_PREFERRED_MODELS: 'qwen/*', TEXT_LOG_MODEL_DENYLIST: '',
-      TEXT_LOG_MAX_CANDIDATES: '4',
-    } };
+    const updated = {
+      ...deps,
+      env: {
+        ...deps.env,
+        TEXT_LOG_PREFERRED_MODELS: 'qwen/*',
+        TEXT_LOG_MODEL_DENYLIST: '',
+        TEXT_LOG_MAX_CANDIDATES: '4',
+      },
+    };
     expect((await getFreeModels(updated)).candidates).toEqual([
-      'qwen/z:free', 'qwen/a:free', 'google/a:free', 'other/a:free',
+      'qwen/z:free',
+      'qwen/a:free',
+      'google/a:free',
+      'other/a:free',
     ]);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
   it.each(['previous UTC day', 'older than 15 minutes', 'unknown check time'])(
-    'refreshes exhausted quota with a fresh catalogue when check is %s', async (when) => {
+    'refreshes exhausted quota with a fresh catalogue when check is %s',
+    async (when) => {
       let now = new Date('2026-11-18T00:01:00Z');
-      const checked = when === 'previous UTC day' ? new Date('2026-11-17T23:59:00Z')
-        : when === 'older than 15 minutes' ? new Date(now.getTime() - 900_001) : null;
+      const checked =
+        when === 'previous UTC day'
+          ? new Date('2026-11-17T23:59:00Z')
+          : when === 'older than 15 minutes'
+            ? new Date(now.getTime() - 900_001)
+            : null;
       const { db, read } = storage({
-        candidates: ['qwen/a:free'], checkedAt: now, freeRemaining: 0, freeCheckedAt: checked,
+        candidates: ['qwen/a:free'],
+        checkedAt: now,
+        freeRemaining: 0,
+        freeCheckedAt: checked,
       });
-      const fetch = vi.fn<typeof globalThis.fetch>()
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
         .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 0 } } }))
         .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 12 } } }));
       const deps = {
-        db, fetch, now: () => now,
+        db,
+        fetch,
+        now: () => now,
         env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
       };
       const results = await Promise.all([getFreeModels(deps), getFreeModels(deps)]);
@@ -235,14 +286,18 @@ describe('catalogue and saved cache', () => {
   it('detects daily renewal across midnight UTC before the catalogue expires', async () => {
     let now = new Date('2026-11-17T23:59:00Z');
     const { db } = storage({
-      candidates: ['qwen/a:free'], checkedAt: now,
-      freeRemaining: 0, freeCheckedAt: now,
+      candidates: ['qwen/a:free'],
+      checkedAt: now,
+      freeRemaining: 0,
+      freeCheckedAt: now,
     });
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
-      json({ data: { free_model_daily_requests: { remaining: 1000 } } }),
-    );
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(json({ data: { free_model_daily_requests: { remaining: 1000 } } }));
     const deps = {
-      db, fetch, now: () => now,
+      db,
+      fetch,
+      now: () => now,
       env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
     };
     expect((await getFreeModels(deps)).freeRemaining).toBe(0);
@@ -255,19 +310,27 @@ describe('catalogue and saved cache', () => {
   it('throttles failed exhausted-quota refreshes across preference variants and retries after a minute', async () => {
     let now = new Date('2026-11-18T00:01:00Z');
     const { db } = storage({
-      candidates: ['qwen/a:free'], checkedAt: now, freeRemaining: 0,
+      candidates: ['qwen/a:free'],
+      checkedAt: now,
+      freeRemaining: 0,
       freeCheckedAt: new Date('2026-11-17T23:59:00Z'),
     });
-    const fetch = vi.fn<typeof globalThis.fetch>()
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 12 } } }));
-    const deps = { db, fetch, now: () => now,
-      env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' } };
+    const deps = {
+      db,
+      fetch,
+      now: () => now,
+      env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
+    };
     expect((await getFreeModels(deps)).freeRemaining).toBe(0);
     now = new Date(now.getTime() + 59_999);
-    expect((await getFreeModels({ ...deps,
-      env: { ...deps.env, TEXT_LOG_PREFERRED_MODELS: 'qwen/*' },
-    })).freeRemaining).toBe(0);
+    expect(
+      (await getFreeModels({ ...deps, env: { ...deps.env, TEXT_LOG_PREFERRED_MODELS: 'qwen/*' } }))
+        .freeRemaining,
+    ).toBe(0);
     expect(fetch).toHaveBeenCalledTimes(1);
     now = new Date(now.getTime() + 1);
     expect((await getFreeModels(deps)).freeRemaining).toBe(12);
@@ -323,11 +386,15 @@ describe('catalogue and saved cache', () => {
   });
 
   it.each(['catalogue', 'quota', 'body'])(
-    'bounds each discovery query to 5 seconds, including %s', async (stage) => {
+    'bounds each discovery query to 5 seconds, including %s',
+    async (stage) => {
       vi.useFakeTimers();
       try {
         const { db } = storage({
-          candidates: ['qwen/a:free'], checkedAt: null, freeRemaining: 4, freeCheckedAt: null,
+          candidates: ['qwen/a:free'],
+          checkedAt: null,
+          freeRemaining: 4,
+          freeCheckedAt: null,
         });
         const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (url) => {
           const quota = String(url).endsWith('/key');
@@ -341,14 +408,20 @@ describe('catalogue and saved cache', () => {
         });
         let settled = false;
         const pending = getFreeModels({
-          db, fetch,
+          db,
+          fetch,
           env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
-        }).then((result) => { settled = true; return result; });
+        }).then((result) => {
+          settled = true;
+          return result;
+        });
         await vi.advanceTimersByTimeAsync(4_999);
         expect(settled).toBe(false);
         await vi.advanceTimersByTimeAsync(1);
         expect((await pending).candidates).toEqual(['qwen/a:free']);
-        const hung = fetch.mock.calls.find(([url]) => String(url).endsWith('/key') === (stage === 'quota'));
+        const hung = fetch.mock.calls.find(
+          ([url]) => String(url).endsWith('/key') === (stage === 'quota'),
+        );
         expect(hung?.[1]?.signal?.aborted).toBe(true);
       } finally {
         vi.useRealTimers();

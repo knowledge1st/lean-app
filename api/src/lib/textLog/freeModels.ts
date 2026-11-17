@@ -128,11 +128,15 @@ async function loadSavedModels(db: Db): Promise<SavedModelState> {
   if (!row) return { candidates: [], checkedAt: null, freeRemaining: null, freeCheckedAt: null };
   // Older rows contain IDs only. They already passed discovery's free/text gates.
   const candidates = (row.candidates as unknown[]).flatMap((value) => {
-    const parsed = modelSchema.safeParse(typeof value === 'string' ? {
-      id: value,
-      pricing: { prompt: '0', completion: '0' },
-      architecture: { modality: 'text->text' },
-    } : value);
+    const parsed = modelSchema.safeParse(
+      typeof value === 'string'
+        ? {
+            id: value,
+            pricing: { prompt: '0', completion: '0' },
+            architecture: { modality: 'text->text' },
+          }
+        : value,
+    );
     return parsed.success ? [parsed.data] : [];
   });
   return { ...row, candidates };
