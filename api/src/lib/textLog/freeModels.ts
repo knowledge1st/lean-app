@@ -104,8 +104,9 @@ export function filterAndRankModels(
     .slice(0, Number.isInteger(max) && max > 0 ? max : 3);
 }
 
+type SavedModelState = Omit<ModelState, 'candidates'> & { candidates: FreeModel[] };
 interface CacheEntry {
-  state: ModelState;
+  state: SavedModelState;
   attemptedAt?: number;
   pending?: Promise<ModelState>;
 }
@@ -119,9 +120,24 @@ const cacheKey = ({ env }: TextLogDeps) =>
     env.TEXT_LOG_MAX_CANDIDATES,
   ]);
 
-export async function savedModels(db: Db): Promise<ModelState> {
+async function loadSavedModels(db: Db): Promise<SavedModelState> {
   const [row] = await db.select().from(textLogModels).where(eq(textLogModels.id, 1));
-  return row ?? { candidates: [], checkedAt: null, freeRemaining: null, freeCheckedAt: null };
+  if (!row) return { candidates: [], checkedAt: null, freeRemaining: null, freeCheckedAt: null };
+  // Older rows contain IDs only. They already passed discovery's free/text gates.
+  const candidates = (row.candidates as unknown[]).flatMap((value) => {
+    const parsed = modelSchema.safeParse(typeof value === 'string' ? {
+      id: value,
+      pricing: { prompt: '0', completion: '0' },
+      architecture: { modality: 'text->text' },
+    } : value);
+    return parsed.success ? [parsed.data] : [];
+  });
+  return { ...row, candidates };
+}
+
+export async function savedModels(db: Db): Promise<ModelState> {
+  const state = await loadSavedModels(db);
+  return { ...state, candidates: state.candidates.map((model) => model.id) };
 }
 
 class CatalogueHttpError extends Error {
@@ -158,7 +174,19 @@ async function getJson(deps: TextLogDeps, url: string): Promise<unknown> {
   }
 }
 
+const quotaRefreshes = new Map<string, { attemptedAt: number; pending: Promise<number | null> }>();
+
 export async function refreshFreeRemaining(deps: TextLogDeps): Promise<number | null> {
+  const key = deps.env.DATABASE_URL;
+  const now = (deps.now ?? (() => new Date()))().getTime();
+  const previous = quotaRefreshes.get(key);
+  if (previous && now - previous.attemptedAt < 60_000) return previous.pending;
+  const pending = fetchFreeRemaining(deps);
+  quotaRefreshes.set(key, { attemptedAt: now, pending });
+  return pending;
+}
+
+async function fetchFreeRemaining(deps: TextLogDeps): Promise<number | null> {
   if (!deps.env.OPENROUTER_API_KEY) return (await savedModels(deps.db)).freeRemaining;
   try {
     const parsed = z
@@ -192,7 +220,7 @@ export async function getFreeModels(deps: TextLogDeps): Promise<ModelState> {
   if (!entry) {
     let pending = loading.get(key);
     if (!pending) {
-      pending = savedModels(deps.db).then((state) => {
+      pending = loadSavedModels(deps.db).then((state) => {
         const loaded = { state };
         cache.set(key, loaded);
         return loaded;
@@ -209,15 +237,20 @@ export async function getFreeModels(deps: TextLogDeps): Promise<ModelState> {
   if (entry.pending) return entry.pending;
   const degraded = await degradedModels(deps.db, now);
   if (entry.pending) return entry.pending;
-  const usable = (state: ModelState) => ({
+  const usable = (state: SavedModelState): ModelState => ({
     ...state,
-    candidates: state.candidates.filter(
-      (id) =>
-        id.endsWith(':free') &&
-        !degraded.includes(id) &&
-        !patterns(deps.env.TEXT_LOG_MODEL_DENYLIST).some((p) => matches(id, p)),
-    ),
+    candidates: filterAndRankModels(state.candidates, deps.env, degraded).map((model) => model.id),
   });
+  const checked = entry.state.freeCheckedAt;
+  if (
+    entry.state.freeRemaining === 0 &&
+    (!checked ||
+      checked.toISOString().slice(0, 10) < now.toISOString().slice(0, 10) ||
+      now.getTime() - checked.getTime() > 15 * 60_000)
+  ) {
+    await refreshFreeRemaining(deps);
+    if (entry.pending) return entry.pending;
+  }
   if (
     (entry.state.checkedAt && now.getTime() - entry.state.checkedAt.getTime() <= 6 * 3_600_000) ||
     (entry.attemptedAt !== undefined && now.getTime() - entry.attemptedAt < 60_000)
@@ -252,17 +285,24 @@ export async function getFreeModels(deps: TextLogDeps): Promise<ModelState> {
       }
       const state = {
         ...current.state,
-        candidates: filterAndRankModels(models, deps.env, degraded).map((m) => m.id),
+        // Persist the eligible pool before preferences, denylist, health and cut.
+        // This lets later configuration changes reuse a current catalogue.
+        candidates: filterAndRankModels(models, {
+          TEXT_LOG_MAX_CANDIDATES: String(models.length),
+        }),
         checkedAt: now,
       };
+      // The existing jsonb column also accepts model records. Keep the schema
+      // unchanged and normalize legacy string arrays at the read boundary.
+      const persistedCandidates = state.candidates as unknown as string[];
       await deps.db
         .insert(textLogModels)
-        .values({ id: 1, candidates: state.candidates, checkedAt: now })
+        .values({ id: 1, candidates: persistedCandidates, checkedAt: now })
         .onConflictDoUpdate({
           target: textLogModels.id,
-          set: { candidates: state.candidates, checkedAt: now },
+          set: { candidates: persistedCandidates, checkedAt: now },
         });
-      current.state = state;
+      current.state = { ...current.state, candidates: state.candidates, checkedAt: now };
     } catch {
       /* Keep the last filtered list, even when stale. Never log provider data. */
     }

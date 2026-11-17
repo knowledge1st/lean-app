@@ -6,6 +6,7 @@ import {
   getFreeModels,
   isFreeModel,
   refreshFreeRemaining,
+  savedModels,
   type FreeModel,
   type ModelState,
 } from './freeModels';
@@ -19,13 +20,14 @@ const model = (id: string, context_length = 32_000): FreeModel => ({
   architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
 });
 const ids = (models: FreeModel[]) => models.map((m) => m.id);
-function storage(initial: ModelState) {
+type StoredState = Omit<ModelState, 'candidates'> & { candidates: string[] | FreeModel[] };
+function storage(initial: StoredState) {
   let state = initial;
   const db = {
     select: () => ({ from: () => ({ where: async () => [state] }) }),
     insert: () => ({
       values: () => ({
-        onConflictDoUpdate: async ({ set }: { set: Partial<ModelState> }) => {
+        onConflictDoUpdate: async ({ set }: { set: Partial<StoredState> }) => {
           state = { ...state, ...set };
         },
       }),
@@ -109,9 +111,128 @@ describe('catalogue and saved cache', () => {
     });
     expect(result.candidates).toEqual(['google/a:free']);
     expect(result.freeRemaining).toBe(12);
-    expect(read()).toMatchObject(result);
+    expect(read()).toMatchObject({ ...result, candidates: [model('google/a:free')] });
     expect(String(fetch.mock.calls[0]?.[0])).toContain('structured_outputs');
     expect(String(fetch.mock.calls[1]?.[0])).toContain('response_format');
+  });
+  it('reapplies current preferences, denylist, health and maximum to legacy saved IDs', async () => {
+    const now = new Date('2026-11-17T12:00:00Z');
+    const { db } = storage({
+      candidates: ['google/a:free', 'qwen/a:free', 'qwen/b:free', 'qwen/c:free', 'paid/a'],
+      checkedAt: now, freeRemaining: 8, freeCheckedAt: now,
+    });
+    vi.mocked(degradedModels).mockResolvedValue(['qwen/a:free']);
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const result = await getFreeModels({
+      db, fetch, now: () => now,
+      env: {
+        ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake',
+        TEXT_LOG_PREFERRED_MODELS: 'qwen/*',
+        TEXT_LOG_MODEL_DENYLIST: 'qwen/b*', TEXT_LOG_MAX_CANDIDATES: '1',
+      },
+    });
+    expect(result.candidates).toEqual(['qwen/c:free']);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('persists the eligible pool and context for configuration changes on a fresh cache', async () => {
+    const now = new Date('2026-11-17T12:00:00Z');
+    const { db, read } = storage({
+      candidates: [], checkedAt: null, freeRemaining: null, freeCheckedAt: null,
+    });
+    const pool = [model('google/a:free'), model('qwen/z:free', 64_000),
+      model('qwen/a:free'), model('other/a:free')];
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(json({ data: [...pool, model('paid/a'), model('small/a:free', 100)] }))
+      .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 12 } } }));
+    const deps = {
+      db, fetch, now: () => now,
+      env: {
+        ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake',
+        TEXT_LOG_MAX_CANDIDATES: '1', TEXT_LOG_MODEL_DENYLIST: 'qwen/*',
+      },
+    };
+    vi.mocked(degradedModels).mockResolvedValue(['other/a:free']);
+    expect((await getFreeModels(deps)).candidates).toEqual(['google/a:free']);
+    expect(read().candidates).toHaveLength(4);
+    expect((await savedModels(db)).candidates).toEqual(pool.map((m) => m.id));
+    vi.mocked(degradedModels).mockResolvedValue([]);
+    const updated = { ...deps, env: { ...deps.env,
+      TEXT_LOG_PREFERRED_MODELS: 'qwen/*', TEXT_LOG_MODEL_DENYLIST: '',
+      TEXT_LOG_MAX_CANDIDATES: '4',
+    } };
+    expect((await getFreeModels(updated)).candidates).toEqual([
+      'qwen/z:free', 'qwen/a:free', 'google/a:free', 'other/a:free',
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it.each(['previous UTC day', 'older than 15 minutes', 'unknown check time'])(
+    'refreshes exhausted quota with a fresh catalogue when check is %s', async (when) => {
+      let now = new Date('2026-11-18T00:01:00Z');
+      const checked = when === 'previous UTC day' ? new Date('2026-11-17T23:59:00Z')
+        : when === 'older than 15 minutes' ? new Date(now.getTime() - 900_001) : null;
+      const { db, read } = storage({
+        candidates: ['qwen/a:free'], checkedAt: now, freeRemaining: 0, freeCheckedAt: checked,
+      });
+      const fetch = vi.fn<typeof globalThis.fetch>()
+        .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 0 } } }))
+        .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 12 } } }));
+      const deps = {
+        db, fetch, now: () => now,
+        env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
+      };
+      const results = await Promise.all([getFreeModels(deps), getFreeModels(deps)]);
+      expect(results.map((state) => state.freeRemaining)).toEqual([0, 0]);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(String(fetch.mock.calls[0]?.[0])).toBe('https://openrouter.ai/api/v1/key');
+      now = new Date(now.getTime() + 30_000);
+      await getFreeModels({ ...deps, env: { ...deps.env, TEXT_LOG_MAX_CANDIDATES: '1' } });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      now = new Date(now.getTime() + 900_001);
+      expect((await getFreeModels(deps)).freeRemaining).toBe(12);
+      expect(read().freeRemaining).toBe(12);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    },
+  );
+  it('detects daily renewal across midnight UTC before the catalogue expires', async () => {
+    let now = new Date('2026-11-17T23:59:00Z');
+    const { db } = storage({
+      candidates: ['qwen/a:free'], checkedAt: now,
+      freeRemaining: 0, freeCheckedAt: now,
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      json({ data: { free_model_daily_requests: { remaining: 1000 } } }),
+    );
+    const deps = {
+      db, fetch, now: () => now,
+      env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
+    };
+    expect((await getFreeModels(deps)).freeRemaining).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
+    now = new Date('2026-11-18T00:00:00Z');
+    expect((await getFreeModels(deps)).freeRemaining).toBe(1000);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(String(fetch.mock.calls[0]?.[0])).toBe('https://openrouter.ai/api/v1/key');
+  });
+  it('throttles failed exhausted-quota refreshes across preference variants and retries after a minute', async () => {
+    let now = new Date('2026-11-18T00:01:00Z');
+    const { db } = storage({
+      candidates: ['qwen/a:free'], checkedAt: now, freeRemaining: 0,
+      freeCheckedAt: new Date('2026-11-17T23:59:00Z'),
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(json({ data: { free_model_daily_requests: { remaining: 12 } } }));
+    const deps = { db, fetch, now: () => now,
+      env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' } };
+    expect((await getFreeModels(deps)).freeRemaining).toBe(0);
+    now = new Date(now.getTime() + 59_999);
+    expect((await getFreeModels({ ...deps,
+      env: { ...deps.env, TEXT_LOG_PREFERRED_MODELS: 'qwen/*' },
+    })).freeRemaining).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    now = new Date(now.getTime() + 1);
+    expect((await getFreeModels(deps)).freeRemaining).toBe(12);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
   it('uses stale saved candidates during outage, throttles refresh to one per minute and excludes new degradation', async () => {
     const saved = {

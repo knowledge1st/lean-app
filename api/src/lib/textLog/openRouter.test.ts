@@ -33,7 +33,10 @@ beforeEach(() => {
   });
   vi.mocked(refreshFreeRemaining).mockResolvedValue(9);
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('interpretWithAi', () => {
   it('does no network without key, candidates or account quota', async () => {
@@ -174,6 +177,70 @@ describe('interpretWithAi', () => {
       expect(recordFailure).toHaveBeenCalledTimes(candidates.length);
     },
   );
+  it.each([400, 401, 402, 403, 404, 422])(
+    'returns provider_error for HTTP %s without degrading candidates',
+    async (status) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const fetch = vi.fn<typeof globalThis.fetch>()
+        .mockResolvedValue(new Response(input.user, { status }));
+      for (let i = 0; i < 3; i++) {
+        expect(await interpretWithAi(deps(fetch), input)).toMatchObject({
+          ok: false, outcome: 'provider_error', attempts: 1,
+        });
+      }
+      expect(recordFailure).not.toHaveBeenCalled();
+      expect(recordSuccess).not.toHaveBeenCalled();
+      if ([401, 402, 403].includes(status)) {
+        expect(log).toHaveBeenCalledTimes(3);
+        expect(log).toHaveBeenCalledWith('OpenRouter configuration error', { status });
+        expect(JSON.stringify(log.mock.calls)).not.toContain(input.user);
+        expect(JSON.stringify(log.mock.calls)).not.toContain('fake');
+      } else expect(log).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['success', 'invalid', 'http'])(
+    'returns timeout after draining a slow %s health write',
+    async (kind) => {
+      vi.useFakeTimers();
+      const slowWrite = () => new Promise<void>((resolve) => setTimeout(resolve, 80_000));
+      if (kind === 'success') vi.mocked(recordSuccess).mockImplementationOnce(slowWrite);
+      else vi.mocked(recordFailure).mockImplementationOnce(slowWrite);
+      const response = kind === 'http'
+        ? new Response('', { status: 429 })
+        : reply(candidates[0], kind === 'success' ? JSON.stringify(parse) : '{}');
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response);
+      let settled = false;
+      const result = interpretWithAi(deps(fetch), input).then((value) => {
+        settled = true;
+        return value;
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(settled).toBe(false);
+      expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+      await vi.advanceTimersByTimeAsync(50_000);
+      expect(await result).toMatchObject({ ok: false, outcome: 'timeout', attempts: 1 });
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(recordFailure).toHaveBeenCalledTimes(candidates.length);
+    },
+  );
+  it('includes quota persistence in the total deadline', async () => {
+    vi.useFakeTimers();
+    vi.mocked(refreshFreeRemaining).mockImplementationOnce(() => new Promise(() => {}));
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(reply());
+    const result = interpretWithAi(deps(fetch), input);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await result).toMatchObject({ ok: false, outcome: 'timeout', attempts: 1 });
+  });
+  it('includes discovery storage in the total deadline', async () => {
+    vi.useFakeTimers();
+    vi.mocked(getFreeModels).mockImplementationOnce(() => new Promise(() => {}));
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const result = interpretWithAi(deps(fetch), input);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await result).toMatchObject({ ok: false, outcome: 'timeout', attempts: 0 });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(recordFailure).not.toHaveBeenCalled();
+  });
   it('handles network failure without retry', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new Error('offline'));
     expect(await interpretWithAi(deps(fetch), input)).toMatchObject({
@@ -181,6 +248,7 @@ describe('interpretWithAi', () => {
       attempts: 1,
     });
     expect(fetch).toHaveBeenCalledOnce();
+    expect(recordFailure).toHaveBeenCalledTimes(candidates.length);
   });
   it('aborts at the total 30 second deadline even if fetch ignores the signal', async () => {
     vi.useFakeTimers();
