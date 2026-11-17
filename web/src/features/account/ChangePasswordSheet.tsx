@@ -93,7 +93,9 @@ function ChangePasswordForm({
       ) {
         setErrors({ currentPassword: 'La contraseña actual no es correcta.' });
       } else if (error instanceof ApiError && error.status === 400) {
-        setMessage(error.message);
+        setMessage('Revisá las contraseñas y volvé a intentar.');
+      } else if (error instanceof ApiError && error.status === 429) {
+        setMessage('Demasiados intentos. Esperá unos minutos y volvé a probar.');
       } else if (
         !navigator.onLine ||
         (error instanceof ApiError && (error.status === 0 || error.code === 'network_error'))

@@ -15,7 +15,7 @@ it('formatea miles de cuatro cifras y decimales locales', () => {
 });
 it('produce los tres textos de referencia', () => {
   expect(checkinMessage(checkin)).toBe(
-    'Bajaste 0,2 kg esta semana; el plan era 0,5. Te proponemos pasar de 2.000 a 1.850 kcal por día.',
+    'Bajaste 0,2 kg esta semana; el plan era 0,5 kg. Te proponemos pasar de 2.000 a 1.850 kcal por día.',
   );
   expect(checkinMessage({ ...checkin, status: 'on_track', actualWeeklyChangeKg: -0.5 })).toBe(
     'Vas según el plan: 0,5 kg esta semana.',
@@ -42,10 +42,10 @@ it.each([
 it.each([
   [0.04, 0.04, 'Tu peso se mantuvo esta semana; el plan era mantenerlo.'],
   [-0.04, -0.04, 'Tu peso se mantuvo esta semana; el plan era mantenerlo.'],
-  [0.05, 0.05, 'Subiste 0,1 kg esta semana; el plan era 0,1.'],
-  [-0.05, -0.05, 'Bajaste 0,1 kg esta semana; el plan era 0,1.'],
-  [0.04, 0.05, 'Tu peso se mantuvo esta semana; el plan era subir 0,1.'],
-  [-0.04, -0.05, 'Tu peso se mantuvo esta semana; el plan era bajar 0,1.'],
+  [0.05, 0.05, 'Subiste 0,1 kg esta semana; el plan era 0,1 kg.'],
+  [-0.05, -0.05, 'Bajaste 0,1 kg esta semana; el plan era 0,1 kg.'],
+  [0.04, 0.05, 'Tu peso se mantuvo esta semana; el plan era subir 0,1 kg.'],
+  [-0.04, -0.05, 'Tu peso se mantuvo esta semana; el plan era bajar 0,1 kg.'],
   [0.05, 0.04, 'Subiste 0,1 kg esta semana; el plan era mantenerlo.'],
   [-0.05, -0.04, 'Bajaste 0,1 kg esta semana; el plan era mantenerlo.'],
 ])('compara real %s y plan %s a la precisión visible', (actual, expected, text) => {
@@ -59,9 +59,9 @@ it.each([
   ).toBe(text);
 });
 it.each([
-  [0.2, 0.5, 'Subiste 0,2 kg esta semana; el plan era 0,5.'],
-  [0.2, -0.5, 'Subiste 0,2 kg esta semana; el plan era bajar 0,5.'],
-  [-0.2, 0.5, 'Bajaste 0,2 kg esta semana; el plan era subir 0,5.'],
+  [0.2, 0.5, 'Subiste 0,2 kg esta semana; el plan era 0,5 kg.'],
+  [0.2, -0.5, 'Subiste 0,2 kg esta semana; el plan era bajar 0,5 kg.'],
+  [-0.2, 0.5, 'Bajaste 0,2 kg esta semana; el plan era subir 0,5 kg.'],
   [0, 0, 'Tu peso se mantuvo esta semana; el plan era mantenerlo.'],
   [null, null, 'Revisamos tu semana.'],
 ])('describe real %s y esperado %s', (actualWeeklyChangeKg, expectedWeeklyChangeKg, text) => {

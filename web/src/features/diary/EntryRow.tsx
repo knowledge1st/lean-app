@@ -18,12 +18,18 @@ export function EntryRow({
   const row = useRef<HTMLDivElement>(null);
   const temporary = entry.id.startsWith('temp-');
   useEffect(() => {
-    if (temporary) row.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    if (temporary) {
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      row.current?.scrollIntoView?.({
+        block: 'nearest',
+        behavior: reducedMotion ? 'auto' : 'smooth',
+      });
+    }
   }, [temporary]);
   return (
     <div
       ref={row}
-      className={`min-w-0 border-t border-border ${entry.status === 'planned' ? 'opacity-60' : ''}`}
+      className={`min-w-0 border-t border-border ${entry.status === 'planned' ? 'border-dashed bg-bg' : ''}`}
     >
       <button
         type="button"
@@ -32,16 +38,20 @@ export function EntryRow({
         className="flex min-h-11 w-full min-w-0 items-center gap-3 py-3 text-left disabled:cursor-wait"
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{entry.food.name}</span>
+          <span title={entry.food.name} className="line-clamp-2 break-words font-medium">
+            {entry.food.name}
+          </span>
           {entry.food.brand && (
-            <span className="block truncate text-sm text-muted">{entry.food.brand}</span>
+            <span title={entry.food.brand} className="line-clamp-2 break-words text-sm text-muted">
+              {entry.food.brand}
+            </span>
           )}
           <span className="text-sm text-muted">
             {formatNumber(entry.grams)} g
             {entry.status === 'planned' ? (missed ? ' · No cumplido' : ' · Planificado') : ''}
           </span>
         </span>
-        <span className="shrink-0 text-sm">{entry.kcal} kcal</span>
+        <span className="shrink-0 text-sm">{formatNumber(entry.kcal)} kcal</span>
       </button>
       {entry.status === 'planned' && (
         <Button variant="ghost" disabled={disabled || temporary} onClick={() => onEat(entry)}>

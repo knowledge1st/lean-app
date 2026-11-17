@@ -37,3 +37,11 @@ it('oculta solo el detalle diario accesible y desactiva los marcadores de la met
     expect(screen.getByText(text).closest('.sr-only, [aria-hidden="true"]')).toBeNull();
   }
 });
+
+it('explica la semana sin comidas registradas', () => {
+  render(<WeekBars summary={{ ...weekSummary, loggedDays: 0 }} entries={[]} />);
+  expect(
+    screen.getByText('Todavía no hay comidas registradas esta semana. Cargalas desde Hoy.'),
+  ).toBeTruthy();
+  expect(screen.queryByTestId('goal-line')).toBeNull();
+});

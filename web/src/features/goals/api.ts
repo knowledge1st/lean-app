@@ -50,9 +50,10 @@ export function useCreateGoal() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: createGoal,
-    onSuccess: async () => {
+    onSuccess: async ({ goal }) => {
+      client.setQueryData(activeGoalKey, goal);
       await Promise.all(
-        [profileKey, activeGoalKey, ['goals', 'wizard', 'initial'], ['summary'], ['targets']].map(
+        [profileKey, ['goals', 'wizard', 'initial'], ['summary'], ['targets'], ['body-logs']].map(
           (queryKey) => client.invalidateQueries({ queryKey }),
         ),
       );

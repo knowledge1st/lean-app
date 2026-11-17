@@ -139,106 +139,108 @@ export function CustomFoodForm({
         mutation.mutate(result.data, { onSuccess: onCreated });
       }}
     >
-      <p className="text-sm text-muted">Lo van a poder usar todos los usuarios de la app.</p>
-      {initialBarcode && (
-        <Input label="Código de barras" value={initialBarcode} readOnly error={errors.barcode} />
-      )}
-      <Input
-        autoFocus
-        label="Nombre"
-        value={fields.name}
-        maxLength={120}
-        onChange={(event) => update('name', event.target.value)}
-        error={errors.name}
-      />
-      <Input
-        label="Marca (opcional)"
-        value={fields.brand}
-        maxLength={80}
-        onChange={(event) => update('brand', event.target.value)}
-        error={errors.brand}
-      />
-      <div className="space-y-2" role="group" aria-label="Los valores de la etiqueta son:">
-        <p className="text-sm font-medium">Los valores de la etiqueta son:</p>
-        <div className="flex gap-2">
-          {(
-            [
-              ['serving', 'Por porción'],
-              ['per100g', 'Por 100 g'],
-            ] as const
-          ).map(([value, label]) => (
-            <Button
-              key={value}
-              variant={mode === value ? 'primary' : 'secondary'}
-              aria-pressed={mode === value}
-              onClick={() => {
-                onModeChange(value);
-                setSubmitted(false);
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-      </div>
-      {byServing && servingInput}
-      {numericFields.map(({ key, label, unit }) => (
-        <NumberInput
-          key={key}
-          label={byServing ? `${label} por porción` : label}
-          unit={unit}
-          value={fields[key]}
-          onChange={(event) => update(key, event.target.value)}
-          error={errors[key]}
+      <fieldset disabled={mutation.isPending} className="min-w-0 space-y-4">
+        <p className="text-sm text-muted">Lo van a poder usar todos los usuarios de la app.</p>
+        {initialBarcode && (
+          <Input label="Código de barras" value={initialBarcode} readOnly error={errors.barcode} />
+        )}
+        <Input
+          autoFocus
+          label="Nombre"
+          value={fields.name}
+          maxLength={120}
+          onChange={(event) => update('name', event.target.value)}
+          error={errors.name}
         />
-      ))}
-      {errors.macros && (
-        <p role="alert" className="text-danger">
-          {errors.macros}
-        </p>
-      )}
-      <div aria-live="polite">
-        {showPreview && (
-          <p className="text-sm text-muted">
-            Se guarda como {formatNumber(storedValues.kcal, 2)} kcal · P{' '}
-            {formatNumber(storedValues.protein, 2)} g · C {formatNumber(storedValues.carbs, 2)} g ·
-            G {formatNumber(storedValues.fat, 2)} g cada 100 g
+        <Input
+          label="Marca (opcional)"
+          value={fields.brand}
+          maxLength={80}
+          onChange={(event) => update('brand', event.target.value)}
+          error={errors.brand}
+        />
+        <div className="space-y-2" role="group" aria-label="Los valores de la etiqueta son:">
+          <p className="text-sm font-medium">Los valores de la etiqueta son:</p>
+          <div className="flex gap-2">
+            {(
+              [
+                ['serving', 'Por porción'],
+                ['per100g', 'Por 100 g'],
+              ] as const
+            ).map(([value, label]) => (
+              <Button
+                key={value}
+                variant={mode === value ? 'primary' : 'secondary'}
+                aria-pressed={mode === value}
+                onClick={() => {
+                  onModeChange(value);
+                  setSubmitted(false);
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        {byServing && servingInput}
+        {numericFields.map(({ key, label, unit }) => (
+          <NumberInput
+            key={key}
+            label={byServing ? `${label} por porción` : label}
+            unit={unit}
+            value={fields[key]}
+            onChange={(event) => update(key, event.target.value)}
+            error={errors[key]}
+          />
+        ))}
+        {errors.macros && (
+          <p role="alert" className="text-danger">
+            {errors.macros}
           </p>
         )}
-      </div>
-      {!byServing && servingInput}
-      <Input
-        label="Descripción de la porción (opcional)"
-        maxLength={40}
-        value={fields.servingLabel}
-        onChange={(event) => update('servingLabel', event.target.value)}
-        error={errors.servingLabel}
-      />
-      {errors.form && (
-        <p role="alert" className="text-danger">
-          {errors.form}
-        </p>
-      )}
-      {mutation.isError && (
-        <div role="alert" className="text-danger">
-          {barcodeTaken?.success ? (
-            <>
-              <p>Ese código ya está cargado como «{barcodeTaken.data.food.name}».</p>
-              <Button onClick={() => onCreated(barcodeTaken.data.food)}>Usar ese alimento</Button>
-            </>
-          ) : (
-            mutation.error.message
+        <div aria-live="polite">
+          {showPreview && (
+            <p className="text-sm text-muted">
+              Se guarda como {formatNumber(storedValues.kcal, 2)} kcal · P{' '}
+              {formatNumber(storedValues.protein, 2)} g · C {formatNumber(storedValues.carbs, 2)} g
+              · G {formatNumber(storedValues.fat, 2)} g cada 100 g
+            </p>
           )}
         </div>
-      )}
-      <div className="flex justify-between gap-3">
-        <Button variant="ghost" disabled={mutation.isPending} onClick={onBack}>
-          Volver
-        </Button>
-        <Button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Guardando…' : 'Guardar alimento'}
-        </Button>
-      </div>
+        {!byServing && servingInput}
+        <Input
+          label="Descripción de la porción (opcional)"
+          maxLength={40}
+          value={fields.servingLabel}
+          onChange={(event) => update('servingLabel', event.target.value)}
+          error={errors.servingLabel}
+        />
+        {errors.form && (
+          <p role="alert" className="text-danger">
+            {errors.form}
+          </p>
+        )}
+        {mutation.isError && (
+          <div role="alert" className="text-danger">
+            {barcodeTaken?.success ? (
+              <>
+                <p>Ese código ya está cargado como «{barcodeTaken.data.food.name}».</p>
+                <Button onClick={() => onCreated(barcodeTaken.data.food)}>Usar ese alimento</Button>
+              </>
+            ) : (
+              mutation.error.message
+            )}
+          </div>
+        )}
+        <div className="flex justify-between gap-3">
+          <Button variant="ghost" disabled={mutation.isPending} onClick={onBack}>
+            Volver
+          </Button>
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Guardando…' : 'Guardar alimento'}
+          </Button>
+        </div>
+      </fieldset>
     </form>
   );
 }

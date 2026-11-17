@@ -1,6 +1,9 @@
 import { useNavigate } from 'react-router';
+import { ErrorState } from '../../components/ui/ErrorState';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { MACROS } from '../../lib/macros';
 import { todayLocal } from '../../lib/date';
 import { useActiveGoal } from './api';
 import { clearDraft } from './draft';
@@ -26,12 +29,13 @@ export function GoalCard() {
     <Card className="min-w-0 space-y-5">
       <h2 className="text-xl font-semibold">Mi objetivo</h2>
       {query.isPending ? (
-        <p role="status">Cargando tu objetivo…</p>
-      ) : query.isError ? (
-        <div role="alert" className="space-y-3">
-          <p>No pudimos cargar tu objetivo.</p>
-          <Button onClick={() => void query.refetch()}>Reintentar</Button>
+        <div role="status" aria-label="Cargando tu objetivo" className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 4 }, (_, index) => (
+            <Skeleton key={index} className="h-14" />
+          ))}
         </div>
+      ) : query.isError ? (
+        <ErrorState message="No se pudo cargar tu objetivo." onRetry={() => void query.refetch()} />
       ) : !goal ? (
         <>
           <p>Todavía no definiste tu objetivo</p>
@@ -81,10 +85,8 @@ export function GoalCard() {
             <h3 className="font-semibold">Meta diaria vigente</h3>
             <dl className="grid grid-cols-2 gap-3">
               {[
-                ['Energía', `${formatNumber(goal.target.kcal)} kcal`],
-                ['Proteína', `${formatNumber(goal.target.protein)} g`],
-                ['Carbos', `${formatNumber(goal.target.carbs)} g`],
-                ['Grasa', `${formatNumber(goal.target.fat)} g`],
+                ['Calorías', `${formatNumber(goal.target.kcal)} kcal`],
+                ...MACROS.map(({ key, label }) => [label, `${formatNumber(goal.target[key])} g`]),
                 ['Agua', `${formatNumber(goal.target.waterMl)} ml`],
               ].map(([label, value]) => (
                 <div key={label}>

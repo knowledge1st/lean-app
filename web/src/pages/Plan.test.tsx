@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, useLocation } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { MEALS, ZERO_MACROS, type DaySummary, type Entry } from '@lean/shared';
 import { jsonResponse } from '../auth/testUtils';
 import { ToastProvider } from '../components/ui/Toast';
@@ -78,7 +78,10 @@ function setup(path = '/plan?semana=2026-W47&dia=2026-11-17') {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <ToastProvider>
-          <Plan />
+          <Routes>
+            <Route path="/plan" element={<Plan />} />
+            <Route path="/compras" element={<p>Compras</p>} />
+          </Routes>
           <Location />
         </ToastProvider>
       </MemoryRouter>
@@ -140,8 +143,9 @@ it.each(['Agregar', 'Reemplazar'] as const)(
     fireEvent.click(screen.getByRole('button', { name: 'Copiar este día a…' }));
     fireEvent.change(screen.getByLabelText('Día destino'), { target: { value: '2026-11-18' } });
     fireEvent.click(screen.getByRole('button', { name: 'Copiar día' }));
+    await screen.findByText(/reemplazar 1 entrada planificada/);
     fireEvent.click(await screen.findByRole('button', { name: choice }));
-    await screen.findByText('Día copiado');
+    await screen.findByText('Copiaste el día');
     const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/entries/copy'))!;
     expect(JSON.parse(String(call[1]?.body))).toEqual({
       scope: 'day',
@@ -157,7 +161,7 @@ it('copia la semana anterior con append si el destino está vacío', async () =>
   const client = setup();
   fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Copiar la semana anterior' }));
-  await screen.findByText('Semana copiada');
+  await screen.findByText('Copiaste la semana');
   const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/entries/copy'))!;
   expect(JSON.parse(String(call[1]?.body))).toEqual({
     scope: 'week',
@@ -172,6 +176,8 @@ it('genera compras para la semana visible y navega', async () => {
   const client = setup();
   fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Generar lista de compras' }));
+  await screen.findByText('Lista de compras actualizada');
+  fireEvent.click(screen.getByRole('button', { name: 'Ver' }));
   await waitFor(() =>
     expect(screen.getByLabelText('URL').textContent).toBe('/compras?semana=2026-W47'),
   );
@@ -217,6 +223,7 @@ it('pide confirmación al vaciar y borra solamente entradas planned', async () =
   fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Vaciar lo planificado del día' }));
   expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  expect(screen.getByText('¿Querés borrar 1 entrada planificada de este día?')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Vaciar' }));
   await screen.findByText('Plan del día vaciado');
   const deletes = fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE');
@@ -229,7 +236,13 @@ it('muestra skeleton y permite reintentar errores del día', async () => {
   fetchMock.mockImplementation(() => Promise.reject(new Error('offline')));
   const client = setup();
   expect(screen.getByLabelText('Cargando día')).toBeTruthy();
-  await screen.findAllByRole('alert');
+  await screen.findByText('No se pudieron cargar algunos días');
+  await waitFor(() => expect(screen.queryByLabelText('Cargando día')).toBeNull());
+  expect(
+    within(screen.getByRole('navigation', { name: /Días de la semana/ })).getAllByRole('button', {
+      name: /sin datos/,
+    }),
+  ).toHaveLength(7);
   expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
   fetchMock.mockImplementation((input) => {
     const date = new URL(String(input)).searchParams.get('date')!;
@@ -266,8 +279,9 @@ it.each(['Agregar', 'Reemplazar'] as const)(
     }
     expect(within(dialog).queryByRole('button', { name: 'mar 17' })).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: 'mié 18' }));
+    await screen.findByText(/reemplazar 1 entrada planificada/);
     fireEvent.click(await screen.findByRole('button', { name: choice }));
-    await screen.findByText('Día copiado');
+    await screen.findByText('Copiaste el día');
     const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/entries/copy'))!;
     expect(JSON.parse(String(call[1]?.body))).toEqual({
       scope: 'day',
@@ -284,7 +298,7 @@ it('copia directo desde un atajo a un día vacío', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Copiar este día a…' }));
   fireEvent.click(screen.getByRole('button', { name: 'dom 22' }));
-  await screen.findByText('Día copiado');
+  await screen.findByText('Copiaste el día');
   const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/entries/copy'))!;
   expect(JSON.parse(String(call[1]?.body))).toEqual({
     scope: 'day',
@@ -301,7 +315,7 @@ it('copia directo desde un atajo si el destino no tiene planificados', async () 
   fireEvent.click(await screen.findByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Copiar este día a…' }));
   fireEvent.click(screen.getByRole('button', { name: 'lun 16' }));
-  await screen.findByText('Día copiado');
+  await screen.findByText('Copiaste el día');
   const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/entries/copy'))!;
   expect(JSON.parse(String(call[1]?.body))).toEqual({
     scope: 'day',

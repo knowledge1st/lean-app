@@ -79,6 +79,7 @@ export function Choices({
             checked={draft[name] === value}
             onChange={() => change(name, value)}
             aria-invalid={!!errors[name]}
+            aria-describedby={errors[name] ? `error-${name}` : undefined}
             className="mt-1 accent-accent"
           />
           <span>

@@ -34,7 +34,7 @@ export function Input({
           id={inputId}
           aria-invalid={error ? true : props['aria-invalid']}
           aria-describedby={description}
-          className={`min-h-11 w-full min-w-0 rounded-xl border bg-surface px-3 py-2 text-base text-text placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-50 ${error ? 'border-danger' : 'border-border'} ${suffix ? 'pr-16' : ''} ${className}`}
+          className={`min-h-11 w-full min-w-0 rounded-xl border bg-surface px-3 py-2 text-base text-text placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-50 ${error ? 'border-danger' : 'border-border-strong'} ${suffix ? 'pr-16' : ''} ${className}`}
         />
         {suffix && (
           <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted">

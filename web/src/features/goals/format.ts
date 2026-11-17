@@ -1,5 +1,6 @@
 export const formatNumber = (value: number) =>
   new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(value);
+export const formatDecimalInput = (value: number) => String(value).replace('.', ',');
 export function formatGoalDate(date: string, today: string) {
   return new Intl.DateTimeFormat('es-AR', {
     day: 'numeric',

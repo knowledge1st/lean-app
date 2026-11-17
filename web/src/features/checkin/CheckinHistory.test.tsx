@@ -36,7 +36,7 @@ it('muestra semana, resultado, propuesta y decisión', async () => {
   expect(screen.getByText('Pendiente')).toBeTruthy();
   expect(screen.getByText('Visto')).toBeTruthy();
   expect(screen.getByText('Descartado')).toBeTruthy();
-  expect(api.get).toHaveBeenCalledWith('/api/checkins?limit=10');
+  expect(api.get).toHaveBeenCalledWith('/api/checkins?limit=52');
 });
 it('muestra carga y vacío', async () => {
   vi.spyOn(api, 'get').mockResolvedValue({ checkins: [] });
@@ -66,4 +66,14 @@ it('formatea semanas entre meses y años con UTC', () => {
   expect(formatWeekRange('2026-12-28', '2027-01-03')).toBe(
     'Semana del 28 de diciembre de 2026 al 3 de enero de 2027',
   );
+});
+
+it('deriva las diez revisiones recientes de la consulta compartida de 52', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    checkins: Array.from({ length: 12 }, (_, index) => ({ ...checkin, id: `revision-${index}` })),
+  });
+  setup();
+  await screen.findAllByRole('listitem');
+  expect(screen.getAllByRole('listitem')).toHaveLength(10);
+  expect(api.get).toHaveBeenCalledWith('/api/checkins?limit=52');
 });

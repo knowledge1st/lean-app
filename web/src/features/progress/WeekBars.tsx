@@ -13,9 +13,13 @@ import { formatNumber } from '../../lib/macros';
 import { buildWeekBars, shortDate } from './calc';
 export default function WeekBars({ summary, entries }: { summary: WeekSummary; entries: Entry[] }) {
   const data = buildWeekBars(summary, entries);
+  if (data.loggedDays === 0)
+    return <p>Todavía no hay comidas registradas esta semana. Cargalas desde Hoy.</p>;
   return (
     <figure className="min-w-0 space-y-3">
-      <p>{data.loggedDays} de 7 días registrados</p>
+      <p>
+        {formatNumber(data.loggedDays, 0)} de {formatNumber(7, 0)} días registrados
+      </p>
       <p>
         Promedio de proteína:{' '}
         {data.avgProteinG === null ? '—' : `${formatNumber(data.avgProteinG)} g por día registrado`}
@@ -30,8 +34,8 @@ export default function WeekBars({ summary, entries }: { summary: WeekSummary; e
           >
             <XAxis dataKey="label" stroke="var(--muted)" />
             <YAxis
-              width={48}
-              tickFormatter={(v) => formatNumber(Number(v), 0)}
+              width={80}
+              tickFormatter={(v) => `${formatNumber(Number(v), 0)} kcal`}
               tickCount={4}
               stroke="var(--muted)"
               tick={{ fontSize: 12 }}

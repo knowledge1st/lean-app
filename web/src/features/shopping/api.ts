@@ -92,7 +92,7 @@ export function validateItem(label: string, quantity: string): string | null {
       Number(quantity.replace(',', '.')) <= 0 ||
       Number(quantity.replace(',', '.')) > 100000)
   )
-    return 'Ingresá una cantidad mayor a 0 y hasta 100000 g, con hasta un decimal.';
+    return 'Ingresá una cantidad mayor a 0 y hasta 100.000 g, con hasta un decimal.';
   return null;
 }
 type Action =
@@ -216,8 +216,9 @@ export function useShoppingMutation(week: string, kind: Action['kind']) {
     onSuccess: (item, action, context) => {
       if (sessionFor(client) !== context.session) return;
       const state = context.state;
-      if (action.kind === 'delete') state.base = apply(state.base, action);
-      else if (item)
+      if (action.kind === 'delete') {
+        state.base = apply(state.base, action);
+      } else if (item)
         state.base =
           action.kind === 'add'
             ? [...state.base, item]

@@ -1,4 +1,5 @@
 import type { Checkin } from '@lean/shared';
+import { formatNumber } from '../../lib/macros';
 
 export const WINDOW_DAYS = 14;
 export const MIN_LOGGED_DAYS = 10;
@@ -28,12 +29,14 @@ function weightChange(n: number | null): string {
 export function checkinMessage(c: Checkin): string {
   if (c.status === 'insufficient_data') {
     const days =
-      c.loggedDays === 1 ? `1 día de ${WINDOW_DAYS}` : `${c.loggedDays} de ${WINDOW_DAYS} días`;
+      c.loggedDays === 1
+        ? `1 día de ${formatNumber(WINDOW_DAYS, 0)}`
+        : `${formatNumber(c.loggedDays, 0)} de ${formatNumber(WINDOW_DAYS, 0)} días`;
     const weights =
       c.weighIns < MIN_WEIGH_INS
-        ? ` y ${c.weighIns} ${c.weighIns === 1 ? 'pesaje' : 'pesajes'}`
+        ? ` y ${formatNumber(c.weighIns, 0)} ${c.weighIns === 1 ? 'pesaje' : 'pesajes'}`
         : '';
-    return `Registraste ${days}${weights}. Con ${MIN_LOGGED_DAYS} días y ${MIN_WEIGH_INS} pesajes podemos ajustar tu plan.`;
+    return `Registraste ${days}${weights}. Con ${formatNumber(MIN_LOGGED_DAYS, 0)} días y ${formatNumber(MIN_WEIGH_INS, 0)} pesajes podemos ajustar tu plan.`;
   }
   const actual = normalizeWeightChange(c.actualWeeklyChangeKg);
   const expected = normalizeWeightChange(c.expectedWeeklyChangeKg);
@@ -48,7 +51,7 @@ export function checkinMessage(c: Checkin): string {
       ? ''
       : expected === 0
         ? '; el plan era mantenerlo'
-        : `; el plan era ${actual !== null && Math.sign(actual) === Math.sign(expected) ? '' : expected < 0 ? 'bajar ' : 'subir '}${formatKg(expected)}`;
+        : `; el plan era ${actual !== null && Math.sign(actual) === Math.sign(expected) ? '' : expected < 0 ? 'bajar ' : 'subir '}${formatKg(expected)} kg`;
   const proposal = c.proposed
     ? ` Te proponemos pasar de ${formatKcal(c.current.kcal)} a ${formatKcal(c.proposed.kcal)} kcal por día.`
     : '';

@@ -15,6 +15,7 @@ export function useBarcodeScanner({
   createDetector = createBarcodeDetector,
   getUserMedia = defaultGetUserMedia,
   intervalMs = 200,
+  session = 0,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   onDetect: (code: string) => void;
@@ -22,6 +23,7 @@ export function useBarcodeScanner({
   createDetector?: () => Promise<DetectorLike>;
   getUserMedia?: (c: MediaStreamConstraints) => Promise<MediaStream>;
   intervalMs?: number;
+  session?: number;
 }): { status: ScannerStatus; stop: () => void } {
   const [status, setStatus] = useState<ScannerStatus>('stopped');
   const callback = useRef(onDetect);
@@ -36,11 +38,13 @@ export function useBarcodeScanner({
     let generation = 0;
     let ended = false;
     let stream: MediaStream | undefined;
+    let startupTimer: ReturnType<typeof setTimeout> | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const video = videoRef.current;
     const release = () => {
       generation += 1;
       clearTimeout(timer);
+      clearTimeout(startupTimer);
       stream?.getTracks().forEach((track) => track.stop());
       stream = undefined;
       if (video) video.srcObject = null;
@@ -60,6 +64,12 @@ export function useBarcodeScanner({
         setStatus('unavailable');
         return;
       }
+      startupTimer = setTimeout(() => {
+        if (!current()) return;
+        detector.current = undefined;
+        release();
+        setStatus('error');
+      }, 15000);
       let acquired: MediaStream;
       try {
         acquired = await getUserMedia({
@@ -72,6 +82,7 @@ export function useBarcodeScanner({
         });
       } catch (failure) {
         if (!current()) return;
+        release();
         const name =
           failure instanceof Error || failure instanceof DOMException ? failure.name : '';
         setStatus(
@@ -101,10 +112,13 @@ export function useBarcodeScanner({
       if (!current()) return;
       let reader: DetectorLike;
       try {
-        detector.current ??= createDetector().catch((failure: unknown) => {
-          detector.current = undefined;
-          throw failure;
-        });
+        if (!detector.current) {
+          const pending = createDetector().catch((failure: unknown) => {
+            if (detector.current === pending) detector.current = undefined;
+            throw failure;
+          });
+          detector.current = pending;
+        }
         reader = await detector.current;
       } catch {
         if (current()) {
@@ -114,6 +128,7 @@ export function useBarcodeScanner({
         return;
       }
       if (!current()) return;
+      clearTimeout(startupTimer);
       setStatus('scanning');
       let consecutiveFailures = 0;
       let detecting = false;
@@ -168,6 +183,6 @@ export function useBarcodeScanner({
       release();
       document.removeEventListener('visibilitychange', visibilityChanged);
     };
-  }, [active, videoRef, createDetector, getUserMedia, intervalMs]);
+  }, [active, videoRef, createDetector, getUserMedia, intervalMs, session]);
   return { status, stop };
 }

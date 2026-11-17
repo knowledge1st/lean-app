@@ -41,7 +41,7 @@ it('muestra subtotales de la API, lista y acciones independientes', () => {
   expect(screen.getByText('Planificado: 100 kcal')).toBeTruthy();
   expect(screen.getByText('Marca')).toBeTruthy();
   expect(screen.getByText('Pan').closest('button')?.parentElement?.className).toContain(
-    'opacity-60',
+    'border-dashed',
   );
   fireEvent.click(screen.getByText('Pan'));
   expect(onEdit).toHaveBeenCalledWith(entry);
@@ -77,4 +77,21 @@ it('impide editar o marcar entradas temporales', () => {
   fireEvent.click(screen.getByText('Ya lo comí'));
   expect(edit).not.toHaveBeenCalled();
   expect(eat).not.toHaveBeenCalled();
+});
+
+it('permite repetir la comida con un botón accesible', () => {
+  const onRepeat = vi.fn();
+  render(
+    <MealSection
+      meal={meal}
+      onAdd={vi.fn()}
+      onRepeat={onRepeat}
+      onEdit={vi.fn()}
+      onEat={vi.fn()}
+    />,
+  );
+  const repeat = screen.getByRole('button', { name: 'Repetir Desayuno de otro día' });
+  expect(repeat.className).toContain('min-h-11');
+  fireEvent.click(repeat);
+  expect(onRepeat).toHaveBeenCalledOnce();
 });

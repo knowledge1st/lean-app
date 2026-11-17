@@ -35,3 +35,24 @@ describe('plan schemas', () => {
     expect(markEatenSchema.safeParse({ date: '2026-02-30' }).success).toBe(false);
   });
 });
+
+it.each(['eaten', 'planned'])('accepts meal copy with %s status', (status) => {
+  expect(
+    copyEntriesSchema.parse({
+      scope: 'meal',
+      from: '2026-11-14',
+      to: '2026-11-15',
+      meal: 'dinner',
+      status,
+    }),
+  ).toMatchObject({ scope: 'meal', status, meal: 'dinner' });
+});
+it.each([
+  { from: '2026-11-15', to: '2026-11-15', meal: 'dinner', status: 'eaten' },
+  { from: '2026-02-30', to: '2026-11-15', meal: 'dinner', status: 'eaten' },
+  { from: '2026-11-14', to: '2026-11-15', meal: 'other', status: 'eaten' },
+  { from: '2026-11-14', to: '2026-11-15', meal: 'dinner', status: 'other' },
+  { from: '2026-11-14', to: '2026-11-15', meal: 'dinner' },
+])('rejects invalid meal copy %j', (input) => {
+  expect(copyEntriesSchema.safeParse({ scope: 'meal', ...input }).success).toBe(false);
+});

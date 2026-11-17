@@ -113,7 +113,12 @@ export function AddFoodSheet({
         if (!open) onClose();
       }}
       title={step === 'custom' ? 'Crear alimento' : 'Agregar alimento'}
-      description={`${MEAL_LABELS[meal]} · ${date}`}
+      description={`${MEAL_LABELS[meal]} · ${new Intl.DateTimeFormat('es-AR', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'UTC',
+      }).format(new Date(`${date}T12:00:00Z`))}`}
     >
       {step === 'search' && (
         <FoodSearch

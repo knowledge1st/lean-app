@@ -161,3 +161,26 @@ it.each([204, 500])('ignora la respuesta %s después de desmontar el formulario'
   expect(onSuccess).not.toHaveBeenCalled();
   expect(onOpenChange).not.toHaveBeenCalled();
 });
+
+it.each([
+  [400, 'Revisá las contraseñas y volvé a intentar.'],
+  [429, 'Demasiados intentos. Esperá unos minutos y volvé a probar.'],
+])('traduce el error %s sin mostrar detalles técnicos', async (status, message) => {
+  await setup();
+  fetchMock.mockResolvedValueOnce(
+    jsonResponse({ error: { code: 'invalid_request', message: 'newPassword: invalid' } }, status),
+  );
+  fill();
+  expect((await screen.findByRole('alert')).textContent).toBe(message);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+it('asocia las contraseñas con sus etiquetas y autocompletado', async () => {
+  await setup();
+  expect(screen.getByLabelText('Usuario').getAttribute('autocomplete')).toBe('username');
+  expect(screen.getByLabelText('Contraseña actual').getAttribute('autocomplete')).toBe(
+    'current-password',
+  );
+  for (const label of ['Contraseña nueva', 'Repetir contraseña nueva'])
+    expect(screen.getByLabelText(label).getAttribute('autocomplete')).toBe('new-password');
+});

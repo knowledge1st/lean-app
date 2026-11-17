@@ -1,3 +1,4 @@
+import { formatNumber } from '../../lib/macros';
 import { useState } from 'react';
 import { Sheet } from '../../components/ui/Sheet';
 import { Button } from '../../components/ui/Button';
@@ -6,12 +7,14 @@ export function CopyDaySheet({
   dates,
   from,
   busy,
+  progress,
   onCopy,
   onClose,
 }: {
   dates: string[];
   from: string;
   busy: boolean;
+  progress?: string | null;
   onCopy: (to: string) => void;
   onClose: () => void;
 }) {
@@ -24,6 +27,7 @@ export function CopyDaySheet({
       }}
       title="Copiar este día a…"
     >
+      {progress && <p role="status">{progress}</p>}
       <div className="mb-4 grid min-w-0 grid-cols-3 gap-2">
         {dates
           .filter((date) => date !== from)
@@ -40,7 +44,7 @@ export function CopyDaySheet({
               })
                 .format(new Date(`${date}T12:00:00Z`))
                 .replace(/\.$/, '')}{' '}
-              {Number(date.slice(-2))}
+              {formatNumber(Number(date.slice(-2)), 0)}
             </Button>
           ))}
       </div>

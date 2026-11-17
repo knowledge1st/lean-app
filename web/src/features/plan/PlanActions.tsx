@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import { isoWeekRange, type DaySummary } from '@lean/shared';
+import { formatNumber } from '../../lib/macros';
 import { addDays } from '../../lib/date';
 import { Button } from '../../components/ui/Button';
 import { Sheet } from '../../components/ui/Sheet';
@@ -10,11 +11,14 @@ import { getDaySummary, summaryKey, useDiaryMutation, waitForDiaryIdle } from '.
 import { validWeekOf } from './dates';
 import { CopyDaySheet } from './CopyDaySheet';
 import { useCopyEntries, useGenerateShopping, type CopyEntriesBody } from './api';
+type PlanCopyBody = Exclude<CopyEntriesBody, { scope: 'meal' }>;
 export function PlanActions({ week, summary }: { week: string; summary: DaySummary }) {
   const dates = Array.from({ length: 7 }, (_, i) => addDays(isoWeekRange(week).from, i));
   const previousWeek = validWeekOf(addDays(dates[0]!, -7));
   const [sheet, setSheet] = useState<'actions' | 'copy' | 'clear' | null>(null);
-  const [pendingCopy, setPendingCopy] = useState<Omit<CopyEntriesBody, 'mode'> | null>(null);
+  const [pendingCopy, setPendingCopy] = useState<Omit<PlanCopyBody, 'mode'> | null>(null);
+  const [clearCount, setClearCount] = useState(0);
+  const [replacementCount, setReplacementCount] = useState(0);
   const [checking, setChecking] = useState(false);
   const client = useQueryClient();
   const copy = useCopyEntries();
@@ -29,12 +33,12 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
       await copy.mutateAsync(body);
       setPendingCopy(null);
       setSheet(null);
-      toast(body.scope === 'day' ? 'Día copiado' : 'Semana copiada');
+      toast(body.scope === 'day' ? 'Copiaste el día' : 'Copiaste la semana');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'No se pudo copiar.');
     }
   }
-  async function prepareCopy(body: Omit<CopyEntriesBody, 'mode'>) {
+  async function prepareCopy(body: Omit<PlanCopyBody, 'mode'>) {
     setChecking(true);
     try {
       await waitForDiaryIdle(client);
@@ -51,10 +55,12 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
           }),
         ),
       );
-      const hasPlanned = destinations.some((day) =>
-        day.meals.some((meal) => meal.entries.some((entry) => entry.status === 'planned')),
-      );
-      if (hasPlanned) {
+      const count = destinations
+        .flatMap((day) => day.meals)
+        .flatMap((meal) => meal.entries)
+        .filter((entry) => entry.status === 'planned').length;
+      setReplacementCount(count);
+      if (count > 0) {
         setSheet(null);
         setPendingCopy(body);
       } else await performCopy({ ...body, mode: 'append' });
@@ -64,6 +70,15 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
       setChecking(false);
     }
   }
+  const progress = copy.isPending
+    ? 'Copiando…'
+    : shopping.isPending
+      ? 'Generando lista…'
+      : checking
+        ? diaryPending
+          ? 'Esperando…'
+          : 'Cargando días…'
+        : null;
   return (
     <>
       <Button variant="secondary" onClick={() => setSheet('actions')}>
@@ -78,7 +93,7 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
           title="Acciones del plan"
         >
           <div className="flex flex-col gap-3">
-            {checking && diaryPending && <p role="status">Esperando…</p>}
+            {progress && <p role="status">{progress}</p>}
             <Button disabled={busy} onClick={() => setSheet('copy')}>
               Copiar este día a…
             </Button>
@@ -95,7 +110,21 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
             >
               Copiar la semana anterior
             </Button>
-            <Button variant="danger" disabled={busy} onClick={() => setSheet('clear')}>
+            <Button
+              variant="danger"
+              disabled={busy}
+              onClick={() => {
+                const current =
+                  client.getQueryData<DaySummary>(summaryKey(summary.date)) ?? summary;
+                setClearCount(
+                  current.meals
+                    .flatMap((meal) => meal.entries)
+                    .filter((entry) => entry.status === 'planned' && !entry.id.startsWith('temp-'))
+                    .length,
+                );
+                setSheet('clear');
+              }}
+            >
               Vaciar lo planificado del día
             </Button>
             <Button
@@ -106,7 +135,10 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
                   await waitForDiaryIdle(client);
                   await shopping.mutateAsync(week);
                   setSheet(null);
-                  navigate(`/compras?semana=${week}`);
+                  toast('Lista de compras actualizada', {
+                    label: 'Ver',
+                    onAction: () => navigate(`/compras?semana=${week}`),
+                  });
                 } catch (error) {
                   toast(error instanceof Error ? error.message : 'No se pudo generar la lista.');
                 } finally {
@@ -124,6 +156,7 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
           dates={dates}
           from={summary.date}
           busy={busy}
+          progress={progress}
           onClose={() => setSheet(null)}
           onCopy={(to) => {
             void prepareCopy({ scope: 'day', from: summary.date, to });
@@ -138,7 +171,11 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
           }}
           title="El destino ya tiene comidas planificadas"
         >
-          <p className="mb-4">¿Querés agregar las comidas o reemplazar lo planificado?</p>
+          <p className="mb-4">
+            ¿Querés agregar las comidas o reemplazar {formatNumber(replacementCount, 0)}{' '}
+            {replacementCount === 1 ? 'entrada planificada' : 'entradas planificadas'}?
+          </p>
+          {progress && <p role="status">{progress}</p>}
           <div className="flex flex-wrap gap-3">
             <Button
               disabled={busy}
@@ -170,8 +207,11 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
           }}
           title="Vaciar lo planificado del día"
         >
-          <p className="mb-4">¿Borramos todas las comidas planificadas de este día?</p>
-          {checking && diaryPending && <p role="status">Esperando…</p>}
+          <p className="mb-4">
+            ¿Querés borrar {formatNumber(clearCount, 0)}{' '}
+            {clearCount === 1 ? 'entrada planificada' : 'entradas planificadas'} de este día?
+          </p>
+          {progress && <p role="status">{progress}</p>}
           <div className="flex gap-3">
             <Button
               variant="danger"
@@ -184,6 +224,10 @@ export function PlanActions({ week, summary }: { week: string; summary: DaySumma
                   const entries = (current?.meals ?? [])
                     .flatMap((meal) => meal.entries)
                     .filter((entry) => entry.status === 'planned' && !entry.id.startsWith('temp-'));
+                  if (entries.length !== clearCount) {
+                    setClearCount(entries.length);
+                    return;
+                  }
                   const results = await Promise.allSettled(
                     entries.map((entry) => diary.mutateAsync({ kind: 'delete', entry })),
                   );

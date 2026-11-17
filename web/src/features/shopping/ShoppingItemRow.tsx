@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ShoppingItem } from '@lean/shared';
 import { Button } from '../../components/ui/Button';
@@ -22,6 +22,8 @@ export function ShoppingItemRow({
   const remove = useShoppingMutation(week, 'delete');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const restoreDeleteFocus = useRef(false);
   const [label, setLabel] = useState(item.label);
   const [quantity, setQuantity] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export function ShoppingItemRow({
   return (
     <li className="flex min-h-12 min-w-0 items-center gap-1 border-b border-border">
       <label
-        className={`flex min-h-12 min-w-0 flex-1 cursor-pointer items-center gap-2 ${item.checked ? 'text-muted opacity-60' : ''}`}
+        className={`flex min-h-12 min-w-0 flex-1 cursor-pointer items-center gap-2 ${item.checked ? 'text-muted' : ''}`}
       >
         <span className="flex min-h-11 min-w-11 shrink-0 items-center justify-center">
           <input
@@ -65,6 +67,7 @@ export function ShoppingItemRow({
         disabled={unavailable}
         onClick={() => {
           setEditing(false);
+          setConfirming(false);
           setOpen(true);
         }}
       >
@@ -94,23 +97,44 @@ export function ShoppingItemRow({
           >
             <Input
               label="Nombre"
+              error={error && validateItem(label, '') ? error : undefined}
               value={label}
               onChange={(event) => setLabel(event.target.value)}
             />
             <NumberInput
               label="Cantidad en gramos (opcional)"
+              unit="g"
+              error={error && !validateItem(label, '') ? error : undefined}
               value={quantity}
               onChange={(event) => setQuantity(event.target.value)}
             />
-            {error && (
-              <p role="alert" className="text-danger">
-                {error}
-              </p>
-            )}
             <Button type="submit" disabled={edit.isPending}>
               Guardar
             </Button>
           </form>
+        ) : confirming ? (
+          <div className="flex flex-col gap-3">
+            <p>¿Borrar {item.label}?</p>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setOpen(false);
+                remove.mutate({ kind: 'delete', id: item.id });
+              }}
+            >
+              Sí, borrar
+            </Button>
+            <Button
+              ref={(element) => element?.focus()}
+              variant="secondary"
+              onClick={() => {
+                restoreDeleteFocus.current = true;
+                setConfirming(false);
+              }}
+            >
+              Cancelar
+            </Button>
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
             {item.manual && (
@@ -118,7 +142,14 @@ export function ShoppingItemRow({
                 variant="secondary"
                 onClick={() => {
                   setLabel(item.label);
-                  setQuantity(item.totalGrams === null ? '' : String(item.totalGrams));
+                  setQuantity(
+                    item.totalGrams === null
+                      ? ''
+                      : item.totalGrams.toLocaleString('es-AR', {
+                          useGrouping: false,
+                          maximumFractionDigits: 1,
+                        }),
+                  );
                   setError(null);
                   setEditing(true);
                 }}
@@ -127,11 +158,14 @@ export function ShoppingItemRow({
               </Button>
             )}
             <Button
-              variant="danger"
-              onClick={() => {
-                setOpen(false);
-                remove.mutate({ kind: 'delete', id: item.id });
+              ref={(element) => {
+                if (element && restoreDeleteFocus.current) {
+                  restoreDeleteFocus.current = false;
+                  element.focus();
+                }
               }}
+              variant="danger"
+              onClick={() => setConfirming(true)}
             >
               Borrar
             </Button>

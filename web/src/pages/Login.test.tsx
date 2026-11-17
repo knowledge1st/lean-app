@@ -87,3 +87,9 @@ it('valida los campos vacíos sin consultar la API', async () => {
   expect(screen.getByText('Ingresá tu contraseña.')).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+it('expone etiquetas y autocompletado para el gestor de contraseñas', () => {
+  setup();
+  expect(screen.getByLabelText('Usuario').getAttribute('autocomplete')).toBe('username');
+  expect(screen.getByLabelText('Contraseña').getAttribute('autocomplete')).toBe('current-password');
+});

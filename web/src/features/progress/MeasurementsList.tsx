@@ -1,3 +1,4 @@
+import { ChartBoundary } from './ChartBoundary';
 import { lazy, Suspense, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -35,9 +36,11 @@ export function MeasurementsList({ logs }: { logs: ProgressLog[] }) {
             </Button>
             {selected === m.key && (
               <div id={`chart-${m.key}`}>
-                <Suspense fallback={<Skeleton className="h-60!" />}>
-                  <MeasurementChart logs={logs} measurement={m} />
-                </Suspense>
+                <ChartBoundary>
+                  <Suspense fallback={<Skeleton className="h-60!" />}>
+                    <MeasurementChart logs={logs} measurement={m} />
+                  </Suspense>
+                </ChartBoundary>
               </div>
             )}
           </li>

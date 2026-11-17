@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { isoWeekSchema } from '../week';
-import { localDateSchema, mealSchema } from './entry';
+import { entryStatusSchema, localDateSchema, mealSchema } from './entry';
 
 const modeSchema = z.enum(['append', 'replace'], { error: 'Modo inválido' });
 export const copyEntriesSchema = z
@@ -10,6 +10,13 @@ export const copyEntriesSchema = z
       from: localDateSchema,
       to: localDateSchema,
       mode: modeSchema,
+    }),
+    z.object({
+      scope: z.literal('meal'),
+      from: localDateSchema,
+      to: localDateSchema,
+      meal: mealSchema,
+      status: entryStatusSchema,
     }),
     z.object({
       scope: z.literal('week'),

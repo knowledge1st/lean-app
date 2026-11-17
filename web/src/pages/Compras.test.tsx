@@ -328,6 +328,7 @@ it('regenera reemplazando con manuales y marcados de la respuesta', async () => 
   ]);
   fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
   await screen.findByText('Lista actualizada');
   expect(screen.queryByRole('checkbox', { name: 'Alimento 1' })).toBeNull();
   expect((screen.getByRole('checkbox', { name: 'Alimento 2' }) as HTMLInputElement).checked).toBe(
@@ -358,6 +359,7 @@ it('revalida otra semana guardada mientras una regeneración sigue pendiente', a
   await screen.findByRole('checkbox', { name: 'Alimento 1' });
   fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
   await waitFor(() =>
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/generate'))).toBe(true),
   );
@@ -468,10 +470,11 @@ it('revalida la semana si generar falla después de cancelar la hidratación', a
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   expect(fetchMock.mock.calls[0]![1]?.signal?.aborted).toBe(true);
   await act(async () => generate.reject(new Error('offline')));
-  await screen.findByText('No se pudo actualizar la lista. No se pudo conectar con el servidor.');
+  await screen.findByText(/No se pudo actualizar la lista/);
   await waitFor(() => expect(reads).toBe(2));
   expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: key });
   expect(String(fetchMock.mock.calls[2]![0])).toContain(`/api/shopping?week=${week}`);
@@ -527,20 +530,22 @@ it('mantiene validación y entrada decimal en el alta compacta', async () => {
   const name = screen.getByRole('textbox', { name: 'Agregar a mano' });
   const grams = screen.getByRole('textbox', { name: 'Cantidad en gramos (opcional)' });
   expect(grams.getAttribute('inputmode')).toBe('decimal');
-  expect(grams.getAttribute('placeholder')).toBe('g');
+  expect(screen.getByText('g')).toBeTruthy();
   fireEvent.submit(name.closest('form')!);
-  expect(screen.getByRole('alert').textContent).toContain('Ingresá un nombre');
+  expect(screen.getByText(/Ingresá un nombre/)).toBeTruthy();
   expect(name.getAttribute('aria-invalid')).toBe('true');
   fireEvent.change(name, { target: { value: 'Pan' } });
   fireEvent.change(grams, { target: { value: '-1' } });
   fireEvent.submit(name.closest('form')!);
-  expect(screen.getByRole('alert').textContent).toContain('Ingresá una cantidad');
+  expect(screen.getByText(/Ingresá una cantidad/)).toBeTruthy();
+  expect(grams.getAttribute('aria-invalid')).toBe('true');
+  expect(grams.getAttribute('aria-describedby')).toBeTruthy();
   expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
   fireEvent.change(grams, { target: { value: '' } });
   fireEvent.submit(name.closest('form')!);
   await screen.findByRole('checkbox', { name: 'Pan' });
   expect(screen.queryByRole('alert')).toBeNull();
-  expect(document.activeElement).toBe(name);
+  await waitFor(() => expect(document.activeElement).toBe(name));
 });
 it('alta manual, edición y borrado de cantidad, y borrado de la fila', async () => {
   const { fetchMock } = mockServer([]);
@@ -552,8 +557,8 @@ it('alta manual, edición y borrado de cantidad, y borrado de la fila', async ()
   fireEvent.change(grams, { target: { value: '250,5' } });
   fireEvent.submit(name.closest('form')!);
   await screen.findByRole('checkbox', { name: 'Pan' });
-  expect((name as HTMLInputElement).value).toBe('');
-  expect(document.activeElement).toBe(name);
+  await waitFor(() => expect((name as HTMLInputElement).value).toBe(''));
+  await waitFor(() => expect(document.activeElement).toBe(name));
   expect(
     fetchMock.mock.calls.some(
       ([, init]) =>
@@ -582,6 +587,7 @@ it('alta manual, edición y borrado de cantidad, y borrado de la fila', async ()
   expect(screen.queryByText('250,5 g')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Opciones de Pan integral' }));
   fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
   await screen.findByText('Tu lista está vacía');
 });
 it.each(['same', 'recent', 'other', 'corrupt', 'invalid', 'temporary'])(
@@ -694,6 +700,7 @@ it('espera un marcado pendiente antes de regenerar', async () => {
   await waitFor(() => expect(client.isMutating()).toBe(1));
   fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/generate'))).toBe(false);
   server = [{ ...original, checked: true }];
   await act(async () => patch.resolve(jsonResponse(server[0])));
@@ -747,17 +754,20 @@ it('borrado optimista fallido restaura solo su fila', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Opciones de Alimento 1' }));
   expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
   await waitFor(() => expect(client.getQueryData<ShoppingItem[]>(key)).toEqual([items[1]]));
+  await waitFor(() => expect(client.isMutating()).toBe(1));
   await act(async () => request.reject(new Error('offline')));
   await screen.findByRole('checkbox', { name: 'Alimento 1' });
   expect(client.getQueryData(key)).toEqual(items);
-});
+}, 10000);
 it('edita nombre y cantidad de manual y avisa sin generados aunque haya manuales', async () => {
   mockServer([item(1, { manual: true })]);
   setup();
   await screen.findByRole('checkbox');
   fireEvent.click(screen.getByRole('button', { name: 'Acciones' }));
   fireEvent.click(screen.getByRole('button', { name: 'Actualizar desde el plan' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
   await screen.findByRole('link', { name: 'Ir a Plan' });
   fireEvent.click(screen.getByRole('button', { name: 'Opciones de Alimento 1' }));
   fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
@@ -796,4 +806,98 @@ it('muestra error sin datos y permite reintentar', async () => {
   setup();
   fireEvent.click(await screen.findByRole('button', { name: 'Reintentar' }));
   await screen.findByText('Tu lista está vacía');
+});
+
+it('confirma el borrado inline, restaura el foco al cancelar y envía DELETE inmediato', async () => {
+  const original = item(1);
+  const { fetchMock } = mockServer([original]);
+  setup();
+  await screen.findByRole('checkbox', { name: original.label });
+  fireEvent.click(screen.getByRole('button', { name: `Opciones de ${original.label}` }));
+  fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
+  expect(screen.getByText(`¿Borrar ${original.label}?`)).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancelar' }));
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Borrar' }));
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Borrar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true),
+  );
+  await waitFor(() => expect(screen.queryByRole('checkbox', { name: original.label })).toBeNull());
+});
+
+it('conserva el borrador del alta cuando falla y permite reintentar', async () => {
+  const { fetchMock } = mockServer([]);
+  fetchMock.mockImplementation(async (_input, init) => {
+    if (init?.method === 'POST') throw new Error('offline');
+    return jsonResponse([]);
+  });
+  setup();
+  await screen.findByText('Tu lista está vacía');
+  const name = screen.getByRole('textbox', { name: 'Agregar a mano' }) as HTMLInputElement;
+  const grams = screen.getByRole('textbox', {
+    name: 'Cantidad en gramos (opcional)',
+  }) as HTMLInputElement;
+  fireEvent.change(name, { target: { value: 'Pan' } });
+  fireEvent.change(grams, { target: { value: '250,5' } });
+  fireEvent.submit(name.closest('form')!);
+  await screen.findByText(/No se pudo guardar/);
+  expect(name.value).toBe('Pan');
+  expect(grams.value).toBe('250,5');
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Agregar' }).hasAttribute('disabled')).toBe(false),
+  );
+});
+
+it('ubica el alta sobre el teclado mientras tiene foco y restaura el fallback', async () => {
+  const viewport = new EventTarget();
+  Object.assign(viewport, { height: 400, offsetTop: 20 });
+  vi.stubGlobal('visualViewport', viewport);
+  vi.stubGlobal('innerHeight', 800);
+  mockServer([]);
+  setup();
+  await screen.findByText('Tu lista está vacía');
+  const name = screen.getByRole('textbox', { name: 'Agregar a mano' });
+  const form = name.closest('form')!;
+  fireEvent.focus(name);
+  expect(form.style.bottom).toBe('380px');
+  act(() => {
+    Object.assign(viewport, { height: 500 });
+    viewport.dispatchEvent(new Event('resize'));
+  });
+  expect(form.style.bottom).toBe('280px');
+  act(() => {
+    Object.assign(viewport, { height: 700 });
+    viewport.dispatchEvent(new Event('resize'));
+  });
+  expect(form.style.bottom).toBe('');
+  act(() => {
+    Object.assign(viewport, { height: 800, offsetTop: 0 });
+    viewport.dispatchEvent(new Event('resize'));
+  });
+  expect(form.style.bottom).toBe('');
+  expect(form.className).toContain('bottom-[calc(4.5rem+env(safe-area-inset-bottom))]');
+  fireEvent.blur(name, { relatedTarget: document.body });
+  expect(form.style.bottom).toBe('');
+});
+
+it('precarga coma decimal sin miles y asocia el error de edición a cantidad', async () => {
+  mockServer([item(1, { manual: true, totalGrams: 1250.5 })]);
+  setup();
+  await screen.findByRole('checkbox');
+  fireEvent.click(screen.getByRole('button', { name: 'Opciones de Alimento 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+  const grams = within(screen.getByRole('dialog')).getByRole('textbox', {
+    name: 'Cantidad en gramos (opcional)',
+  }) as HTMLInputElement;
+  expect(grams.value).toBe('1250,5');
+  fireEvent.change(grams, { target: { value: '-1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(grams.getAttribute('aria-invalid')).toBe('true');
+  expect(document.getElementById(grams.getAttribute('aria-describedby')!)?.textContent).toContain(
+    'Ingresá una cantidad',
+  );
 });

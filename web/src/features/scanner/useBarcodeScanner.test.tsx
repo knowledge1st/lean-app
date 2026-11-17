@@ -338,3 +338,53 @@ it('continúa si play no devuelve una promesa', async () => {
   await flush();
   expect(screen.getByText('scanning')).toBeTruthy();
 });
+
+it.each(['camera', 'play', 'detector'] as const)(
+  'limita el inicio a 15 segundos en %s y libera recursos tardíos',
+  async (stage) => {
+    const s = setup();
+    await flush();
+    s.rerender(<s.Harness active={false} />);
+    s.track.stop.mockClear();
+    const camera = deferred<MediaStream>();
+    const playback = deferred<void>();
+    const detector = deferred<DetectorLike>();
+    if (stage === 'camera') s.getUserMedia.mockReturnValue(camera.promise);
+    if (stage === 'play')
+      vi.mocked(HTMLVideoElement.prototype.play).mockReturnValue(playback.promise);
+    if (stage === 'detector') s.createDetector.mockReturnValue(detector.promise);
+    // A fresh hook also creates a fresh detector session.
+    s.unmount();
+    function SlowCamera() {
+      const videoRef = useRef<HTMLVideoElement>(null);
+      const { status } = useBarcodeScanner({
+        videoRef,
+        active: true,
+        onDetect: s.onDetect,
+        getUserMedia: s.getUserMedia,
+        createDetector: s.createDetector,
+      });
+      return (
+        <>
+          <video ref={videoRef} data-testid="slow-video" />
+          <span>{status}</span>
+        </>
+      );
+    }
+    render(<SlowCamera />);
+    await tick(14999);
+    expect(screen.getByText('starting')).toBeTruthy();
+    await tick(1);
+    expect(screen.getByText('error')).toBeTruthy();
+    expect(s.track.stop).toHaveBeenCalledTimes(stage === 'camera' ? 0 : 1);
+    await act(async () => {
+      camera.resolve(s.stream);
+      playback.resolve();
+      detector.resolve({ detect: s.detect });
+    });
+    expect(s.track.stop).toHaveBeenCalledTimes(1);
+    expect((screen.getByTestId('slow-video') as HTMLVideoElement).srcObject).toBeNull();
+    expect(screen.getByText('error')).toBeTruthy();
+    expect(s.onDetect).not.toHaveBeenCalled();
+  },
+);

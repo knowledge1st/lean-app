@@ -5,7 +5,7 @@ import { useCheckins } from './api';
 import { checkinDecisionLabel, checkinStatusLabel, formatKcal } from './messages';
 
 export function CheckinHistory() {
-  const query = useCheckins();
+  const query = useCheckins(52);
   return (
     <section className="space-y-3" aria-labelledby="checkin-history-title">
       <h2 id="checkin-history-title" className="text-xl font-semibold">
@@ -24,7 +24,7 @@ export function CheckinHistory() {
         <p>Todavía no hay revisiones. La primera aparece después de tu primera semana completa.</p>
       ) : (
         <ul className="divide-y divide-border">
-          {query.data.checkins.map((c) => (
+          {query.data.checkins.slice(0, 10).map((c) => (
             <li key={c.id} className="space-y-1 py-3">
               <p className="font-semibold">{formatWeekRange(c.weekStart, c.weekEnd)}</p>
               <p>

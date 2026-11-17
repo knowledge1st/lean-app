@@ -1,3 +1,4 @@
+import { ChartBoundary } from '../features/progress/ChartBoundary';
 import { CheckinHistory } from '../features/checkin/CheckinHistory';
 import { useCheckins } from '../features/checkin/api';
 import { lazy, Suspense, useState } from 'react';
@@ -34,9 +35,7 @@ export function Progreso() {
   return (
     <section className="min-w-0 space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Progreso</h1>
-      {logs.isPending || goal.isPending ? (
-        <Skeleton className="h-60!" />
-      ) : logs.isError || goal.isError ? (
+      {logs.isError || goal.isError ? (
         <ErrorState
           message="No se pudo cargar tu progreso."
           onRetry={() => {
@@ -44,20 +43,32 @@ export function Progreso() {
             void goal.refetch();
           }}
         />
+      ) : logs.isPending || goal.isPending ? (
+        <Skeleton className="h-60!" />
       ) : (
         <>
           <WeightSummary logs={logs.data.logs} goal={goal.data} today={today} />
           {register}
+          {checkins.isError && (
+            <div role="status" className="text-sm text-muted">
+              No se pudieron cargar las marcas de cambios de meta.
+              <Button variant="ghost" onClick={() => void checkins.refetch()}>
+                Reintentar
+              </Button>
+            </div>
+          )}
           {logs.data.logs.some((l) => l.weightKg !== null) ? (
             <Card className="min-w-0">
-              <Suspense fallback={<Skeleton className="h-60!" />}>
-                <WeightChart
-                  logs={logs.data.logs}
-                  goal={goal.data}
-                  today={today}
-                  goalChanges={goalChanges}
-                />
-              </Suspense>
+              <ChartBoundary>
+                <Suspense fallback={<Skeleton className="h-60!" />}>
+                  <WeightChart
+                    logs={logs.data.logs}
+                    goal={goal.data}
+                    today={today}
+                    goalChanges={goalChanges}
+                  />
+                </Suspense>
+              </ChartBoundary>
             </Card>
           ) : (
             <EmptyState
@@ -70,21 +81,11 @@ export function Progreso() {
             <h2 className="text-xl font-semibold">Medidas</h2>
             <MeasurementsList logs={logs.data.logs} />
           </Card>
-          {open && (
-            <LogWeightSheet
-              logs={logs.data.logs}
-              today={today}
-              open={open}
-              onOpenChange={setOpen}
-            />
-          )}
         </>
       )}
       <Card className="min-w-0 space-y-3">
         <h2 className="text-xl font-semibold">Semana</h2>
-        {summary.isPending || entries.isPending ? (
-          <Skeleton className="h-60!" />
-        ) : summary.isError || entries.isError ? (
+        {summary.isError || entries.isError ? (
           <ErrorState
             message="No se pudo cargar la semana."
             onRetry={() => {
@@ -92,12 +93,24 @@ export function Progreso() {
               void entries.refetch();
             }}
           />
+        ) : summary.isPending || entries.isPending ? (
+          <Skeleton className="h-60!" />
         ) : (
-          <Suspense fallback={<Skeleton className="h-60!" />}>
-            <WeekBars summary={summary.data} entries={entries.data} />
-          </Suspense>
+          <ChartBoundary>
+            <Suspense fallback={<Skeleton className="h-60!" />}>
+              <WeekBars summary={summary.data} entries={entries.data} />
+            </Suspense>
+          </ChartBoundary>
         )}
       </Card>
+      {open && (
+        <LogWeightSheet
+          logs={logs.data?.logs ?? []}
+          today={today}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      )}
       <Card>
         <CheckinHistory />
       </Card>

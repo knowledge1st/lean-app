@@ -101,10 +101,10 @@ export default function WeightChart({
               tick={{ fontSize: 12 }}
             />
             <YAxis
-              width={48}
+              width={64}
               domain={axis.domain}
               ticks={axis.ticks}
-              tickFormatter={(v) => formatNumber(Number(v))}
+              tickFormatter={(v) => `${formatNumber(Number(v))} kg`}
               stroke="var(--muted)"
               tick={{ fontSize: 12 }}
             />
@@ -156,6 +156,36 @@ export default function WeightChart({
           ))}
         </ul>
       )}
+      <details>
+        <summary className="flex min-h-11 cursor-pointer items-center text-accent">
+          Ver datos
+        </summary>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <caption className="sr-only">Datos de peso del rango seleccionado</caption>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Registrado</th>
+                <th>Tendencia</th>
+                {points.length > 0 && <th>Esperado</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.data.map((point) => (
+                <tr key={point.time}>
+                  <th>{shortDate(point.time)}</th>
+                  {[point.weight, point.trend, ...(points.length > 0 ? [point.expected] : [])].map(
+                    (value, index) => (
+                      <td key={index}>{value == null ? '—' : `${formatNumber(value)} kg`}</td>
+                    ),
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
       <figcaption className="text-sm text-muted">
         {last
           ? `Último peso registrado: ${formatNumber(last.weightKg!)} kg, ${shortDate(last.date)}. `
@@ -165,7 +195,8 @@ export default function WeightChart({
         {points.length > 0 &&
           goal?.targetWeightKg != null &&
           `Objetivo: ${formatNumber(goal.targetWeightKg)} kg. `}
-        {visible.logs.filter((l) => l.weightKg !== null).length} registros de peso en el rango.
+        {formatNumber(visible.logs.filter((l) => l.weightKg !== null).length, 0)} registros de peso
+        en el rango.
       </figcaption>
     </figure>
   );

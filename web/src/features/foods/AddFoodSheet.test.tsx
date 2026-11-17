@@ -33,7 +33,7 @@ const food: Food = {
   servingG: 30,
   servingLabel: '1 rebanada',
 };
-function setup() {
+function setup(date = '2026-11-14') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -45,7 +45,7 @@ function setup() {
         <button onClick={() => setOpen(true)}>Abrir hoja</button>
         {open && (
           <AddFoodSheet
-            date="2026-11-14"
+            date={date}
             meal="breakfast"
             onClose={() => setOpen(false)}
             onAdd={(selected, grams) => {
@@ -64,6 +64,18 @@ function setup() {
   );
   return { client, onAdd };
 }
+it.each([
+  ['2026-11-17', 'mar, 17 nov'],
+  ['2027-01-01', 'vie, 1 ene'],
+])('muestra la fecha %s en formato local sin cambiar el día', async (date, label) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([])));
+  const { client } = setup(date);
+  expect(screen.getByText(`Desayuno · ${label}`)).toBeTruthy();
+  expect(screen.queryByText(`Desayuno · ${date}`)).toBeNull();
+  await screen.findByText('Todavía no hay alimentos recientes.');
+  client.clear();
+});
+
 it('completa la carga con la porción inicial y reinicia la hoja al reabrir', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse([food])));
   const { client, onAdd } = setup();
@@ -323,7 +335,7 @@ it('muestra errores de red en el escáner y cerrar vuelve a búsqueda', async ()
   const { client } = setup();
   await openScanner();
   expect((await screen.findByRole('alert')).textContent).toBe(
-    'No se pudo conectar con el servidor.',
+    'No pudimos conectarnos. Volvé a intentar.',
   );
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar escáner' }));
   expect(screen.getByLabelText('Buscar alimento')).toBeTruthy();

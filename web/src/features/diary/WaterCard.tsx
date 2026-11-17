@@ -1,3 +1,4 @@
+import { formatNumber } from '../../lib/macros';
 import { useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -6,7 +7,6 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { useDaySummary } from './api';
 import { useWater, useWaterMutation } from './activityApi';
 
-const format = (value: number) => value.toLocaleString('es-AR');
 type Addition = { sequence: number; ml: number; result: Promise<boolean> };
 export function WaterCard({ date }: { date: string }) {
   return <WaterDay key={date} date={date} />;
@@ -31,7 +31,9 @@ function WaterDay({ date }: { date: string }) {
   }
   const total = query.data?.ml ?? 0;
   const target = summary.data?.target?.waterMl;
-  const text = target ? `${format(total)} de ${format(target)} ml` : `${format(total)} ml`;
+  const text = target
+    ? `${formatNumber(total)} de ${formatNumber(target)} ml`
+    : `${formatNumber(total)} ml`;
   return (
     <Card className="min-w-0 space-y-3">
       <h2 className="text-lg font-semibold">Agua</h2>
@@ -48,6 +50,14 @@ function WaterDay({ date }: { date: string }) {
         />
       ) : (
         <>
+          {query.isError && (
+            <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-muted">
+              <span>No se pudo actualizar</span>
+              <Button variant="ghost" onClick={() => void query.refetch()}>
+                Reintentar
+              </Button>
+            </div>
+          )}
           <p aria-live="polite">{text}</p>
           <div
             role="progressbar"

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import type { Plan } from '@lean/shared';
 import { ObjetivoNuevo } from './ObjetivoNuevo';
@@ -33,14 +33,19 @@ const plan: Plan = {
   warnings: [],
 };
 function mockApi(preview = plan) {
+  let created = false;
   const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (url, init) => {
     const path = new URL(String(url)).pathname;
     if (path === '/api/profile')
       return jsonResponse(init?.method === 'PUT' ? JSON.parse(String(init.body)) : profile);
+    if (path === '/api/goals/active' && created) return jsonResponse({ id: 'created-goal' });
     if (path === '/api/goals/active')
       return jsonResponse({ error: { code: 'goal_not_found', message: 'Sin objetivo' } }, 404);
     if (path === '/api/goals/preview') return jsonResponse(preview);
-    if (path === '/api/goals') return jsonResponse({ goal: {}, plan: preview }, 201);
+    if (path === '/api/goals') {
+      created = true;
+      return jsonResponse({ goal: { id: 'created-goal' }, plan: preview }, 201);
+    }
     throw new Error(`Unexpected ${path}`);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -189,7 +194,15 @@ it('oculta la fecha ajustada y bloquea un plan inviable con opciones para cambia
 it('guarda perfil cambiado antes de pedir preview y permite reintentar errores', async () => {
   const fetchMock = mockApi();
   stored({ step: 4, heightCm: '170' });
-  fetchMock.mockRejectedValueOnce(new Error('offline'));
+  const implementation = fetchMock.getMockImplementation()!;
+  let fail = true;
+  fetchMock.mockImplementation((url, init) => {
+    if (String(url).endsWith('/api/profile') && fail) {
+      fail = false;
+      return Promise.reject(new Error('offline'));
+    }
+    return implementation(url, init);
+  });
   setup();
   await screen.findByText(/No pudimos armar tu plan/);
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
@@ -239,6 +252,7 @@ it('serializa un PUT viejo y crea con el perfil del plan actual', async () => {
       creations.push(serverProfile.heightCm);
       return jsonResponse({ goal: {}, plan });
     }
+    if (path === '/api/goals/active') return jsonResponse({ id: 'created-goal' });
     throw new Error(`Unexpected ${path}`);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -262,7 +276,12 @@ it('serializa un PUT viejo y crea con el perfil del plan actual', async () => {
   await screen.findByText('1.700 kcal');
   expect(serverProfile.heightCm).toBe(170);
   expect(previews).toEqual([170]);
-  fireEvent.click(screen.getByRole('button', { name: 'Empezar' }));
+  expect(
+    screen.getByText('Vas a reemplazar tu objetivo actual. El anterior queda en el historial.'),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Reemplazar objetivo' }));
+  expect(creations).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar reemplazo' }));
   await screen.findByRole('heading', { name: 'Hoy destino' });
   expect(creations).toEqual([170]);
 });
@@ -343,4 +362,79 @@ it('restablece el perfil del borrador antes de crear y permite reintentar un PUT
   fireEvent.click(screen.getByRole('button', { name: 'Empezar' }));
   await screen.findByRole('heading', { name: 'Hoy destino' });
   expect(createdHeights).toEqual([165]);
+});
+
+it('enfoca el primer control inválido y asocia los errores de opciones y números', async () => {
+  mockApi();
+  setup();
+  await screen.findByLabelText('Altura');
+  next();
+  const weight = screen.getByLabelText('Peso actual');
+  expect(document.activeElement).toBe(weight);
+  expect(weight.getAttribute('aria-invalid')).toBe('true');
+  expect(document.getElementById(weight.getAttribute('aria-describedby')!)?.textContent).toBe(
+    'Indicá tu peso',
+  );
+  fill('Peso actual', '70');
+  next();
+  next();
+  const option = screen.getByRole('radio', { name: /Llegar a un peso/ });
+  expect(document.activeElement).toBe(option);
+  expect(document.getElementById(option.getAttribute('aria-describedby')!)?.textContent).toBe(
+    'Elegí una opción',
+  );
+});
+
+it('conserva el plan durante una nueva previsualización y reutiliza el plan reciente', async () => {
+  const fetchMock = mockApi();
+  stored({ step: 4 });
+  setup();
+  await screen.findByText('1.876 kcal');
+  expect(screen.getByText('Tus datos personales ya quedaron guardados.')).toBeTruthy();
+  await act(async () => {
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Atrás' }));
+  next();
+  await screen.findByText('1.876 kcal');
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/preview'))).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Atrás' }));
+  fill('Peso objetivo', '64');
+  const pending = deferred<Response>();
+  const implementation = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) =>
+    String(url).endsWith('/preview') ? pending.promise : implementation(url, init),
+  );
+  next();
+  expect(screen.getByText('1.876 kcal')).toBeTruthy();
+  expect((screen.getByRole('button', { name: 'Empezar' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  await act(async () => {
+    pending.resolve(jsonResponse(plan));
+  });
+});
+
+it('precarga altura y peso con coma decimal', async () => {
+  const fetchMock = mockApi();
+  const implementation = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) => {
+    if (String(url).endsWith('/api/profile'))
+      return Promise.resolve(jsonResponse({ ...profile, heightCm: 165.5 }));
+    if (String(url).endsWith('/api/goals/active'))
+      return Promise.resolve(jsonResponse({ progress: { currentWeightKg: 72.5 } }));
+    return implementation(url, init);
+  });
+  setup();
+  await screen.findByLabelText('Altura');
+  expect((screen.getByLabelText('Altura') as HTMLInputElement).value).toBe('165,5');
+  expect((screen.getByLabelText('Peso actual') as HTMLInputElement).value).toBe('72,5');
+});
+
+it('muestra el error de carga con la redacción común', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+  const { client } = setup();
+  expect(await screen.findByText('No se pudo cargar tus datos.')).toBeTruthy();
+  client.clear();
 });

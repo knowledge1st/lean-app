@@ -153,3 +153,18 @@ it('deshace la suma más reciente después de que un deshacer lento falle', asyn
   expect(post).toHaveBeenNthCalledWith(4, '/api/water', { date, ml: -500 });
   client.clear();
 });
+
+it('avisa si falla la recarga con caché y reintenta conservando el valor', async () => {
+  const { client } = setup();
+  vi.mocked(api.get).mockRejectedValue(new Error('offline'));
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: waterKey(date) });
+  });
+  expect(await screen.findByText('No se pudo actualizar')).toBeTruthy();
+  expect(screen.getByText('1.000 de 2.500 ml')).toBeTruthy();
+  vi.mocked(api.get).mockResolvedValue({ date, ml: 1500 });
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByText('1.500 de 2.500 ml')).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText('No se pudo actualizar')).toBeNull());
+  client.clear();
+});

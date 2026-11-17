@@ -1,32 +1,40 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Entry, ShoppingItem } from '@lean/shared';
+import { isoWeekRange, type CopyEntriesInput, type Entry, type ShoppingItem } from '@lean/shared';
+import { addDays } from '../../lib/date';
+import { shoppingKey } from '../shopping/api';
 import { api } from '../../lib/api';
 
-export type CopyEntriesBody = {
-  scope: 'day' | 'week';
-  from: string;
-  to: string;
-  mode: 'append' | 'replace';
-};
+export type CopyEntriesBody = CopyEntriesInput;
 export const copyEntries = (body: CopyEntriesBody) => api.post<Entry[]>('/api/entries/copy', body);
 export const generateShopping = (week: string) =>
   api.post<ShoppingItem[]>('/api/shopping/generate', { week });
 
-function useInvalidateSummaries() {
-  const client = useQueryClient();
-  return () =>
-    Promise.all([
-      client.invalidateQueries({ queryKey: ['summary', 'day'] }),
-      client.invalidateQueries({ queryKey: ['summary', 'week'] }),
-    ]);
-}
 export function useCopyEntries() {
-  const invalidate = useInvalidateSummaries();
-  return useMutation({ mutationFn: copyEntries, onSettled: invalidate });
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: copyEntries,
+    onSuccess: async (entries, body) => {
+      const destinations =
+        body.scope === 'week'
+          ? Array.from({ length: 7 }, (_, index) => addDays(isoWeekRange(body.to).from, index))
+          : [body.to];
+      const dates = new Set([...destinations, ...entries.map((entry) => entry.date)]);
+      await Promise.all([
+        ...Array.from(dates, (date) =>
+          client.invalidateQueries({ queryKey: ['summary', 'day', date], exact: true }),
+        ),
+        client.invalidateQueries({ queryKey: ['summary', 'week'] }),
+      ]);
+    },
+  });
 }
 export function useGenerateShopping() {
-  const invalidate = useInvalidateSummaries();
-  return useMutation({ mutationFn: generateShopping, onSettled: invalidate });
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: generateShopping,
+    onSuccess: (_items, week) =>
+      client.invalidateQueries({ queryKey: shoppingKey(week), exact: true }),
+  });
 }
 export function kcalStatus(
   totalKcal: number,

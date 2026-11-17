@@ -1,3 +1,4 @@
+import { formatNumber } from '../../lib/macros';
 import { useState } from 'react';
 import type { ExerciseLog } from '@lean/shared';
 import { Button } from '../../components/ui/Button';
@@ -34,10 +35,16 @@ function ExerciseDay({ date }: { date: string }) {
         />
       ) : (
         <>
+          {query.isError && (
+            <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-muted">
+              <span>No se pudo actualizar</span>
+              <Button variant="ghost" onClick={() => void query.refetch()}>
+                Reintentar
+              </Button>
+            </div>
+          )}
           <p>
-            Total:{' '}
-            {query.data.logs.reduce((total, log) => total + log.kcal, 0).toLocaleString('es-AR')}{' '}
-            kcal
+            Total: {formatNumber(query.data.logs.reduce((total, log) => total + log.kcal, 0))} kcal
           </p>
           {query.data.logs.length ? (
             <ul className="space-y-2">
@@ -48,7 +55,8 @@ function ExerciseDay({ date }: { date: string }) {
                     className="w-full justify-start! text-left whitespace-normal [overflow-wrap:anywhere]"
                     onClick={() => setEditing(log)}
                   >
-                    {log.activity} · {log.minutes} min{log.kcal > 0 ? ` · ${log.kcal} kcal` : ''}
+                    {log.activity} · {formatNumber(log.minutes)} min
+                    {log.kcal > 0 ? ` · ${formatNumber(log.kcal)} kcal` : ''}
                   </Button>
                 </li>
               ))}

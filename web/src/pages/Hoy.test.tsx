@@ -8,6 +8,7 @@ import { jsonResponse } from '../auth/testUtils';
 import { ToastProvider } from '../components/ui/Toast';
 import { activeGoalKey, useCreateGoal } from '../features/goals/api';
 import { markWizardSkipped } from '../features/goals/draft';
+import { QUICK_LOG_IDLE_MS } from '../features/diary/quickLog';
 import { todayLocal } from '../lib/date';
 import { useWater, useExercise } from '../features/diary/activityApi';
 import { api } from '../lib/api';
@@ -28,6 +29,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   clearToken();
   localStorage.clear();
 });
@@ -94,7 +96,16 @@ function Location() {
     </>
   );
 }
-function setup(path = '/hoy?fecha=2026-11-14', seed = true, create = false) {
+function setup(
+  path = '/hoy?fecha=2026-11-14',
+  seed = true,
+  create = false,
+  options: { lastShownAt?: number; cachedNullGoal?: boolean } = {},
+) {
+  localStorage.setItem(
+    'lean.quickLog.v1',
+    JSON.stringify({ lastShownAt: options.lastShownAt ?? Date.now(), lastHiddenAt: 0 }),
+  );
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -104,6 +115,7 @@ function setup(path = '/hoy?fecha=2026-11-14', seed = true, create = false) {
     client.setQueryDefaults(['summary', 'week'], { staleTime: Infinity });
     client.setQueryData(['summary', 'week', '2026-W46'], { budgetKcal: null });
   }
+  if (options.cachedNullGoal) client.setQueryData(activeGoalKey, null);
   const originalGet = api.get;
   vi.spyOn(api, 'get').mockImplementation((path, options) =>
     path === '/api/checkins/pending'
@@ -180,7 +192,10 @@ it.each(['eat', 'delete', 'edit', 'add'] as const)(
       if (kind === 'edit') {
         fireEvent.change(screen.getByLabelText('Gramos'), { target: { value: '150' } });
         fireEvent.click(screen.getByText('Guardar'));
-      } else fireEvent.click(screen.getByText('Borrar'));
+      } else {
+        fireEvent.click(screen.getByText('Borrar'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sí, borrar' }));
+      }
     }
     const key = ['summary', 'day', summary.date];
     await waitFor(() => {
@@ -624,5 +639,178 @@ it('un error del check-in no afecta el día', async () => {
   expect(screen.getByText('Pan')).toBeTruthy();
   expect(screen.queryByRole('region', { name: 'Tu revisión semanal' })).toBeNull();
   expect(screen.queryByRole('alert')).toBeNull();
+  client.clear();
+});
+
+it('conserva Hoy mientras recarga un objetivo con null viejo en caché', async () => {
+  let resolve!: (response: Response) => void;
+  const pending = new Promise<Response>((done) => {
+    resolve = done;
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof fetch>()
+      .mockImplementation((input) =>
+        String(input).includes('/goals/active') ? pending : Promise.resolve(jsonResponse(summary)),
+      ),
+  );
+  const client = setup(undefined, false, false, { cachedNullGoal: true });
+  await screen.findByText('Pan');
+  expect(screen.getByLabelText('Ruta').textContent).toBe('/hoy');
+  expect(screen.queryByText('Nuevo objetivo')).toBeNull();
+  await act(async () => {
+    resolve(jsonResponse(activeGoal));
+  });
+  await waitFor(() => expect(client.getQueryData(activeGoalKey)).toEqual(activeGoal));
+  expect(screen.getByLabelText('Ruta').textContent).toBe('/hoy');
+  client.clear();
+});
+it.each([true, false])('el aviso de carga respeta el umbral vencido=%s', async (expired) => {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(jsonResponse(recalculateSummary({ ...summary, date: todayLocal() }, []))),
+  );
+  const client = setup('/hoy', true, false, {
+    lastShownAt: Date.now() - (expired ? QUICK_LOG_IDLE_MS : 1000),
+  });
+  await screen.findByRole('button', { name: 'Agregar a Cena' });
+  if (expired) {
+    expect(
+      await screen.findByRole('dialog', { name: '¿Querés cargar alguna comida?' }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Ahora no' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  } else expect(screen.queryByRole('dialog')).toBeNull();
+  client.clear();
+});
+it('elegir Cena navega a hoy y abre la hoja para agregar a Cena', async () => {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(jsonResponse(recalculateSummary({ ...summary, date: todayLocal() }, []))),
+  );
+  const client = setup(undefined, true, false, { lastShownAt: 0 });
+  fireEvent.click(await screen.findByRole('button', { name: 'Cena' }));
+  expect(screen.getByLabelText('URL').textContent).toBe(`?fecha=${todayLocal()}`);
+  expect(await screen.findByRole('dialog', { name: 'Agregar alimento' })).toBeTruthy();
+  const expectedDate = new Intl.DateTimeFormat('es-AR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(`${todayLocal()}T12:00:00Z`));
+  expect(screen.getByText(`Cena · ${expectedDate}`)).toBeTruthy();
+  expect(screen.queryByRole('dialog', { name: '¿Querés cargar alguna comida?' })).toBeNull();
+  client.clear();
+});
+
+it('vuelve a ofrecer una comida tras tres horas oculta y Escape cuenta como mostrado', async () => {
+  let visibility: DocumentVisibilityState = 'visible';
+  let now = Date.now();
+  vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(jsonResponse(recalculateSummary({ ...summary, date: todayLocal() }, []))),
+  );
+  const client = setup('/hoy');
+  await screen.findAllByText('Sin alimentos');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  act(() => {
+    visibility = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  now += QUICK_LOG_IDLE_MS - 1;
+  act(() => {
+    visibility = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  act(() => {
+    visibility = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  now += QUICK_LOG_IDLE_MS;
+  act(() => {
+    visibility = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const dialog = await screen.findByRole('dialog', { name: '¿Querés cargar alguna comida?' });
+  const buttons = within(dialog)
+    .getAllByRole('button')
+    .filter((button) => button.textContent !== '✕' && button.textContent !== 'Ahora no');
+  expect(buttons).toHaveLength(5);
+  expect(buttons[0]!.parentElement?.className).toContain('grid-cols-2');
+  for (const button of buttons) expect(button.className).toContain('min-h-11');
+  now += 1000;
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(JSON.parse(localStorage.getItem('lean.quickLog.v1')!).lastShownAt).toBe(now);
+  client.clear();
+});
+it('omite el aviso si hoy ya se cargó una entrada comida en la última hora', async () => {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  const entry = {
+    ...summary.meals[0]!.entries[0]!,
+    date: todayLocal(),
+    status: 'eaten' as const,
+    createdAt: new Date().toISOString(),
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(recalculateSummary({ ...summary, date: todayLocal() }, [entry])),
+      ),
+  );
+  const client = setup('/hoy', true, false, { lastShownAt: 0 });
+  await screen.findByText('Pan');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  client.clear();
+});
+it('mantiene el aviso cerrado cuando falla el storage', async () => {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(jsonResponse(recalculateSummary({ ...summary, date: todayLocal() }, []))),
+  );
+  const client = setup('/hoy', true, false, { lastShownAt: 0 });
+  await screen.findByRole('button', { name: 'Agregar a Cena' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  client.clear();
+});
+
+it.each([
+  { date: '2026-11-10', title: 'mar, 10 nov' },
+  { date: '2026-11-17', title: 'Hoy' },
+])('muestra $title y la fecha una sola vez en el encabezado', async ({ date, title }) => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-17T12:00:00Z'));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(summary)));
+  const client = setup(`/hoy?fecha=${date}`);
+  await screen.findByText('Pan');
+  const expected = new Intl.DateTimeFormat('es-AR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T12:00:00Z`));
+  const heading = within(screen.getByRole('heading', { level: 1 }));
+  expect(heading.getByText(title)).toBeTruthy();
+  expect(heading.getAllByText(expected)).toHaveLength(1);
   client.clear();
 });

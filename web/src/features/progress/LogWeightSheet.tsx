@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { localDateSchema, putBodyLogSchema } from '@lean/shared';
+import { useToast } from '../../components/ui/Toast';
 import { Sheet } from '../../components/ui/Sheet';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { NumberInput } from '../../components/ui/NumberInput';
-import { decimalValue } from '../../lib/macros';
+import { decimalValue, formatNumber } from '../../lib/macros';
 import { bodyFields, type ProgressLog } from './calc';
 import { useLogWeight } from './api';
 
@@ -20,20 +21,35 @@ export function LogWeightSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const [date, setDate] = useState(today);
-  const [values, setValues] = useState(() =>
-    Object.fromEntries(
-      bodyFields.map((f) => {
-        const value = [...logs].reverse().find((l) => l[f.key] !== null)?.[f.key];
-        return [f.key, value != null ? String(value).replace('.', ',') : ''];
-      }),
-    ),
-  );
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
+  const formRef = useRef<HTMLFormElement>(null);
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  function focusField(key: string) {
+    if (key !== 'date' && key !== 'weightKg' && detailsRef.current) detailsRef.current.open = true;
+    formRef.current?.querySelector<HTMLInputElement>(`[name="${key}"]`)?.focus();
+  }
   const mutation = useLogWeight();
+  const toast = useToast();
   const field = (f: (typeof bodyFields)[number]) => (
     <NumberInput
       key={f.key}
+      disabled={mutation.isPending}
       label={f.label}
+      name={f.key}
+      error={errors[f.key]}
+      placeholder={(() => {
+        const previous = [...logs].reverse().find((log) => log[f.key] !== null)?.[f.key];
+        return previous == null ? undefined : `Último: ${formatNumber(previous)} ${f.unit}`;
+      })()}
       unit={f.unit}
       value={values[f.key] ?? ''}
       onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
@@ -47,11 +63,16 @@ export function LogWeightSheet({
       description="Cargá tu peso o las medidas que quieras seguir."
     >
       <form
+        ref={formRef}
+        noValidate
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
+          setErrors({});
+          setError('');
           if (!localDateSchema.safeParse(date).success || date > today) {
-            setError('Elegí una fecha válida, hasta hoy.');
+            setErrors({ date: 'Elegí una fecha válida, hasta hoy.' });
+            focusField('date');
             return;
           }
           const parsed = putBodyLogSchema.safeParse(
@@ -62,24 +83,44 @@ export function LogWeightSheet({
             ),
           );
           if (!parsed.success) {
+            const fieldErrors = Object.fromEntries(
+              parsed.error.issues.map((issue) => [
+                String(issue.path[0] ?? 'weightKg'),
+                issue.message,
+              ]),
+            );
+            setErrors(fieldErrors);
+            focusField(Object.keys(fieldErrors)[0]!);
             setError(
               `Revisá los valores. ${parsed.error.issues[0]?.message ?? 'Indicá al menos un campo.'}`,
             );
             return;
           }
-          mutation.mutate({ date, values: parsed.data });
-          onOpenChange(false);
+          if (mutation.isPending) return;
+          void mutation.mutateAsync({ date, values: parsed.data }).then(
+            () => {
+              toast('Guardaste tu registro');
+              if (mounted.current) onOpenChange(false);
+            },
+            () => {
+              if (mounted.current)
+                setError('No se pudo guardar. Revisá tu conexión y volvé a intentarlo.');
+            },
+          );
         }}
       >
         <Input
           label="Fecha"
+          name="date"
+          disabled={mutation.isPending}
+          error={errors.date}
           type="date"
           value={date}
           max={today}
           onChange={(e) => setDate(e.target.value)}
         />
         {field(bodyFields[0])}
-        <details>
+        <details ref={detailsRef}>
           <summary className="flex min-h-11 cursor-pointer items-center text-accent">
             Grasa y medidas
           </summary>

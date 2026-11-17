@@ -9,6 +9,7 @@ import { jsonResponse } from '../../auth/testUtils';
 import { clearToken, setToken } from '../../lib/session';
 import { summaryKey, useDaySummary, useDiaryMutation, waitForDiaryIdle } from './api';
 import { WeekBudgetBar } from '../goals/WeekBudgetBar';
+import { WeekStrip } from '../plan/WeekStrip';
 import { useWeekSummary } from '../goals/api';
 import { incorporateDiaryResult, type DiaryAction } from './optimistic';
 vi.mock('../../lib/api', async (importOriginal) => {
@@ -85,6 +86,59 @@ function setup() {
   );
   return { client, wrapper };
 }
+it.each(['success', 'error'])(
+  'WeekStrip conserva un alta optimista al invalidar y sincroniza tras %s',
+  async (outcome) => {
+    const request = deferred();
+    const original = base();
+    const action = actions[0]!.action;
+    const saved = { ...entry, id: 'saved' };
+    let server = original;
+    let reads = 0;
+    let writes = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockImplementation((_input, init) => {
+        if (init?.method === 'POST') {
+          writes++;
+          return request.promise;
+        }
+        reads++;
+        return Promise.resolve(jsonResponse(server));
+      }),
+    );
+    const { client, wrapper: Wrapper } = setup();
+    const { result, rerender } = renderHook(() => useDiaryMutation(), {
+      wrapper: ({ children }: PropsWithChildren) => (
+        <Wrapper>
+          {children}
+          <WeekStrip dates={[entry.date]} selected={entry.date} onSelect={() => {}} />
+        </Wrapper>
+      ),
+    });
+    await waitFor(() => expect(client.getQueryData(summaryKey(entry.date))).toEqual(original));
+    act(() => result.current.mutate(action));
+    await waitFor(() => expect(writes).toBe(1));
+    const optimistic = client.getQueryData<DaySummary>(summaryKey(entry.date))!;
+    expect(optimistic.meals[0]!.entries.some((item) => item.id === 'temp')).toBe(true);
+    rerender();
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: summaryKey(entry.date) });
+    });
+    expect(reads).toBe(1);
+    expect(client.getQueryData(summaryKey(entry.date))).toEqual(optimistic);
+    await act(async () => {
+      if (outcome === 'success') {
+        server = incorporateDiaryResult(original, action, saved);
+        request.resolve(jsonResponse(saved));
+      } else request.reject(new Error('offline'));
+    });
+    await waitFor(() => expect(client.isMutating()).toBe(0));
+    expect(reads).toBe(2);
+    expect(client.getQueryData(summaryKey(entry.date))).toEqual(server);
+    client.clear();
+  },
+);
 it('restaura base exacta tras fallar gramos y comida en cola', async () => {
   const requests = [deferred(), deferred()];
   let writes = 0;
@@ -514,3 +568,45 @@ it('waitForDiaryIdle espera todas las mutaciones del diario y se desuscribe, ign
   subscribe.mockRestore();
   client.clear();
 });
+
+it.each(['add', 'edit', 'delete'] as const)(
+  'invalida entradas de Progreso al finalizar %s con éxito o error',
+  async (kind) => {
+    for (const failed of [false, true]) {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockImplementation(() =>
+            failed
+              ? Promise.reject(new Error('offline'))
+              : Promise.resolve(jsonResponse(kind === 'delete' ? null : entry)),
+          ),
+      );
+      const { client, wrapper } = setup();
+      client.setQueryData(summaryKey(entry.date), base());
+      const key = ['progress', 'entries', '2026-11-09', '2026-11-15'];
+      client.setQueryData(key, [entry]);
+      const { result, unmount } = renderHook(() => useDiaryMutation(), { wrapper });
+      const action: DiaryAction =
+        kind === 'add'
+          ? {
+              kind,
+              date: entry.date,
+              meal: entry.meal,
+              food: { ...entry.food, ...ZERO_MACROS, createdByMe: false, barcode: null },
+              grams: entry.grams,
+              temporaryId: 'temp-test',
+            }
+          : kind === 'edit'
+            ? { kind, entry, changes: { grams: 50 } }
+            : { kind, entry };
+      await act(async () => {
+        await result.current.mutateAsync(action).catch(() => {});
+      });
+      expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+      unmount();
+      client.clear();
+    }
+  },
+);
