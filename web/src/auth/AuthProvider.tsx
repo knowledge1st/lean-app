@@ -27,6 +27,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const closeSession = useCallback(() => {
     generation.current += 1;
     clearToken();
+    try {
+      localStorage.removeItem('lean.shopping.v1');
+    } catch {
+      // Storage may be unavailable.
+    }
     queryClient.clear();
     setUser(null);
     setStatus('anonymous');
