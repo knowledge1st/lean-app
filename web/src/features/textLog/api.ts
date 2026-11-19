@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CreateEntriesBatch, Entry, ParseMealText, ParseMealTextResponse } from '@lean/shared';
+import type {
+  CreateEntriesBatch,
+  Entry,
+  ParseMealPhoto,
+  ParseMealText,
+  ParseMealTextResponse,
+} from '@lean/shared';
 import { api } from '../../lib/api';
 import { deleteEntry, summaryKey } from '../diary/api';
 import { useToast } from '../../components/ui/Toast';
@@ -8,10 +14,12 @@ export function useTextLogFeatures() {
   return useQuery({
     queryKey: ['me', 'features'],
     queryFn: async ({ signal }) => {
-      const me = await api.get<{ features?: { textLog: boolean; textLogAi: boolean } }>('/api/me', {
+      const me = await api.get<{
+        features?: { textLog: boolean; textLogAi: boolean; photoLog?: boolean };
+      }>('/api/me', {
         signal,
       });
-      return me.features ?? { textLog: false, textLogAi: false };
+      return { textLog: false, textLogAi: false, photoLog: false, ...me.features };
     },
   });
 }
@@ -21,6 +29,14 @@ export const useParseMealText = () =>
       api.post<ParseMealTextResponse>('/api/entries/parse-text', body, {
         signal,
         timeoutMs: 35000,
+      }),
+  });
+export const useParseMealPhoto = () =>
+  useMutation({
+    mutationFn: ({ body, signal }: { body: ParseMealPhoto; signal: AbortSignal }) =>
+      api.post<ParseMealTextResponse>('/api/entries/parse-photo', body, {
+        signal,
+        timeoutMs: 65000,
       }),
   });
 export function useCreateEntriesBatch(date: string, onClose: () => void) {
