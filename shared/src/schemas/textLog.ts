@@ -5,6 +5,18 @@ import { foodSchema } from './food';
 export const TEXT_LOG_MAX_CHARS = 1000;
 export const TEXT_LOG_MAX_ITEMS = 30;
 export const TEXT_LOG_DAILY_LIMIT = 20;
+export const PHOTO_LOG_DAILY_LIMIT = 10;
+export const PHOTO_LOG_MAX_DATA_URL = 700_000;
+
+export const parseMealPhotoSchema = z.object({
+  image: z
+    .string()
+    .max(PHOTO_LOG_MAX_DATA_URL, 'La foto es demasiado grande')
+    .refine((s) => s.startsWith('data:image/jpeg;base64,'), 'Formato de foto inválido'),
+  date: localDateSchema,
+  defaultMeal: mealSchema,
+});
+export type ParseMealPhoto = z.infer<typeof parseMealPhotoSchema>;
 
 export const parseMealTextSchema = z.object({
   text: z
@@ -113,6 +125,11 @@ export const createEntriesBatchSchema = z.object({
 });
 
 export const textLogStatusSchema = z.object({
+  photo: z.object({
+    available: z.boolean(),
+    candidates: z.array(z.string()),
+    degraded: z.array(z.string()),
+  }),
   available: z.boolean(),
   candidates: z.array(z.string()),
   degraded: z.array(z.string()),
@@ -120,7 +137,11 @@ export const textLogStatusSchema = z.object({
   freeRemainingToday: z.number().int().nullable(),
 });
 
-export const meFeaturesSchema = z.object({ textLog: z.boolean(), textLogAi: z.boolean() });
+export const meFeaturesSchema = z.object({
+  textLog: z.boolean(),
+  textLogAi: z.boolean(),
+  photoLog: z.boolean(),
+});
 
 export type ParseMealText = z.infer<typeof parseMealTextSchema>;
 export type AiMealParse = z.infer<typeof aiMealParseSchema>;

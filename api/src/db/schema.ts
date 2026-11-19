@@ -457,8 +457,11 @@ export const textLogUsage = pgTable(
     completionTokens: integer('completion_tokens'),
     attempts: integer('attempts').notNull().default(0),
     outcome: text('outcome').notNull(),
+    kind: text('kind').notNull().default('text'),
   },
   (t) => [
+    check('text_log_usage_kind_check', sql`${t.kind} IN ('text', 'photo')`),
+    index('text_log_usage_user_id_kind_created_at_idx').on(t.userId, t.kind, t.createdAt),
     index('text_log_usage_user_id_created_at_idx').on(t.userId, t.createdAt),
     check(
       'text_log_usage_outcome_check',

@@ -42,6 +42,7 @@ const food: Food = {
 };
 const state = {
   candidates: ['qwen/a:free', 'qwen/b:free'],
+  photoCandidates: ['qwen/a:free', 'qwen/b:free'],
   freeRemaining: 10,
   freeCheckedAt: null,
   checkedAt: new Date(),
@@ -446,5 +447,144 @@ describe('batch route', () => {
     expect((await request('batch', { date: 'bad', status: 'eaten', items: [] })).status).toBe(400);
     expect(insert).not.toHaveBeenCalled();
     expect(getDb).not.toHaveBeenCalled();
+  });
+});
+
+describe('parse-photo with injected fetch', () => {
+  const photo = { image: 'data:image/jpeg;base64,YQ==', date: input.date, defaultMeal: 'lunch' };
+  it('returns the shared proposal with default meal, estimated grams and photo quota', async () => {
+    network.mockResolvedValue(reply({ ...parse, otherDayMentioned: true }));
+    const response = await request('parse-photo', photo);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      interpreter: 'ai',
+      warnings: [],
+      remainingToday: 9,
+      items: [{ meal: 'lunch', mealSource: 'default', grams: 200, gramsEstimated: true }],
+    });
+    expect(reserveAiUse).toHaveBeenCalledWith(db, 'session-user', expect.any(String), 'photo');
+    expect(remainingToday).toHaveBeenCalledWith(
+      db,
+      'session-user',
+      expect.any(String),
+      10,
+      'photo',
+    );
+    const body = JSON.parse(String(network.mock.calls[0]?.[1]?.body));
+    expect(body.messages[1].content).toEqual([
+      { type: 'text', text: 'Foto de la comida.' },
+      { type: 'image_url', image_url: { url: photo.image } },
+    ]);
+    expect(insert).not.toHaveBeenCalled();
+    expect(JSON.stringify(vi.mocked(finishAiUse).mock.calls)).not.toContain(photo.image);
+  });
+  it('rejects oversized Content-Length before body validation or database access', async () => {
+    const response = await app.request(
+      '/entries/parse-photo',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': '702001' },
+        body: '{}',
+      },
+      testEnv,
+    );
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ error: { code: 'photo_too_large' } });
+    expect(getDb).not.toHaveBeenCalled();
+  });
+  it.each([
+    'data:image/png;base64,YQ==',
+    'YQ==',
+    'data:image/jpeg;base64,',
+    'data:image/jpeg;base64,AAA',
+    'data:image/jpeg;base64,AA?=',
+    'data:image/jpeg;base64,A===',
+    'data:image/jpeg;base64,====',
+  ])('rejects invalid prefix or base64 tail %s', async (image) => {
+    const response = await request('parse-photo', { ...photo, image });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'validation_error' } });
+    expect(getDb).not.toHaveBeenCalled();
+  });
+  it('requires a key and never falls back to rules', async () => {
+    const response = await request('parse-photo', photo, false);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'ai_unavailable' } });
+    expect(network).not.toHaveBeenCalled();
+    expect(reserveAiUse).not.toHaveBeenCalled();
+  });
+  it.each(['personal', 'account'])('returns photo quota for %s exhaustion', async (kind) => {
+    if (kind === 'personal')
+      vi.mocked(reserveAiUse).mockResolvedValue({ reserved: false, usedToday: 10 });
+    else vi.mocked(getFreeModels).mockResolvedValue({ ...state, freeRemaining: 0 });
+    const response = await request('parse-photo', photo);
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ error: { code: 'photo_log_quota' } });
+    expect(network).not.toHaveBeenCalled();
+    expect(finishAiUse).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['busy', 429, 'text_log_busy'],
+    ['provider', 503, 'ai_unavailable'],
+    ['paid', 503, 'ai_unavailable'],
+    ['invalid', 503, 'ai_unavailable'],
+    ['empty', 422, 'photo_not_understood'],
+    ['no_models', 503, 'ai_unavailable'],
+  ] as const)('maps %s to %s %s', async (mode, status, code) => {
+    if (mode === 'no_models')
+      vi.mocked(getFreeModels).mockResolvedValue({ ...state, photoCandidates: [] });
+    else if (mode === 'busy' || mode === 'provider')
+      network.mockResolvedValue(new Response('', { status: mode === 'busy' ? 429 : 500 }));
+    else if (mode === 'paid') network.mockResolvedValue(reply(parse, 'paid/model'));
+    else if (mode === 'invalid')
+      network.mockResolvedValue(Response.json({ model: 'qwen/a:free', choices: [] }));
+    else network.mockResolvedValue(reply({ items: [], otherDayMentioned: false }));
+    const response = await request('parse-photo', photo);
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ error: { code } });
+    expect(insert).not.toHaveBeenCalled();
+  });
+  it('releases a reservation when photo preparation reaches the deadline', async () => {
+    vi.useFakeTimers();
+    const select = db.select.bind(db);
+    vi.spyOn(db, 'select').mockImplementation(((...args: Parameters<typeof db.select>) => {
+      const query = select(...args);
+      return {
+        from: (table: Parameters<typeof getTableName>[0]) =>
+          getTableName(table) === 'foods'
+            ? { where: () => ({ orderBy: () => new Promise(() => {}) }) }
+            : query.from(table),
+      };
+    }) as typeof db.select);
+    const pending = request('parse-photo', photo);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect((await pending).status).toBe(503);
+    expect(deleteWhere).toHaveBeenCalledWith(eq(textLogUsage.id, 'usage'));
+    expect(network).not.toHaveBeenCalled();
+    expect(finishAiUse).not.toHaveBeenCalled();
+  });
+  it('releases a late photo reservation after abort through waitUntil', async () => {
+    vi.useFakeTimers();
+    let reserve!: (value: Awaited<ReturnType<typeof reserveAiUse>>) => void;
+    vi.mocked(reserveAiUse).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          reserve = resolve;
+        }),
+    );
+    const tasks: Promise<unknown>[] = [];
+    const pending = request('parse-photo', photo, true, {
+      waitUntil(task) {
+        tasks.push(task);
+      },
+      passThroughOnException() {},
+      props: {},
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect((await pending).status).toBe(503);
+    reserve({ reserved: true, usageId: 'late-photo', usedToday: 1 });
+    await Promise.all(tasks);
+    expect(deleteWhere).toHaveBeenCalledWith(eq(textLogUsage.id, 'late-photo'));
+    expect(network).not.toHaveBeenCalled();
   });
 });

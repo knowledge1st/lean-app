@@ -1,5 +1,7 @@
 import {
   parseMealTextSchema,
+  parseMealPhotoSchema,
+  PHOTO_LOG_MAX_DATA_URL,
   createEntriesBatchSchema,
   type AiMealParse,
   type ParseMealTextResponse,
@@ -13,7 +15,7 @@ import { foodEntryMacros, serializeEntry } from '../lib/entryMacros';
 import { AppError } from '../lib/errors';
 import { validate } from '../lib/validate';
 import { buildCatalog } from '../lib/textLog/catalog';
-import { buildPrompt } from '../lib/textLog/prompt';
+import { buildPrompt, buildPhotoPrompt } from '../lib/textLog/prompt';
 import { parseWithRules } from '../lib/textLog/rules';
 import { mapItems } from '../lib/textLog/mapping';
 import { interpretWithAi } from '../lib/textLog/openRouter';
@@ -94,6 +96,129 @@ export function createTextLogEntryRoutes(network?: typeof fetch) {
     };
     return c.json(response);
   });
+  entries.post(
+    '/parse-photo',
+    async (c, next) => {
+      const length = c.req.header('Content-Length');
+      if (length !== undefined && Number(length) > PHOTO_LOG_MAX_DATA_URL + 2000)
+        throw new AppError(413, 'photo_too_large', 'La foto es demasiado grande.');
+      await next();
+    },
+    validate('json', parseMealPhotoSchema),
+    async (c) => {
+      const input = c.req.valid('json');
+      const payloadLength = input.image.length - 'data:image/jpeg;base64,'.length;
+      if (
+        payloadLength <= 0 ||
+        payloadLength % 4 !== 0 ||
+        !/^[A-Za-z0-9+/]{2}(?:[A-Za-z0-9+/]{2}|[A-Za-z0-9+/]=|==)$/.test(input.image.slice(-4))
+      )
+        throw new AppError(400, 'validation_error', 'Formato de foto inválido');
+      const unavailable = () =>
+        new AppError(
+          503,
+          'ai_unavailable',
+          'No se pudo interpretar la foto. Probá de nuevo o cargá los alimentos a mano.',
+        );
+      if (!c.env.OPENROUTER_API_KEY) throw unavailable();
+      const db = getDb(c.env);
+      const userId = c.get('userId');
+      const [profile] = await db
+        .select({ timeZone: profiles.timeZone })
+        .from(profiles)
+        .where(eq(profiles.userId, userId));
+      let waitUntil: TextLogDeps['waitUntil'];
+      try {
+        const executionCtx = c.executionCtx;
+        waitUntil = (task) => executionCtx.waitUntil(task);
+      } catch {
+        // Tests and local callers may have no Worker execution context.
+      }
+      const deps: TextLogDeps = {
+        db,
+        env: c.env,
+        ...(waitUntil ? { waitUntil } : {}),
+        ...(network ? { fetch: network } : {}),
+      };
+      let usageId: string | undefined;
+      let ownQuotaExceeded = false;
+      let catalog: Awaited<ReturnType<typeof buildCatalog>> = [];
+      const result = await interpretWithAi(
+        deps,
+        async (signal) => {
+          const reservation = await reserveAiUse(db, userId, profile?.timeZone, 'photo');
+          if (!reservation.reserved) {
+            ownQuotaExceeded = true;
+            return null;
+          }
+          if (signal.aborted) {
+            await db.delete(textLogUsage).where(eq(textLogUsage.id, reservation.usageId));
+            return null;
+          }
+          usageId = reservation.usageId;
+          catalog = await buildCatalog(db, userId);
+          return signal.aborted
+            ? null
+            : {
+                ...buildPhotoPrompt(catalog),
+                user: [
+                  { type: 'text' as const, text: 'Foto de la comida.' },
+                  { type: 'image_url' as const, image_url: { url: input.image } },
+                ],
+              };
+        },
+        undefined,
+        { kind: 'photo' },
+      );
+      if (usageId) {
+        await completeTask(
+          deps,
+          result.attempts === 0
+            ? db.delete(textLogUsage).where(eq(textLogUsage.id, usageId))
+            : finishAiUse(db, usageId, result),
+        );
+      }
+      if (ownQuotaExceeded || (!result.ok && result.reason === 'quota'))
+        throw new AppError(
+          429,
+          'photo_log_quota',
+          'Llegaste al límite de fotos de hoy. Cargá los alimentos a mano o con texto.',
+        );
+      if (!result.ok) {
+        if (result.reason === 'busy')
+          throw new AppError(
+            429,
+            'text_log_busy',
+            'El servicio está ocupado. Probá de nuevo en un minuto.',
+          );
+        throw unavailable();
+      }
+      if (!result.parse.items.length)
+        throw new AppError(
+          422,
+          'photo_not_understood',
+          'No reconocí comida en la foto. Probá con otra foto o cargá los alimentos a mano.',
+        );
+      const parse: AiMealParse = {
+        items: result.parse.items.map((item) => ({ ...item, meal: null, gramsStated: false })),
+        otherDayMentioned: false,
+      };
+      const state = await savedModels(db);
+      const response: ParseMealTextResponse = {
+        items: await mapItems(db, userId, parse, catalog, input.defaultMeal, 'ai'),
+        warnings: [],
+        interpreter: 'ai',
+        remainingToday: await remainingToday(
+          db,
+          userId,
+          profile?.timeZone,
+          state.freeRemaining,
+          'photo',
+        ),
+      };
+      return c.json(response);
+    },
+  );
   entries.post('/batch', validate('json', createEntriesBatchSchema), async (c) => {
     const input = c.req.valid('json');
     const db = getDb(c.env);

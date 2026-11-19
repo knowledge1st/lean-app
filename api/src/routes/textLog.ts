@@ -16,6 +16,13 @@ textLog.get('/status', async (c) => {
       available: Boolean(
         c.env.OPENROUTER_API_KEY && candidates.length && state.freeRemaining !== 0,
       ),
+      photo: {
+        available: Boolean(
+          c.env.OPENROUTER_API_KEY && state.photoCandidates.length && state.freeRemaining !== 0,
+        ),
+        candidates: state.photoCandidates,
+        degraded: await degradedModels(db, new Date(), 'photo'),
+      },
       candidates,
       degraded,
       checkedAt: state.checkedAt?.toISOString() ?? null,

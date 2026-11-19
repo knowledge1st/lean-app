@@ -96,6 +96,7 @@ me.get('/', async (c) => {
     features: {
       textLog: true,
       textLogAi: Boolean(c.env.OPENROUTER_API_KEY),
+      photoLog: Boolean(c.env.OPENROUTER_API_KEY),
     },
   });
 });

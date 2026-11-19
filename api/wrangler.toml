@@ -23,3 +23,7 @@ VAPID_SUBJECT = "https://knowledge1st.github.io/lean-app/"
 TEXT_LOG_PREFERRED_MODELS = "nvidia/nemotron-*,particle-ai/*,meta-llama/*,google/*,qwen/*,mistralai/*,deepseek/*"
 TEXT_LOG_MODEL_DENYLIST = ""
 TEXT_LOG_MAX_CANDIDATES = "3"
+
+PHOTO_LOG_PREFERRED_MODELS = "nvidia/*-vl*,inclusionai/*,google/gemma-*,qwen/*-vl*"
+PHOTO_LOG_MODEL_DENYLIST = "particle-ai/*"
+PHOTO_LOG_MAX_CANDIDATES = "3"

@@ -23,6 +23,7 @@ vi.mock('../lib/textLog/freeModels', () => ({
 vi.mock('../lib/textLog/health', () => ({ recordFailure: vi.fn(), recordSuccess: vi.fn() }));
 const state = {
   candidates: ['testing/model:free'],
+  photoCandidates: ['testing/model:free'],
   checkedAt: new Date(),
   freeRemaining: 50,
   freeCheckedAt: null,
@@ -45,7 +46,13 @@ describe.skipIf(!hasTestDatabase)('text log database and A/B isolation', { timeo
   });
   const ownedEntries = (user: number) =>
     f.db.select().from(mealEntries).where(eq(mealEntries.userId, f.accounts[user]!.user.id));
-  const parse = (text: string, network: typeof fetch, user = 0, key = true) => {
+  const parse = (
+    text: string,
+    network: typeof fetch,
+    user = 0,
+    key = true,
+    kind: 'text' | 'photo' = 'text',
+  ) => {
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
       c.set('userId', f.accounts[user]!.user.id);
@@ -54,11 +61,15 @@ describe.skipIf(!hasTestDatabase)('text log database and A/B isolation', { timeo
     app.onError(handleError);
     app.route('/entries', createTextLogEntryRoutes(network));
     return app.request(
-      '/entries/parse-text',
+      `/entries/parse-${kind}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, date: '2026-11-17', defaultMeal: 'lunch' }),
+        body: JSON.stringify({
+          ...(kind === 'photo' ? { image: text } : { text }),
+          date: '2026-11-17',
+          defaultMeal: 'lunch',
+        }),
       },
       {
         ...testEnv,
@@ -67,6 +78,34 @@ describe.skipIf(!hasTestDatabase)('text log database and A/B isolation', { timeo
       },
     );
   };
+
+  it('isolates photo quota by user and preserves the independent text allowance', async () => {
+    const a = f.accounts[0]!.user.id;
+    const b = f.accounts[1]!.user.id;
+    await f.db
+      .insert(textLogUsage)
+      .values(Array.from({ length: 10 }, () => ({ userId: a, kind: 'photo', outcome: 'ok' })));
+    const network = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        model: 'testing/model:free',
+        choices: [
+          { message: { content: JSON.stringify({ items: [], otherDayMentioned: false }) } },
+        ],
+      }),
+    );
+    const photo = 'data:image/jpeg;base64,YQ==';
+    const exhausted = await parse(photo, network, 0, true, 'photo');
+    expect(exhausted.status).toBe(429);
+    expect(await exhausted.json()).toMatchObject({ error: { code: 'photo_log_quota' } });
+    expect(network).not.toHaveBeenCalled();
+    expect((await parse(photo, network, 1, true, 'photo')).status).toBe(422);
+    expect(network).toHaveBeenCalledOnce();
+    expect(await remainingToday(f.db, a, undefined, null, 'photo')).toBe(0);
+    expect(await remainingToday(f.db, b, undefined, null, 'photo')).toBe(9);
+    expect(await remainingToday(f.db, a, undefined, null)).toBe(20);
+    expect(await ownedEntries(0)).toEqual([]);
+    expect(await ownedEntries(1)).toEqual([]);
+  });
   it('never creates entries or stores text during AI interpretation', async () => {
     const text = 'arroz confidencial de prueba';
     await f.food(0, { name: 'Arroz de prueba', servingG: 100, servingLabel: '1 porción' });

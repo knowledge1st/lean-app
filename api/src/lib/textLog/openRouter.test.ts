@@ -27,6 +27,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getFreeModels).mockResolvedValue({
     candidates,
+    photoCandidates: candidates,
     checkedAt: new Date(),
     freeRemaining: 10,
     freeCheckedAt: null,
@@ -49,6 +50,7 @@ describe('interpretWithAi', () => {
     expect(getFreeModels).not.toHaveBeenCalled();
     vi.mocked(getFreeModels).mockResolvedValueOnce({
       candidates: [],
+      photoCandidates: [],
       checkedAt: null,
       freeRemaining: null,
       freeCheckedAt: null,
@@ -56,6 +58,7 @@ describe('interpretWithAi', () => {
     expect(await interpretWithAi(deps(fetch), input)).toMatchObject({ outcome: 'no_models' });
     vi.mocked(getFreeModels).mockResolvedValueOnce({
       candidates,
+      photoCandidates: candidates,
       checkedAt: null,
       freeRemaining: 0,
       freeCheckedAt: null,
@@ -132,6 +135,7 @@ describe('interpretWithAi', () => {
     async (reasoning) => {
       vi.mocked(getFreeModels).mockResolvedValueOnce({
         candidates,
+        photoCandidates: candidates,
         reasoningSupported: {
           [candidates[0]]: reasoning,
           [candidates[1]]: !reasoning,
@@ -158,6 +162,7 @@ describe('interpretWithAi', () => {
     async (reasoning) => {
       vi.mocked(getFreeModels).mockResolvedValueOnce({
         candidates,
+        photoCandidates: candidates,
         reasoningSupported: {
           [candidates[0]]: reasoning,
           [candidates[1]]: !reasoning,
@@ -449,5 +454,85 @@ describe('interpretWithAi', () => {
     const result = interpretWithAi(deps(fetch), input);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(await result).toMatchObject({ outcome: 'timeout', attempts: 2 });
+  });
+});
+
+describe('photo interpretation', () => {
+  const photoInput = {
+    system: 'photo system',
+    user: [
+      { type: 'text' as const, text: 'Foto de la comida.' },
+      { type: 'image_url' as const, image_url: { url: 'data:image/jpeg;base64,YQ==' } },
+    ],
+  };
+  it('sends multimodal content, free safeguards, 6000 tokens and low reasoning', async () => {
+    vi.mocked(getFreeModels).mockResolvedValueOnce({
+      candidates: ['text/only:free'],
+      photoCandidates: [candidates[0]],
+      photoReasoningSupported: { [candidates[0]]: true },
+      checkedAt: null,
+      freeRemaining: 10,
+      freeCheckedAt: null,
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(reply());
+    expect((await interpretWithAi(deps(fetch), photoInput, undefined, { kind: 'photo' })).ok).toBe(
+      true,
+    );
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+    expect(body).toMatchObject({
+      models: [candidates[0]],
+      max_tokens: 6000,
+      temperature: 0,
+      reasoning: { effort: 'low' },
+      provider: { require_parameters: true, max_price: { prompt: 0, completion: 0 } },
+      response_format: { type: 'json_schema', json_schema: { schema: aiMealParseJsonSchema } },
+    });
+    expect(body.messages[1].content).toEqual(photoInput.user);
+    expect(body).not.toHaveProperty('user');
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.has('HTTP-Referer')).toBe(false);
+    expect(headers.has('X-Title')).toBe(false);
+    expect(recordSuccess).toHaveBeenCalledWith(expect.anything(), 'photo:' + candidates[0]);
+  });
+  it('rejects an unsent or paid response model', async () => {
+    for (const model of ['paid/model', 'unsent/model:free']) {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(reply(model));
+      expect(
+        await interpretWithAi(deps(fetch), photoInput, undefined, { kind: 'photo' }),
+      ).toMatchObject({ ok: false, outcome: 'non_free_model', attempts: 1 });
+      expect(fetch).toHaveBeenCalledOnce();
+    }
+  });
+  it('retries only once and excludes the failed model with photo health keys', async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(reply(candidates[0], '{}'))
+      .mockResolvedValueOnce(reply(candidates[1], '{}'));
+    expect(
+      await interpretWithAi(deps(fetch), photoInput, undefined, { kind: 'photo' }),
+    ).toMatchObject({ ok: false, outcome: 'invalid_output', attempts: 2 });
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)).models).not.toContain(candidates[0]);
+    expect(recordFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      'photo:' + candidates[0],
+      expect.any(Date),
+    );
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('bounds the total photo request at 60 seconds', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => new Promise(() => {}));
+    let settled = false;
+    const pending = interpretWithAi(deps(fetch), photoInput, undefined, { kind: 'photo' }).then(
+      (result) => {
+        settled = true;
+        return result;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await pending).toMatchObject({ ok: false, outcome: 'timeout', attempts: 1 });
+    expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
   });
 });

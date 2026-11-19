@@ -29,10 +29,17 @@ export async function recordSuccess(db: Db, model: string): Promise<void> {
     });
 }
 
-export async function degradedModels(db: Db, now: Date): Promise<string[]> {
+export async function degradedModels(
+  db: Db,
+  now: Date,
+  kind: 'text' | 'photo' = 'text',
+): Promise<string[]> {
   const rows = await db
     .select({ model: textLogModelHealth.model })
     .from(textLogModelHealth)
     .where(gt(textLogModelHealth.degradedUntil, now));
-  return rows.map((row) => row.model);
+  return rows
+    .map((row) => row.model)
+    .filter((model) => model.startsWith('photo:') === (kind === 'photo'))
+    .map((model) => (kind === 'photo' ? model.slice(6) : model));
 }

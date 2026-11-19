@@ -1,14 +1,15 @@
-import { DEFAULT_TIME_ZONE, TEXT_LOG_DAILY_LIMIT } from '@lean/shared';
+import { DEFAULT_TIME_ZONE, TEXT_LOG_DAILY_LIMIT, PHOTO_LOG_DAILY_LIMIT } from '@lean/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from '../../db/client';
 import { profiles, textLogUsage } from '../../db/schema';
 import type { AiResult } from './openRouter';
 
-function dailyWhere(userId: string, timeZone?: string) {
+function dailyWhere(userId: string, timeZone: string | undefined, kind: 'text' | 'photo') {
   const zone = sql`COALESCE(${timeZone ?? null}::text, (SELECT ${profiles.timeZone} FROM ${profiles} WHERE ${profiles.userId} = ${userId}), ${DEFAULT_TIME_ZONE})`;
   const start = sql`date_trunc('day', now() AT TIME ZONE ${zone})`;
   return and(
     eq(textLogUsage.userId, userId),
+    eq(textLogUsage.kind, kind),
     sql`${textLogUsage.createdAt} >= (${start} AT TIME ZONE ${zone})`,
     sql`${textLogUsage.createdAt} < ((${start} + interval '1 day') AT TIME ZONE ${zone})`,
   );
@@ -21,14 +22,18 @@ export async function reserveAiUse(
   db: Db,
   userId: string,
   timeZone?: string,
+  kind: 'text' | 'photo' = 'text',
 ): Promise<AiReservation> {
   const usageId = crypto.randomUUID();
-  const where = dailyWhere(userId, timeZone);
+  const where = dailyWhere(userId, timeZone, kind);
+  const limit = kind === 'photo' ? PHOTO_LOG_DAILY_LIMIT : TEXT_LOG_DAILY_LIMIT;
   // Remove a rejected reservation before releasing the lock, so another waiter
   // cannot count a row that is about to be deleted.
   const [, , counts] = await db.batch([
     db.execute(sql`SELECT pg_advisory_xact_lock(6, hashtext(${userId}))`),
-    db.insert(textLogUsage).values({ id: usageId, userId, outcome: 'provider_error', attempts: 0 }),
+    db
+      .insert(textLogUsage)
+      .values({ id: usageId, userId, kind, outcome: 'provider_error', attempts: 0 }),
     db
       .select({ count: sql<number>`count(*)`.mapWith(Number) })
       .from(textLogUsage)
@@ -38,13 +43,13 @@ export async function reserveAiUse(
       .where(
         and(
           eq(textLogUsage.id, usageId),
-          sql`(SELECT count(*) FROM ${textLogUsage} WHERE ${where}) > ${TEXT_LOG_DAILY_LIMIT}`,
+          sql`(SELECT count(*) FROM ${textLogUsage} WHERE ${where}) > ${limit}`,
         ),
       ),
   ]);
   const usedToday = counts[0]?.count;
   if (usedToday === undefined) throw new Error('No se pudo reservar el cupo de IA');
-  return usedToday > TEXT_LOG_DAILY_LIMIT
+  return usedToday > limit
     ? { reserved: false, usedToday: usedToday - 1 }
     : { reserved: true, usageId, usedToday };
 }
@@ -67,13 +72,12 @@ export async function remainingToday(
   userId: string,
   timeZone: string | undefined,
   freeRemaining: number | null,
+  kind: 'text' | 'photo' = 'text',
 ): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(textLogUsage)
-    .where(dailyWhere(userId, timeZone));
-  return Math.max(
-    0,
-    Math.min(TEXT_LOG_DAILY_LIMIT - (row?.count ?? 0), freeRemaining ?? TEXT_LOG_DAILY_LIMIT),
-  );
+    .where(dailyWhere(userId, timeZone, kind));
+  const limit = kind === 'photo' ? PHOTO_LOG_DAILY_LIMIT : TEXT_LOG_DAILY_LIMIT;
+  return Math.max(0, Math.min(limit - (row?.count ?? 0), freeRemaining ?? limit));
 }

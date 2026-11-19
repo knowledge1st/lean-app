@@ -17,6 +17,7 @@ vi.mock('./health', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getFreeModels).mockResolvedValue({
+    photoCandidates: [],
     candidates: ['other/model:free'],
     checkedAt: new Date(),
     freeRemaining: 10,
