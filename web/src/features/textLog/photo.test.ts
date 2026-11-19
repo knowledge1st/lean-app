@@ -53,53 +53,59 @@ it('shrinks to 768 after exhausting qualities and reports oversized photos', asy
   expect(drawImage.mock.calls[1]?.slice(1)).toEqual([0, 0, 768, 384]);
   expect(close).toHaveBeenCalledOnce();
 });
-it.each([true, false])(
-  'reports decoding failure with bitmap available: %s and revokes the fallback URL',
-  async (available) => {
-    vi.stubGlobal(
-      'createImageBitmap',
-      available ? vi.fn().mockRejectedValue(new Error('HEIC')) : undefined,
-    );
-    const revoke = vi.fn();
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn(() => 'blob:decode-only'),
-      revokeObjectURL: revoke,
-    });
-    vi.stubGlobal(
-      'Image',
-      class {
-        onerror?: () => void;
-        set src(_value: string) {
-          queueMicrotask(() => this.onerror?.());
-        }
-      },
-    );
-    await expect(preparePhoto(new File([''], 'photo.heic'))).rejects.toThrow(
-      'No pude leer la foto. Probá con otra.',
-    );
-    expect(revoke).toHaveBeenCalledWith('blob:decode-only');
-  },
-);
-it('uses the image fallback when bitmap decoding fails', async () => {
-  const { encode } = mockCanvas();
-  encode.mockReturnValue(jpeg);
-  vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('unsupported')));
-  const revoke = vi.fn();
+it.each([true, false])('reports decoding failure with bitmap available: %s', async (available) => {
+  vi.stubGlobal(
+    'createImageBitmap',
+    available ? vi.fn().mockRejectedValue(new Error('HEIC')) : undefined,
+  );
+  const createObjectURL = vi.fn();
   vi.stubGlobal('URL', {
-    createObjectURL: vi.fn(() => 'blob:decode-only'),
-    revokeObjectURL: revoke,
+    createObjectURL,
   });
   vi.stubGlobal(
     'Image',
     class {
-      naturalWidth = 800;
-      naturalHeight = 600;
-      onload?: () => void;
+      onerror?: () => void;
       set src(_value: string) {
-        queueMicrotask(() => this.onload?.());
+        queueMicrotask(() => this.onerror?.());
       }
     },
   );
-  expect(await preparePhoto(new File([''], 'photo.jpg'))).toBe(jpeg);
-  expect(revoke).toHaveBeenCalledOnce();
+  await expect(preparePhoto(new File([''], 'photo.heic'))).rejects.toThrow(
+    'No pude leer la foto. Probá con otra.',
+  );
+  expect(createObjectURL).not.toHaveBeenCalled();
 });
+it.each([true, false])(
+  'uses the data URL fallback with bitmap available: %s',
+  async (available) => {
+    const { encode } = mockCanvas();
+    encode.mockReturnValue(jpeg);
+    vi.stubGlobal(
+      'createImageBitmap',
+      available ? vi.fn().mockRejectedValue(new Error('unsupported')) : undefined,
+    );
+    const createObjectURL = vi.fn();
+    vi.stubGlobal('URL', {
+      createObjectURL,
+    });
+    const assignedSrc = vi.fn();
+    vi.stubGlobal(
+      'Image',
+      class {
+        naturalWidth = 800;
+        naturalHeight = 600;
+        onload?: () => void;
+        set src(value: string) {
+          assignedSrc(value);
+          queueMicrotask(() => this.onload?.());
+        }
+      },
+    );
+    expect(await preparePhoto(new File([''], 'photo.jpg'))).toBe(jpeg);
+    expect(assignedSrc).toHaveBeenCalledOnce();
+    expect(assignedSrc).toHaveBeenCalledWith(expect.stringMatching(/^data:/));
+    expect(assignedSrc).not.toHaveBeenCalledWith(expect.stringMatching(/^blob:/));
+    expect(createObjectURL).not.toHaveBeenCalled();
+  },
+);

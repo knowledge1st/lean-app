@@ -25,23 +25,27 @@ async function decodePhoto(
       /* Try the browser's image decoder next. */
     }
   }
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error('decode'));
-      image.src = url;
-    });
-    return {
-      source: image,
-      width: image.naturalWidth,
-      height: image.naturalHeight,
-      release: () => {},
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('decode'));
     };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+    reader.onerror = () => reject(new Error('decode'));
+    reader.readAsDataURL(file);
+  });
+  const image = new Image();
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error('decode'));
+    image.src = dataUrl;
+  });
+  return {
+    source: image,
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+    release: () => {},
+  };
 }
 
 export async function preparePhoto(file: File): Promise<string> {
