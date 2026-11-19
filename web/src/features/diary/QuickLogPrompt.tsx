@@ -19,11 +19,13 @@ export function QuickLogPrompt({
   summary,
   onChoose,
   onTextLog,
+  onPhotoLog,
 }: {
   ready: boolean;
   summary: DaySummary | undefined;
   onChoose: (meal: Meal) => void;
   onTextLog?: (() => void) | undefined;
+  onPhotoLog?: (() => void) | undefined;
 }) {
   const [candidate, setCandidate] = useState(false);
   const mounted = useRef(false);
@@ -104,6 +106,7 @@ export function QuickLogPrompt({
     <QuickLogSheet
       summary={summary}
       onTextLog={onTextLog}
+      onPhotoLog={onPhotoLog}
       onChoose={onChoose}
       onClose={close}
       onShown={recordShown}
@@ -112,6 +115,7 @@ export function QuickLogPrompt({
   ) : (
     <QuickLogTodaySheet
       onTextLog={onTextLog}
+      onPhotoLog={onPhotoLog}
       onChoose={onChoose}
       onClose={close}
       onShown={recordShown}
@@ -122,12 +126,14 @@ export function QuickLogPrompt({
 function QuickLogTodaySheet({
   onChoose,
   onTextLog,
+  onPhotoLog,
   onClose,
   onShown,
   onSuppress,
 }: {
   onChoose: (meal: Meal) => void;
   onTextLog?: (() => void) | undefined;
+  onPhotoLog?: (() => void) | undefined;
   onClose: () => void;
   onShown: () => void;
   onSuppress: () => void;
@@ -137,6 +143,7 @@ function QuickLogTodaySheet({
     <QuickLogSheet
       summary={query.data}
       onTextLog={onTextLog}
+      onPhotoLog={onPhotoLog}
       onChoose={onChoose}
       onClose={onClose}
       onShown={onShown}
@@ -148,6 +155,7 @@ function QuickLogSheet({
   summary,
   onChoose,
   onTextLog,
+  onPhotoLog,
   onClose,
   onShown,
   onSuppress,
@@ -155,6 +163,7 @@ function QuickLogSheet({
   summary: DaySummary;
   onChoose: (meal: Meal) => void;
   onTextLog?: (() => void) | undefined;
+  onPhotoLog?: (() => void) | undefined;
   onClose: () => void;
   onShown: () => void;
   onSuppress: () => void;
@@ -219,6 +228,18 @@ function QuickLogSheet({
           }}
         >
           Escribir lo que comí
+        </Button>
+      )}
+      {onPhotoLog && (
+        <Button
+          variant="secondary"
+          className="mt-4 w-full"
+          onClick={() => {
+            onClose();
+            onPhotoLog();
+          }}
+        >
+          Sacar foto del plato
         </Button>
       )}
       <Button variant="ghost" className="mt-4 w-full" onClick={onClose}>

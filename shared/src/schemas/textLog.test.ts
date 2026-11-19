@@ -6,6 +6,8 @@ import {
   aiMealParseSchema,
   createEntriesBatchSchema,
   meFeaturesSchema,
+  parseMealPhotoSchema,
+  PHOTO_LOG_MAX_DATA_URL,
   parseMealTextResponseSchema,
   parseMealTextSchema,
   proposedItemSchema,
@@ -59,6 +61,7 @@ const proposedItem = {
   searchQuery: 'arroz cocido',
 };
 const textLogStatus = {
+  photo: { available: true, candidates: [], degraded: [] },
   available: true,
   candidates: ['ai'],
   degraded: [],
@@ -256,10 +259,31 @@ describe('text log schemas', () => {
   });
 
   it('validates both feature flags independently', () => {
-    expect(meFeaturesSchema.parse({ textLog: true, textLogAi: false })).toEqual({
+    expect(meFeaturesSchema.parse({ textLog: true, textLogAi: false, photoLog: false })).toEqual({
       textLog: true,
       textLogAi: false,
+      photoLog: false,
     });
     expect(meFeaturesSchema.safeParse({ textLog: true }).success).toBe(false);
+  });
+});
+
+describe('photo log schema', () => {
+  const photo = { image: 'data:image/jpeg;base64,YQ==', date: '2026-11-19', defaultMeal: 'lunch' };
+  it('accepts JPEG and the exact maximum length', () => {
+    expect(parseMealPhotoSchema.parse(photo)).toEqual(photo);
+    const image =
+      'data:image/jpeg;base64,' +
+      'A'.repeat(PHOTO_LOG_MAX_DATA_URL - 'data:image/jpeg;base64,'.length);
+    expect(parseMealPhotoSchema.safeParse({ ...photo, image }).success).toBe(true);
+    expect(parseMealPhotoSchema.safeParse({ ...photo, image: image + 'A' }).success).toBe(false);
+  });
+  it.each([
+    { image: 'data:image/png;base64,YQ==' },
+    { image: 'YQ==' },
+    { date: '2026-02-30' },
+    { defaultMeal: 'brunch' },
+  ])('rejects invalid photo fields %j', (fields) => {
+    expect(parseMealPhotoSchema.safeParse({ ...photo, ...fields }).success).toBe(false);
   });
 });

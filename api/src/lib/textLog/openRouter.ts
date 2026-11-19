@@ -9,6 +9,10 @@ import {
 import { recordFailure, recordSuccess, degradedModels } from './health';
 import { completeTask } from './tasks';
 
+export type ChatContentPart =
+  { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+export type AiPrompt = { system: string; user: string | ChatContentPart[] };
+
 export type AiOutcome =
   'invalid_output' | 'timeout' | 'provider_error' | 'rate_limited' | 'non_free_model' | 'no_models';
 interface AiMetrics {
@@ -23,11 +27,12 @@ export type AiResult =
 
 export async function interpretWithAi(
   deps: TextLogDeps,
-  input:
-    | { system: string; user: string }
-    | ((signal: AbortSignal) => Promise<{ system: string; user: string } | null>),
+  input: AiPrompt | ((signal: AbortSignal) => Promise<AiPrompt | null>),
   evaluationModels?: readonly FreeModel[],
+  options: { kind?: 'text' | 'photo' } = {},
 ): Promise<AiResult> {
+  const kind = options.kind ?? 'text';
+  const healthKey = (id: string) => (kind === 'photo' ? `photo:${id}` : id);
   const metrics: AiMetrics = { model: null, promptTokens: 0, completionTokens: 0, attempts: 0 };
   const failure = (outcome: AiOutcome, reason?: 'quota' | 'busy'): AiResult => ({
     ok: false,
@@ -43,11 +48,14 @@ export async function interpretWithAi(
     rejectTimeout = reject;
   });
   // A race also bounds injected fetch implementations that ignore AbortSignal.
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-    rejectTimeout(new Error('timeout'));
-  }, 30_000);
+  const timer = setTimeout(
+    () => {
+      timedOut = true;
+      controller.abort();
+      rejectTimeout(new Error('timeout'));
+    },
+    kind === 'photo' ? 60_000 : 30_000,
+  );
   const network: typeof fetch = (url, init) =>
     controller.signal.aborted
       ? Promise.reject(new Error('timeout'))
@@ -74,7 +82,7 @@ export async function interpretWithAi(
   const failedModels = new Set<string>();
   const failModel = (id: string) => {
     failedModels.add(id);
-    return writeHealth(recordFailure(deps.db, id, (deps.now ?? (() => new Date()))()));
+    return writeHealth(recordFailure(deps.db, healthKey(id), (deps.now ?? (() => new Date()))()));
   };
   const failSent = () => Promise.all(sent.filter((id) => !failedModels.has(id)).map(failModel));
   const run = async (): Promise<AiResult> => {
@@ -84,18 +92,21 @@ export async function interpretWithAi(
       // same free-price, modality, context, denylist and health checks to those records.
       const discovered =
         evaluationModels === undefined
-          ? state.candidates
+          ? kind === 'photo'
+            ? state.photoCandidates
+            : state.candidates
           : filterAndRankModels(
               evaluationModels,
               deps.env,
-              await degradedModels(deps.db, (deps.now ?? (() => new Date()))()),
+              await degradedModels(deps.db, (deps.now ?? (() => new Date()))(), kind),
+              kind,
             ).map((model) => model.id);
       if (timedOut) return failure('timeout');
       if (!discovered.length) return failure('no_models');
       if (state.freeRemaining === 0) return failure('rate_limited', 'quota');
       const reasoningSupported =
         evaluationModels === undefined
-          ? (state.reasoningSupported ?? {})
+          ? ((kind === 'photo' ? state.photoReasoningSupported : state.reasoningSupported) ?? {})
           : Object.fromEntries(
               evaluationModels.map((model) => [
                 model.id,
@@ -135,8 +146,10 @@ export async function interpretWithAi(
             },
             provider: { require_parameters: true, max_price: { prompt: 0, completion: 0 } },
             temperature: 0,
-            max_tokens: 2000,
-            ...(reasoning ? { reasoning: { enabled: false } } : {}),
+            max_tokens: kind === 'photo' ? 6000 : 2000,
+            ...(reasoning
+              ? { reasoning: kind === 'photo' ? { effort: 'low' } : { enabled: false } }
+              : {}),
           }),
         });
         if (response.status === 429) {
@@ -183,7 +196,7 @@ export async function interpretWithAi(
           /* Invalid JSON follows the same single retry as invalid schema. */
         }
         if (parsed?.success) {
-          await writeHealth(recordSuccess(deps.db, model));
+          await writeHealth(recordSuccess(deps.db, healthKey(model)));
           return { ok: true, parse: parsed.data, ...metrics, model };
         }
         await failModel(model);

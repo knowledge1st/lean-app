@@ -92,7 +92,11 @@ describe.skipIf(!hasTestDatabase)('auth integration', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       ...expected,
-      features: { textLog: true, textLogAi: false },
+      features: {
+        textLog: true,
+        textLogAi: false,
+        photoLog: Boolean(testEnv.OPENROUTER_API_KEY),
+      },
     });
     const normalized = await login(password, `  ${currentUser().username.toUpperCase()}  `);
     expect(normalized.status).toBe(200);

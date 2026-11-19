@@ -15,6 +15,7 @@ vi.mock('../lib/textLog/freeModels', () => ({ getFreeModels: vi.fn(), savedModel
 vi.mock('../lib/textLog/health', () => ({ degradedModels: vi.fn() }));
 const state = {
   candidates: ['qwen/a:free'],
+  photoCandidates: ['qwen/a:free'],
   checkedAt: new Date('2026-11-17T12:00:00Z'),
   freeRemaining: 12,
   freeCheckedAt: null,
@@ -41,6 +42,9 @@ beforeEach(() => {
 describe('text log route integration with auth middleware', () => {
   it('protects /status without a session before any catalogue or database access', async () => {
     expect((await app.request('/api/text-log/status', {}, testEnv)).status).toBe(401);
+    expect(
+      (await app.request('/api/entries/parse-photo', { method: 'POST' }, testEnv)).status,
+    ).toBe(401);
     expect(getDb).not.toHaveBeenCalled();
     expect(getFreeModels).not.toHaveBeenCalled();
   });
@@ -52,6 +56,7 @@ describe('text log route integration with auth middleware', () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
+      photo: { available: true, candidates: state.photoCandidates, degraded: [] },
       available: true,
       candidates: state.candidates,
       degraded: [],
@@ -78,7 +83,7 @@ describe('text log route integration with auth middleware', () => {
       );
       expect(await response.json()).toMatchObject({
         id: 'user-a',
-        features: { textLog: true, textLogAi: key },
+        features: { textLog: true, textLogAi: key, photoLog: key },
       });
       expect(getFreeModels).not.toHaveBeenCalled();
       expect(savedModels).not.toHaveBeenCalled();
@@ -187,4 +192,35 @@ it('/me keeps the privacy notice enabled when account quota is exhausted', async
     { ...testEnv, OPENROUTER_API_KEY: 'fake' },
   );
   expect(await response.json()).toMatchObject({ features: { textLog: true, textLogAi: true } });
+});
+
+it('reports photo health independently from text health', async () => {
+  vi.mocked(degradedModels).mockImplementation(async (_db, _now, kind) =>
+    kind === 'photo' ? ['qwen/photo:free'] : ['qwen/text:free'],
+  );
+  const response = await authorized.request(
+    '/api/text-log/status',
+    {},
+    {
+      ...testEnv,
+      OPENROUTER_API_KEY: 'fake',
+    },
+  );
+  expect(await response.json()).toMatchObject({
+    degraded: ['qwen/text:free'],
+    photo: { available: true, candidates: state.photoCandidates, degraded: ['qwen/photo:free'] },
+  });
+});
+
+it.each(['no_key', 'no_models', 'quota'])('reports photo unavailable for %s', async (reason) => {
+  if (reason === 'no_models')
+    vi.mocked(getFreeModels).mockResolvedValue({ ...state, photoCandidates: [] });
+  if (reason === 'quota')
+    vi.mocked(getFreeModels).mockResolvedValue({ ...state, freeRemaining: 0 });
+  const response = await authorized.request(
+    '/api/text-log/status',
+    {},
+    reason === 'no_key' ? testEnv : { ...testEnv, OPENROUTER_API_KEY: 'fake' },
+  );
+  expect(await response.json()).toMatchObject({ photo: { available: false } });
 });

@@ -119,6 +119,47 @@ describe.skipIf(!hasTestDatabase)('text log quota and health', () => {
     expect(row).toMatchObject({ failures: 0, lastFailureAt: null, degradedUntil: null });
   });
 
+  it('counts photo and text separately, caps photos at 10 and isolates users', async () => {
+    const a = await user();
+    const b = await user();
+    await seedUses(a, TEXT_LOG_DAILY_LIMIT);
+    await db
+      .insert(textLogUsage)
+      .values(Array.from({ length: 9 }, () => ({ userId: a, kind: 'photo', outcome: 'ok' })));
+    expect(await reserveAiUse(db, a, undefined, 'photo')).toMatchObject({
+      reserved: true,
+      usedToday: 10,
+    });
+    expect(await reserveAiUse(db, a, undefined, 'photo')).toEqual({
+      reserved: false,
+      usedToday: 10,
+    });
+    expect(await remainingToday(db, a, undefined, null, 'photo')).toBe(0);
+    expect(await remainingToday(db, a, undefined, null)).toBe(0);
+    expect(await remainingToday(db, b, undefined, null, 'photo')).toBe(10);
+    expect(await remainingToday(db, b, undefined, 3, 'photo')).toBe(3);
+    expect(await reserveAiUse(db, b, undefined, 'photo')).toMatchObject({
+      reserved: true,
+      usedToday: 1,
+    });
+    expect(await remainingToday(db, b, undefined, null)).toBe(20);
+  });
+
+  it('keeps text and photo model failures and recovery independent', async () => {
+    const textModel = `test/${crypto.randomUUID()}:free`;
+    const photoModel = `photo:${textModel}`;
+    models.push(textModel, photoModel);
+    const now = new Date();
+    for (let i = 0; i < 3; i++) await recordFailure(db, photoModel, now);
+    expect(await degradedModels(db, now, 'photo')).toContain(textModel);
+    expect(await degradedModels(db, now)).not.toContain(textModel);
+    expect(await degradedModels(db, now)).not.toContain(photoModel);
+    for (let i = 0; i < 3; i++) await recordFailure(db, textModel, now);
+    await recordSuccess(db, photoModel);
+    expect(await degradedModels(db, now, 'photo')).not.toContain(textModel);
+    expect(await degradedModels(db, now)).toContain(textModel);
+  });
+
   it('restarts the failure count when the last failure is more than 24h old', async () => {
     const model = `test/${crypto.randomUUID()}:free`;
     models.push(model);
@@ -132,4 +173,17 @@ describe.skipIf(!hasTestDatabase)('text log quota and health', () => {
       .where(eq(textLogModelHealth.model, model));
     expect(row).toMatchObject({ failures: 1, degradedUntil: null });
   });
+});
+
+it('partitions degraded model keys and strips photo prefixes without a database connection', async () => {
+  const model = 'testing/model:free';
+  const db = {
+    select: () => ({
+      from: () => ({
+        where: async () => [{ model }, { model: 'photo:' + model }],
+      }),
+    }),
+  } as unknown as Db;
+  expect(await degradedModels(db, new Date())).toEqual([model]);
+  expect(await degradedModels(db, new Date(), 'photo')).toEqual([model]);
 });

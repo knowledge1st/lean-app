@@ -8,7 +8,7 @@ Una web mobile-first, en español, donde dos personas (cada una con su usuario) 
 
 | Tema | Decisión |
 |---|---|
-| Carga de comidas | Buscador de alimentos + escáner de código de barras. Además, carga por texto libre (T100): la persona escribe lo que comió, modelos **gratuitos** de OpenRouter lo interpretan (con un parser de reglas como respaldo) y la app propone las entradas para revisar y confirmar. Opcional: sin key ni modelos gratuitos sigue funcionando con el parser. |
+| Carga de comidas | Buscador de alimentos + escáner de código de barras. Además, carga por texto libre (T100): la persona escribe lo que comió, modelos **gratuitos** de OpenRouter lo interpretan (con un parser de reglas como respaldo) y la app propone las entradas para revisar y confirmar. Opcional: sin key ni modelos gratuitos sigue funcionando con el parser. Carga por foto (T120): la persona saca una foto del plato, modelos **gratuitos** con visión proponen alimentos y gramos estimados en la misma revisión; sin parser de respaldo, se oculta si no hay key. |
 | Objetivos | Tres modos: peso objetivo con fecha, composición corporal, macros manuales. |
 | Datos entre usuarios | Totalmente privados. Solo se comparte el catálogo de alimentos. |
 | Login | Usuario y contraseña, dos cuentas creadas de antemano, sin registro público. |
@@ -31,7 +31,7 @@ Celular ──HTTPS──> GitHub Pages (estáticos: React)
    └──HTTPS/JSON──> Cloudflare Worker (Hono, API REST)
                         ├──> Neon Postgres (driver HTTP)
                         ├──> Open Food Facts (búsqueda y código de barras)
-                        └──> OpenRouter (solo modelos :free, carga por texto; opcional)
+                        └──> OpenRouter (solo modelos :free, carga por texto y por foto; opcional)
 ```
 
 **Monorepo con pnpm workspaces**
@@ -57,7 +57,7 @@ Celular ──HTTPS──> GitHub Pages (estáticos: React)
 3. **Neon se suspende tras 5 minutos sin uso.** El primer request tarda cerca de un segundo. La UI muestra esqueletos de carga y no bloquea.
 4. **Open Food Facts limita la búsqueda (unas 10 por minuto por IP).** El Worker hace de proxy, busca primero en la base propia y guarda en caché todo producto que alguien elige.
 5. **Workers: 100.000 requests por día.** Sobra para dos personas; no requiere diseño especial.
-6. **OpenRouter, modelos `:free`: 20 pedidos por minuto y 50 por día para toda la cuenta (sin créditos comprados).** Tope propio de 20 interpretaciones con IA por usuario y día; el parser de reglas no consume cupo. Ningún pedido puede generar costo: solo IDs `:free` con precio `"0"`, fallback solo entre gratuitos, `provider.max_price` en 0 y cuenta sin saldo. El catálogo de modelos se descubre en vivo, se guarda 6 h y los modelos que fallan 3 veces en 24 h quedan fuera 24 h.
+6. **OpenRouter, modelos `:free`: 20 pedidos por minuto y 50 por día para toda la cuenta (sin créditos comprados).** Ese cupo de la cuenta es compartido entre texto y foto. Tope propio de 20 interpretaciones de texto y 10 de foto por usuario y día; el parser de reglas no consume cupo. Ningún pedido puede generar costo: solo IDs `:free` con precio `"0"`, fallback solo entre gratuitos, `provider.max_price` en 0 y cuenta sin saldo. El catálogo de modelos se descubre en vivo, se guarda 6 h y los modelos que fallan 3 veces en 24 h quedan fuera 24 h.
 
 ## 4. Seguridad (la web está expuesta a internet)
 
@@ -211,3 +211,4 @@ Las etapas 0 a 3 dan una versión mínima utilizable. La 5 es la de mayor valor 
 | Límites del free tier cambian | Ninguna pieza depende de un servicio pago; el Worker y Neon son reemplazables sin tocar el frontend |
 | Modelos gratuitos de OpenRouter que cambian, se saturan o desaparecen | Descubrimiento en vivo, degradación automática, parser de reglas como respaldo; la función es opcional |
 | El texto de comidas sale hacia un tercero | Se envía solo el texto (sin usuario ni cuenta), con aviso en la hoja; la app no lo guarda ni lo loguea. Los proveedores gratuitos pueden registrarlo (decisión del usuario) |
+| La foto del plato sale hacia un tercero (puede mostrar más que comida) | Se reduce y re-codifica en el celular (sin EXIF ni ubicación), se envía sin usuario ni cuenta, con aviso en la hoja; la app no la guarda ni la loguea |

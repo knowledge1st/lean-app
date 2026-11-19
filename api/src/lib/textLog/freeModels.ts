@@ -7,7 +7,12 @@ import { degradedModels } from './health';
 
 export type ModelOptions = Pick<
   Env,
-  'TEXT_LOG_PREFERRED_MODELS' | 'TEXT_LOG_MODEL_DENYLIST' | 'TEXT_LOG_MAX_CANDIDATES'
+  | 'TEXT_LOG_PREFERRED_MODELS'
+  | 'TEXT_LOG_MODEL_DENYLIST'
+  | 'TEXT_LOG_MAX_CANDIDATES'
+  | 'PHOTO_LOG_PREFERRED_MODELS'
+  | 'PHOTO_LOG_MODEL_DENYLIST'
+  | 'PHOTO_LOG_MAX_CANDIDATES'
 >;
 export interface TextLogDeps {
   db: Db;
@@ -18,6 +23,8 @@ export interface TextLogDeps {
 }
 export interface ModelState {
   candidates: string[];
+  photoCandidates: string[];
+  photoReasoningSupported?: Record<string, boolean>;
   reasoningSupported?: Record<string, boolean>;
   checkedAt: Date | null;
   freeRemaining: number | null;
@@ -66,16 +73,25 @@ export function filterAndRankModels(
   models: readonly FreeModel[],
   options: ModelOptions = {},
   degraded: readonly string[] = [],
+  kind: 'text' | 'photo' = 'text',
 ): FreeModel[] {
   const preferred = patterns(
-    options.TEXT_LOG_PREFERRED_MODELS ?? 'meta-llama/*,google/*,qwen/*,mistralai/*,deepseek/*',
+    kind === 'photo'
+      ? (options.PHOTO_LOG_PREFERRED_MODELS ??
+          'nvidia/*-vl*,inclusionai/*,google/gemma-*,qwen/*-vl*')
+      : (options.TEXT_LOG_PREFERRED_MODELS ??
+          'meta-llama/*,google/*,qwen/*,mistralai/*,deepseek/*'),
   );
-  const denied = patterns(options.TEXT_LOG_MODEL_DENYLIST);
+  const denied = patterns(
+    kind === 'photo' ? options.PHOTO_LOG_MODEL_DENYLIST : options.TEXT_LOG_MODEL_DENYLIST,
+  );
   const rank = (id: string) => {
     const i = preferred.findIndex((p) => matches(id, p));
     return i < 0 ? preferred.length : i;
   };
-  const max = Number(options.TEXT_LOG_MAX_CANDIDATES ?? 3);
+  const max = Number(
+    (kind === 'photo' ? options.PHOTO_LOG_MAX_CANDIDATES : options.TEXT_LOG_MAX_CANDIDATES) ?? 3,
+  );
   return [
     ...new Map(
       models
@@ -84,6 +100,9 @@ export function filterAndRankModels(
           const [input, output] = (a?.modality ?? '').split('->');
           return (
             isFreeModel(m) &&
+            (kind !== 'photo' ||
+              a?.input_modalities?.includes('image') ||
+              input?.split('+').includes('image')) &&
             (m.context_length == null || m.context_length >= 16_000) &&
             (a?.input_modalities
               ? a.input_modalities.includes('text')
@@ -107,7 +126,9 @@ export function filterAndRankModels(
     .slice(0, Number.isInteger(max) && max > 0 ? max : 3);
 }
 
-type SavedModelState = Omit<ModelState, 'candidates'> & { candidates: FreeModel[] };
+type SavedModelState = Omit<ModelState, 'candidates' | 'photoCandidates'> & {
+  candidates: FreeModel[];
+};
 interface CacheEntry {
   state: SavedModelState;
   attemptedAt?: number;
@@ -121,6 +142,9 @@ const cacheKey = ({ env }: TextLogDeps) =>
     env.TEXT_LOG_PREFERRED_MODELS,
     env.TEXT_LOG_MODEL_DENYLIST,
     env.TEXT_LOG_MAX_CANDIDATES,
+    env.PHOTO_LOG_PREFERRED_MODELS,
+    env.PHOTO_LOG_MODEL_DENYLIST,
+    env.PHOTO_LOG_MAX_CANDIDATES,
   ]);
 
 async function loadSavedModels(db: Db): Promise<SavedModelState> {
@@ -142,9 +166,16 @@ async function loadSavedModels(db: Db): Promise<SavedModelState> {
   return { ...row, candidates };
 }
 
-function modelState(state: SavedModelState): ModelState {
+function modelState(state: SavedModelState, photoModels: readonly FreeModel[]): ModelState {
   return {
     ...state,
+    photoCandidates: photoModels.map((model) => model.id),
+    photoReasoningSupported: Object.fromEntries(
+      photoModels.map((model) => [
+        model.id,
+        model.supported_parameters?.includes('reasoning') ?? false,
+      ]),
+    ),
     candidates: state.candidates.map((model) => model.id),
     reasoningSupported: Object.fromEntries(
       state.candidates.map((model) => [
@@ -159,11 +190,15 @@ function effectiveState(
   state: SavedModelState,
   options: ModelOptions,
   degraded: readonly string[],
+  photoDegraded: readonly string[],
 ): ModelState {
-  return modelState({
-    ...state,
-    candidates: filterAndRankModels(state.candidates, options, degraded),
-  });
+  return modelState(
+    {
+      ...state,
+      candidates: filterAndRankModels(state.candidates, options, degraded),
+    },
+    filterAndRankModels(state.candidates, options, photoDegraded, 'photo'),
+  );
 }
 
 export async function savedModels(
@@ -172,9 +207,10 @@ export async function savedModels(
   now = new Date(),
 ): Promise<ModelState> {
   const state = await loadSavedModels(db);
+  const photoDegraded = await degradedModels(db, now, 'photo');
   return options
-    ? effectiveState(state, options, await degradedModels(db, now))
-    : modelState(state);
+    ? effectiveState(state, options, await degradedModels(db, now), photoDegraded)
+    : modelState(state, filterAndRankModels(state.candidates, {}, photoDegraded, 'photo'));
 }
 
 class CatalogueHttpError extends Error {
@@ -273,9 +309,13 @@ export async function getFreeModels(deps: TextLogDeps): Promise<ModelState> {
   }
   const now = (deps.now ?? (() => new Date()))();
   if (entry.pending) return entry.pending;
-  const degraded = await degradedModels(deps.db, now);
+  const [degraded, photoDegraded] = await Promise.all([
+    degradedModels(deps.db, now),
+    degradedModels(deps.db, now, 'photo'),
+  ]);
   if (entry.pending) return entry.pending;
-  const usable = (state: SavedModelState): ModelState => effectiveState(state, deps.env, degraded);
+  const usable = (state: SavedModelState): ModelState =>
+    effectiveState(state, deps.env, degraded, photoDegraded);
   const checked = entry.state.freeCheckedAt;
   if (
     entry.state.freeRemaining === 0 &&

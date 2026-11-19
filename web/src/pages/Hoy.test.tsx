@@ -103,7 +103,7 @@ function setup(
   options: {
     lastShownAt?: number;
     cachedNullGoal?: boolean;
-    features?: { textLog: boolean; textLogAi: boolean };
+    features?: { textLog: boolean; textLogAi: boolean; photoLog: boolean };
   } = {},
 ) {
   localStorage.setItem(
@@ -823,9 +823,9 @@ it.each([
 
 it.each([
   undefined,
-  { textLog: false, textLogAi: false },
-  { textLog: true, textLogAi: false },
-  { textLog: true, textLogAi: true },
+  { textLog: false, textLogAi: false, photoLog: false },
+  { textLog: true, textLogAi: false, photoLog: false },
+  { textLog: true, textLogAi: true, photoLog: false },
 ])(
   'muestra la entrada de texto según features=%j y conserva la fecha abierta',
   async (features) => {
@@ -854,11 +854,46 @@ it('abre la carga por texto desde el aviso con la fecha del día abierto', async
   );
   const client = setup(undefined, true, false, {
     lastShownAt: 0,
-    features: { textLog: true, textLogAi: false },
+    features: { textLog: true, textLogAi: false, photoLog: false },
   });
   const prompt = await screen.findByRole('dialog', { name: '¿Querés cargar alguna comida?' });
   fireEvent.click(within(prompt).getByRole('button', { name: 'Escribir lo que comí' }));
   expect(await screen.findByRole('dialog', { name: 'Escribir lo que comí' })).toBeTruthy();
+  expect(screen.getByLabelText('URL').textContent).toBe('?fecha=2026-11-14');
+  client.clear();
+});
+
+it.each([false, true])('muestra la carga por foto solo con photoLog=%s', async (photoLog) => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(summary)));
+  const client = setup(undefined, true, false, {
+    features: { textLog: false, textLogAi: false, photoLog },
+  });
+  await screen.findByText('Pan');
+  await waitFor(() => expect(client.getQueryState(['me', 'features'])?.status).toBe('success'));
+  const button = screen.queryByRole('button', { name: 'Sacar foto del plato' });
+  if (photoLog) {
+    expect(button).toBeTruthy();
+    fireEvent.click(button!);
+    expect(await screen.findByRole('dialog', { name: 'Cargar con foto' })).toBeTruthy();
+    expect(screen.getByLabelText('URL').textContent).toBe('?fecha=2026-11-14');
+  } else expect(button).toBeNull();
+  client.clear();
+});
+it('abre la carga por foto desde el aviso con la fecha abierta', async () => {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(jsonResponse(recalculateSummary({ ...summary, date: todayLocal() }, []))),
+  );
+  const client = setup(undefined, true, false, {
+    lastShownAt: 0,
+    features: { textLog: true, textLogAi: false, photoLog: true },
+  });
+  const prompt = await screen.findByRole('dialog', { name: '¿Querés cargar alguna comida?' });
+  fireEvent.click(within(prompt).getByRole('button', { name: 'Sacar foto del plato' }));
+  expect(await screen.findByRole('dialog', { name: 'Cargar con foto' })).toBeTruthy();
   expect(screen.getByLabelText('URL').textContent).toBe('?fecha=2026-11-14');
   client.clear();
 });

@@ -20,7 +20,9 @@ const model = (id: string, context_length = 32_000): FreeModel => ({
   architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
 });
 const ids = (models: FreeModel[]) => models.map((m) => m.id);
-type StoredState = Omit<ModelState, 'candidates'> & { candidates: (string | FreeModel)[] };
+type StoredState = Omit<ModelState, 'candidates' | 'photoCandidates'> & {
+  candidates: (string | FreeModel)[];
+};
 function storage(initial: StoredState) {
   let state = initial;
   const db = {
@@ -469,5 +471,63 @@ describe('catalogue and saved cache', () => {
     expect(fetch).not.toHaveBeenCalled();
     await refreshFreeRemaining(deps);
     expect((await getFreeModels(deps)).freeRemaining).toBe(0);
+  });
+});
+
+describe('photo candidates from the shared pool', () => {
+  it('requires image input, free prices, photo preferences, denylist and maximum', () => {
+    const pool = [
+      { ...model('text/a:free'), architecture: { modality: 'text->text' } },
+      { ...model('qwen/a-vl:free'), architecture: { modality: 'text+image->text' } },
+      model('nvidia/a-vl:free'),
+      model('inclusionai/a:free'),
+      model('particle-ai/a:free'),
+      model('openrouter/free'),
+      model('openrouter/auto'),
+      { ...model('paid/a:free'), pricing: { prompt: '1', completion: '0' } },
+    ];
+    expect(
+      ids(
+        filterAndRankModels(
+          pool,
+          {
+            PHOTO_LOG_PREFERRED_MODELS: 'qwen/*,nvidia/*',
+            PHOTO_LOG_MODEL_DENYLIST: 'particle-ai/*',
+            PHOTO_LOG_MAX_CANDIDATES: '2',
+            TEXT_LOG_MODEL_DENYLIST: '*',
+          },
+          [],
+          'photo',
+        ),
+      ),
+    ).toEqual(['qwen/a-vl:free', 'nvidia/a-vl:free']);
+    expect(ids(filterAndRankModels(pool, {}, [], 'photo'))).toEqual([
+      'nvidia/a-vl:free',
+      'inclusionai/a:free',
+      'qwen/a-vl:free',
+    ]);
+  });
+  it('excludes legacy IDs and applies independent health without another catalogue call', async () => {
+    const now = new Date();
+    const { db } = storage({
+      candidates: ['legacy/a:free', model('qwen/a-vl:free'), model('google/gemma-a:free')],
+      checkedAt: now,
+      freeRemaining: 12,
+      freeCheckedAt: now,
+    });
+    vi.mocked(degradedModels).mockImplementation(async (_db, _now, kind) =>
+      kind === 'photo' ? ['qwen/a-vl:free'] : ['google/gemma-a:free'],
+    );
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const result = await getFreeModels({
+      db,
+      fetch,
+      now: () => now,
+      env: { ...testEnv, DATABASE_URL: crypto.randomUUID(), OPENROUTER_API_KEY: 'fake' },
+    });
+    expect(result.candidates).toContain('qwen/a-vl:free');
+    expect(result.candidates).not.toContain('google/gemma-a:free');
+    expect(result.photoCandidates).toEqual(['google/gemma-a:free']);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

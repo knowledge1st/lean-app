@@ -1,3 +1,4 @@
+import { PhotoLogSheet } from '../features/textLog/PhotoLogSheet';
 import { TextLogSheet } from '../features/textLog/TextLogSheet';
 import { useTextLogFeatures } from '../features/textLog/api';
 import { CheckinCard } from '../features/checkin/CheckinCard';
@@ -26,6 +27,7 @@ import type { MacroKey } from '../lib/macros';
 export function Hoy() {
   const features = useTextLogFeatures();
   const [writing, setWriting] = useState(false);
+  const [photographing, setPhotographing] = useState(false);
   const [params, setParams] = useSearchParams();
   const today = todayLocal();
   const raw = params.get('fecha');
@@ -61,6 +63,7 @@ export function Hoy() {
     setEditing(null);
     setRepeating(null);
     setWriting(false);
+    setPhotographing(false);
   }
   function mutate(action: DiaryAction) {
     mutation.mutate(action);
@@ -68,6 +71,7 @@ export function Hoy() {
     setEditing(null);
     setRepeating(null);
     setWriting(false);
+    setPhotographing(false);
   }
   if (goal.isSuccess && goal.data === null && !goal.isFetching && !wizardSkipped) {
     return <Navigate to="/objetivo/nuevo" replace />;
@@ -159,6 +163,11 @@ export function Hoy() {
               Escribir lo que comí
             </Button>
           )}
+          {features.data?.photoLog && (
+            <Button variant="secondary" onClick={() => setPhotographing(true)}>
+              Sacar foto del plato
+            </Button>
+          )}
           {MEALS.map((meal) => {
             const section = query.data.meals.find((item) => item.meal === meal);
             return (
@@ -190,14 +199,19 @@ export function Hoy() {
           !adding &&
           !editing &&
           !repeating &&
-          !writing
+          !writing &&
+          !photographing
         }
+        onPhotoLog={features.data?.photoLog ? () => setPhotographing(true) : undefined}
         onTextLog={features.data?.textLog ? () => setWriting(true) : undefined}
         onChoose={(meal) => {
           navigate(todayLocal());
           setAdding({ date: todayLocal(), meal });
         }}
       />
+      {photographing && (
+        <PhotoLogSheet key={date} date={date} onClose={() => setPhotographing(false)} />
+      )}
       {writing && (
         <TextLogSheet
           key={date}
